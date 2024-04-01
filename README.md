@@ -1,2 +1,2 @@
 # nested-pandas
-Efficient Pandas representation for nested associated datasets.
+WORK IN PROGRESS: Efficient Pandas representation for nested associated datasets.
