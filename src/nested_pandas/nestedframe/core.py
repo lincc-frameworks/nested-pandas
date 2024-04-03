@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 
 from nested_pandas.series import packer
+from nested_pandas.series.dtype import NestedDtype
 
 
 class NestedFrame(pd.DataFrame):
@@ -28,8 +29,8 @@ class NestedFrame(pd.DataFrame):
         """returns a dictionary of columns for each base/nested dataframe"""
         all_columns = {"base": self.columns}
         for column in self.columns:
-            if hasattr(self[column], "nest"):
-                nest_cols = self[column].iloc[0].columns  # TODO: Improve access to columns
+            if isinstance(self[column].dtype, NestedDtype):
+                nest_cols = self[column].nest.fields
                 all_columns[column] = nest_cols
         return all_columns
 
@@ -38,7 +39,7 @@ class NestedFrame(pd.DataFrame):
         """retrieves the base column names for all nested dataframes"""
         nest_cols = []
         for column in self.columns:
-            if hasattr(self[column], "nest"):
+            if isinstance(self[column].dtype, NestedDtype):
                 nest_cols.append(column)
         return nest_cols
 
@@ -48,10 +49,8 @@ class NestedFrame(pd.DataFrame):
             left, right = colname.split(".")
             if left in self.nested_columns:
                 return right in self.all_columns[left]
-            else:
-                return False
-        else:
             return False
+        return False
 
     def add_nested(self, nested, name) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs a dataframe into a nested column"""
