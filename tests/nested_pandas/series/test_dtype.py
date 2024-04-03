@@ -1,7 +1,9 @@
+import pandas as pd
 import pyarrow as pa
 import pytest
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.na import NA
 
 
 @pytest.mark.parametrize(
@@ -40,6 +42,14 @@ def test_from_pyarrow_dtype_raises(pyarrow_dtype):
         NestedDtype(pyarrow_dtype)
 
 
+def test_to_pandas_pyarrow_dtype():
+    """Test that NestedDtype.to_pandas_pyarrow_dtype() returns the correct pyarrow struct type."""
+    dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.int64()})
+    assert dtype.to_pandas_pyarrow_dtype() == pd.ArrowDtype(
+        pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+    )
+
+
 def test_from_fields():
     """Test NestedDtype.from_fields()."""
     fields = {"a": pa.int64(), "b": pa.float64()}
@@ -47,6 +57,28 @@ def test_from_fields():
     assert dtype.pyarrow_dtype == pa.struct(
         [pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]
     )
+
+
+def test_na_value():
+    """Test that NestedDtype.na_value is a singleton instance of NAType."""
+    dtype = NestedDtype(pa.struct([pa.field("a", pa.list_(pa.int64()))]))
+    assert dtype.na_value is NA
+
+
+def test_fields():
+    """Test NestedDtype.fields property"""
+    dtype = NestedDtype(
+        pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+    )
+    assert dtype.fields == {"a": pa.int64(), "b": pa.float64()}
+
+
+def test_field_names():
+    """Test NestedDtype.field_names property"""
+    dtype = NestedDtype(
+        pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+    )
+    assert dtype.field_names == ["a", "b"]
 
 
 @pytest.mark.parametrize(
