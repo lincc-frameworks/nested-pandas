@@ -1,0 +1,23 @@
+# Changes here will be overwritten by Copier
+_commit: v2.0.1
+_src_path: gh:lincc-frameworks/python-project-template
+author_email: brantd@uw.edu
+author_name: LINCC Frameworks
+create_example_module: true
+custom_install: true
+enforce_style:
+- pylint
+- black
+failure_notification: []
+include_benchmarks: true
+include_docs: true
+include_notebooks: true
+mypy_type_checking: basic
+package_name: nested_pandas
+project_license: MIT
+project_name: nested-pandas
+project_organization: lincc-frameworks
+python_versions:
+- '3.9'
+- '3.10'
+- '3.11'
