@@ -2,14 +2,14 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from nested_pandas import NestedDtype
+from nested_pandas.series.ext_array import NestedExtensionArray
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
-from nested_pandas import NestedDtype
-from nested_pandas.series.ext_array import NestedExtensionArray
-
 
 def test_ext_array_dtype():
+    """Test that the dtype of the extension array is correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -22,6 +22,7 @@ def test_ext_array_dtype():
 
 
 def test_series_dtype():
+    """Test that the dtype of the series is correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -35,6 +36,7 @@ def test_series_dtype():
 
 
 def test_series_built_with_dtype():
+    """Test that the series is built correctly with the given dtype."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -48,6 +50,7 @@ def test_series_built_with_dtype():
 
 
 def test_series_built_from_dict():
+    """Test that the series is built correctly from a dictionary."""
     data = [
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
         {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
@@ -71,6 +74,7 @@ def test_series_built_from_dict():
 
 
 def test__convert_df_to_pa_scalar():
+    """Test that we can convert a DataFrame to a pyarrow scalar."""
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
     pa_scalar = NestedExtensionArray._convert_df_to_pa_scalar(df, type=None)
 
@@ -81,6 +85,7 @@ def test__convert_df_to_pa_scalar():
 
 
 def test__convert_df_to_pa_from_scalar():
+    """Test that we can convert a DataFrame to a pyarrow scalar."""
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
     pa_scalar = NestedExtensionArray._convert_df_to_pa_scalar(df, type=None)
 
@@ -91,6 +96,7 @@ def test__convert_df_to_pa_from_scalar():
 
 
 def test__convert_df_to_pa_from_series():
+    """Test that we can convert a DataFrame to a pyarrow scalar."""
     series = pd.Series(
         [
             pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}),
@@ -108,6 +114,7 @@ def test__convert_df_to_pa_from_series():
 
 
 def test__convert_df_to_pa_from_list():
+    """Test that we can convert a DataFrame to a pyarrow scalar."""
     list_of_dfs = [
         pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}),
         pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
@@ -123,6 +130,7 @@ def test__convert_df_to_pa_from_list():
 
 
 def test__from_sequence():
+    """Test that we can convert a list of DataFrames to a NestedExtensionArray."""
     list_of_dfs = [
         pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}),
         pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
@@ -139,6 +147,7 @@ def test__from_sequence():
 
 
 def test___setitem___single_df():
+    """Tests nested_ext_array[i] = pd.DataFrame(...) with df of the same size as the struct array."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
@@ -163,6 +172,7 @@ def test___setitem___single_df():
 
 
 def test___setitem___single_df_different_size():
+    """Tests nested_ext_array[i] = pd.DataFrame(...) with df of different size than the struct array."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
@@ -187,6 +197,7 @@ def test___setitem___single_df_different_size():
 
 
 def test___setitem___single_df_to_all_rows():
+    """Tests nested_ext_array[:] = pd.DataFrame(...)"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
@@ -211,6 +222,7 @@ def test___setitem___single_df_to_all_rows():
 
 
 def test___setitem___list_of_dfs():
+    """Tests nested_ext_array[:] = [pd.DataFrame(...), pd.DataFrame(...), ...]"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
@@ -238,6 +250,7 @@ def test___setitem___list_of_dfs():
 
 
 def test___setitem___series_of_dfs():
+    """Tests nested_ext_array[:] = pd.Series([pd.DataFrame(...), pd.DataFrame(...), ...])"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
@@ -285,12 +298,14 @@ def test___setitem___series_of_dfs():
     ],
 )
 def test_series_built_raises(data):
+    """Test that the extension array raises an error when the data is not valid."""
     pa_array = pa.array(data)
     with pytest.raises(ValueError):
         _array = NestedExtensionArray(pa_array)
 
 
 def test_list_offsets():
+    """Test that the list offsets are correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint8())),
@@ -305,6 +320,7 @@ def test_list_offsets():
 
 
 def test___getitem__():
+    """Tests series[i] is a valid DataFrame."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -321,6 +337,7 @@ def test___getitem__():
 
 
 def test_series_apply_udf_argument():
+    """Tests `x` in series.apply(lambda x: x) is a valid DataFrame."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -337,6 +354,7 @@ def test_series_apply_udf_argument():
 
 
 def test___iter__():
+    """Tests iter(series) yields valid DataFrames."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -352,6 +370,7 @@ def test___iter__():
 
 
 def test_field_names():
+    """Tests that the extension array field names are correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -365,6 +384,7 @@ def test_field_names():
 
 
 def test_flat_length():
+    """Tests that the flat length of the extension array is correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
@@ -378,6 +398,7 @@ def test_flat_length():
 
 
 def test_view_fields_with_single_field():
+    """Tests ext_array.view("field")"""
     arrays = [
         pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
         pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
@@ -403,6 +424,7 @@ def test_view_fields_with_single_field():
 
 
 def test_view_fields_with_multiple_fields():
+    """Tests ext_array.view(["field1", "field2"])"""
     arrays = [
         pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
         pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
@@ -427,6 +449,7 @@ def test_view_fields_with_multiple_fields():
 
 
 def test_view_fields_raises_for_invalid_field():
+    """Tests that we raise an error when trying to view a field that does not exist."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
@@ -441,6 +464,7 @@ def test_view_fields_raises_for_invalid_field():
 
 
 def test_view_fields_raises_for_non_unique_fields():
+    """Tests that we raise an error when trying to view multiple fields with the sama name."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
@@ -455,6 +479,7 @@ def test_view_fields_raises_for_non_unique_fields():
 
 
 def test_set_flat_field_new_field_scalar():
+    """Tests setting a new field with a scalar value."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
@@ -480,6 +505,7 @@ def test_set_flat_field_new_field_scalar():
 
 
 def test_set_flat_field_replace_field_array():
+    """Tests replacing a field with a new "flat" array."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
@@ -504,6 +530,7 @@ def test_set_flat_field_replace_field_array():
 
 
 def test_set_list_field_new_field():
+    """Tests setting a new field with a new "list" array"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
@@ -529,6 +556,7 @@ def test_set_list_field_new_field():
 
 
 def test_set_list_field_replace_field():
+    """Tests replacing a field with a new "list" array."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
@@ -553,6 +581,7 @@ def test_set_list_field_replace_field():
 
 
 def test_pop_field():
+    """Tests that we can pop a field from the extension array."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
@@ -578,6 +607,7 @@ def test_pop_field():
 
 
 def test_delete_last_field_raises():
+    """Tests that we raise an error when trying to delete the last field left."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),

@@ -1,14 +1,14 @@
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from nested_pandas import NestedDtype
+from nested_pandas.series import packer
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
-from nested_pandas import NestedDtype
-from nested_pandas.series import packer
-
 
 def test_pack_flat_into_df():
+    """Test pack_flat_into_df()."""
     df = pd.DataFrame(
         data={
             "a": [7, 8, 9, 1, 2, 3, 4, 5, 6],
@@ -57,6 +57,7 @@ def test_pack_flat_into_df():
 
 
 def test_pack_flat():
+    """Test pack_flat()."""
     df = pd.DataFrame(
         data={
             "a": [7, 8, 9, 1, 2, 3, 4, 5, 6],
@@ -81,6 +82,7 @@ def test_pack_flat():
 
 
 def test_pack_sorted_df_into_struct():
+    """Test pack_sorted_df_into_struct()."""
     df = pd.DataFrame(
         data={
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -105,6 +107,7 @@ def test_pack_sorted_df_into_struct():
 
 
 def test_pack_lists():
+    """Test pack_lists()."""
     packed_df = pd.DataFrame(
         data={
             "a": [
@@ -129,7 +132,8 @@ def test_pack_lists():
         assert_series_equal(series.struct.field(field_name), packed_df[field_name])
 
 
-def test_dfs():
+def test_pack_dfs():
+    """Test pack_dfs()."""
     dfs = [
         pd.DataFrame(
             data={
@@ -176,6 +180,7 @@ def test_dfs():
 
 
 def test_view_sorted_df_as_list_arrays():
+    """Test view_sorted_df_as_list_arrays()."""
     flat_df = pd.DataFrame(
         data={
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -209,6 +214,7 @@ def test_view_sorted_df_as_list_arrays():
 
 
 def test_view_sorted_series_as_list_array():
+    """Test view_sorted_series_as_list_array()."""
     series = pd.Series(
         data=[1, 2, 3, 4, 5, 6, 7, 8, 9],
         index=[1, 1, 2, 2, 3, 3, 4, 4, 4],

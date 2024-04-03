@@ -10,8 +10,8 @@ import pyarrow as pa
 from numpy.typing import ArrayLike
 from pandas.api.extensions import register_series_accessor
 
-from nested_pandas.series.packer import pack_sorted_df_into_struct
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.packer import pack_sorted_df_into_struct
 
 __all__ = ["NestSeriesAccessor"]
 

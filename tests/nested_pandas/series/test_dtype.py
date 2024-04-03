@@ -1,6 +1,5 @@
 import pyarrow as pa
 import pytest
-
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 
@@ -19,6 +18,7 @@ from nested_pandas.series.ext_array import NestedExtensionArray
     ],
 )
 def test_from_pyarrow_dtype(pyarrow_dtype):
+    """Test that we can construct NestedDtype from pyarrow struct type."""
     dtype = NestedDtype(pyarrow_dtype)
     assert dtype.pyarrow_dtype == pyarrow_dtype
 
@@ -35,11 +35,13 @@ def test_from_pyarrow_dtype(pyarrow_dtype):
     ],
 )
 def test_from_pyarrow_dtype_raises(pyarrow_dtype):
+    """Test that we raise an error when constructing NestedDtype from invalid pyarrow type."""
     with pytest.raises(ValueError):
         NestedDtype(pyarrow_dtype)
 
 
 def test_from_fields():
+    """Test NestedDtype.from_fields()."""
     fields = {"a": pa.int64(), "b": pa.float64()}
     dtype = NestedDtype.from_fields(fields)
     assert dtype.pyarrow_dtype == pa.struct(
@@ -60,9 +62,11 @@ def test_from_fields():
     ],
 )
 def test_name_vs_construct_from_string(fields):
+    """Test that dtype.name is consistent with dtype.construct_from_string(dtype.name)."""
     dtype = NestedDtype.from_fields(fields)
     assert dtype == NestedDtype.construct_from_string(dtype.name)
 
 
 def test_construct_array_type():
+    """Test that NestedDtype.construct_array_type() returns NestedExtensionArray."""
     assert NestedDtype.construct_array_type() is NestedExtensionArray

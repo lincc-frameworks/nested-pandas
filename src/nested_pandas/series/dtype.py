@@ -102,7 +102,8 @@ class NestedDtype(ArrowDtype):
         field_strings = fields_str.split(", ")
         if len(field_strings) == 0:
             raise ValueError(
-                "Not a valid nested type string, expected at least a single field inside 'nested<x: [type], ...>'"
+                "Not a valid nested type string, expected at least a single field inside "
+                "'nested<x: [type], ...>'"
             )
 
         fields = {}
@@ -111,13 +112,13 @@ class NestedDtype(ArrowDtype):
                 field_name, field_type = field_string.split(": ", maxsplit=1)
             except ValueError as e:
                 raise ValueError(
-                    "Not a valid nested type string, expected 'nested<x: [type], ...>', got invalid field string "
-                    f"'{field_string}'"
+                    "Not a valid nested type string, expected 'nested<x: [type], ...>', got invalid field "
+                    f"string '{field_string}'"
                 ) from e
             if not field_type.startswith("[") or not field_type.endswith("]"):
                 raise ValueError(
-                    "Not a valid nested type string, expected 'nested<x: [type], ...>', got invalid field type "
-                    f"string '{field_type}'"
+                    "Not a valid nested type string, expected 'nested<x: [type], ...>', got invalid field "
+                    f"type string '{field_type}'"
                 )
 
             value_type = field_type.removeprefix("[").removesuffix("]")

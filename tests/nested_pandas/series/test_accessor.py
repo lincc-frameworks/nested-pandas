@@ -2,14 +2,14 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from nested_pandas import NestedDtype
+from nested_pandas.series.ext_array import NestedExtensionArray
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
-from nested_pandas import NestedDtype
-from nested_pandas.series.ext_array import NestedExtensionArray
-
 
 def test_registered():
+    """Test that the series accessor .nest is registered."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1.0, 2.0, 1.0])]),
@@ -23,6 +23,7 @@ def test_registered():
 
 
 def test_to_lists():
+    """Test that the .nest.to_lists() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])]),
@@ -52,6 +53,7 @@ def test_to_lists():
 
 
 def test_to_lists_with_fields():
+    """Test that the .nest.to_lists(fields=...) method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])]),
@@ -76,6 +78,7 @@ def test_to_lists_with_fields():
 
 
 def test_to_flat():
+    """Test that the .nest.to_flat() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -112,6 +115,7 @@ def test_to_flat():
 
 
 def test_to_flat_with_fields():
+    """Test that the .nest.to_flat(fields=...) method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -142,6 +146,7 @@ def test_to_flat_with_fields():
 
 
 def test_fields():
+    """Test that the .nest.fields attribute works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -155,6 +160,7 @@ def test_fields():
 
 
 def test_flat_length():
+    """Test that the .nest.flat_length attribute works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -168,6 +174,7 @@ def test_flat_length():
 
 
 def test_set_flat_field():
+    """Test that the .nest.set_flat_field() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -191,6 +198,7 @@ def test_set_flat_field():
 
 
 def test_set_list_field():
+    """Test that the .nest.set_list_field() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -214,6 +222,7 @@ def test_set_list_field():
 
 
 def test_pop_field():
+    """Test that the .nest.pop_field() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -238,6 +247,7 @@ def test_pop_field():
 
 
 def test_query_flat_1():
+    """Test that the .nest.query_flat() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([4.0, 5.0, 6.0])]),
@@ -262,7 +272,8 @@ def test_query_flat_1():
 
 
 # Currently we remove empty rows from the output series
-def test_query_flat_2():
+def test_query_flat_empty_rows():
+    """Test that the .nest.query_flat() method works as expected for empty rows."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([4.0, 5.0, 6.0])]),
@@ -279,6 +290,7 @@ def test_query_flat_2():
 
 
 def test_get_list_series():
+    """Test that the .nest.get_list_series() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),
@@ -302,6 +314,7 @@ def test_get_list_series():
 
 
 def test___getitem___single_field():
+    """Test that the .nest["field"] works for a single field."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -332,6 +345,7 @@ def test___getitem___single_field():
 
 
 def test___getitem___multiple_fields():
+    """Test that the .nest[["b", "a"]] works for multiple fields."""
     arrays = [
         pa.array([np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])]),
         pa.array([np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
@@ -361,6 +375,7 @@ def test___getitem___multiple_fields():
 
 
 def test___setitem___with_flat():
+    """Test that the .nest["field"] = ... works for a single field."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -384,6 +399,7 @@ def test___setitem___with_flat():
 
 
 def test___setitem___with_list():
+    """Test that the .nest["field"] = ... works for a single field."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -407,6 +423,7 @@ def test___setitem___with_list():
 
 
 def test___setited___raises_for_ambiguous_lengths_1():
+    """Test that the .nest["field"] = ... raises for ambiguous lengths of the right hand side."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array(
@@ -430,6 +447,7 @@ def test___setited___raises_for_ambiguous_lengths_1():
 
 
 def test___setited___raises_for_ambiguous_lengths_2():
+    """Test that the .nest["field"] = ... raises for ambiguous lengths of the right hand side."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0]), np.array([])]),
@@ -444,6 +462,7 @@ def test___setited___raises_for_ambiguous_lengths_2():
 
 
 def test___delitem__():
+    """Test that the `del .nest["field"]` works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -459,6 +478,7 @@ def test___delitem__():
 
 
 def test___iter__():
+    """Test that the iter(.nest) works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -472,6 +492,7 @@ def test___iter__():
 
 
 def test___len__():
+    """Test that the len(.nest) works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
