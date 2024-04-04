@@ -42,10 +42,10 @@ def test_from_pyarrow_dtype_raises(pyarrow_dtype):
         NestedDtype(pyarrow_dtype)
 
 
-def test_to_pandas_pyarrow_dtype():
-    """Test that NestedDtype.to_pandas_pyarrow_dtype() returns the correct pyarrow struct type."""
-    dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.int64()})
-    assert dtype.to_pandas_pyarrow_dtype() == pd.ArrowDtype(
+def test_to_pandas_arrow_dtype():
+    """Test that NestedDtype.to_pandas_arrow_dtype() returns the correct pyarrow struct type."""
+    dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
+    assert dtype.to_pandas_arrow_dtype() == pd.ArrowDtype(
         pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
     )
 

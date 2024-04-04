@@ -49,10 +49,24 @@ class NestSeriesAccessor(MutableMapping):
         pd.DataFrame
             Dataframe of list-arrays.
         """
-        df = self._series.struct.explode()
-        if fields is None:
-            return df
-        return df[fields]
+        fields = fields if fields is not None else list(self._series.array.field_names)
+        if len(fields) == 0:
+            raise ValueError("Cannot convert a struct with no fields to lists")
+
+        struct_array = cast(pa.StructArray, pa.array(self._series))
+
+        list_series = {}
+        for field in fields:
+            list_array = cast(pa.ListArray, struct_array.field(field))
+            list_series[field] = pd.Series(
+                list_array,
+                dtype=pd.ArrowDtype(list_array.type),
+                index=self._series.index,
+                name=field,
+                copy=False,
+            )
+
+        return pd.DataFrame(list_series)
 
     def to_flat(self, fields: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of flat arrays
@@ -67,15 +81,16 @@ class NestSeriesAccessor(MutableMapping):
         pd.DataFrame
             Dataframe of flat arrays.
         """
-        # For some reason, .struct.dtypes is cached, so we will use NestedExtensionArray directly
         fields = fields if fields is not None else list(self._series.array.field_names)
         if len(fields) == 0:
             raise ValueError("Cannot flatten a struct with no fields")
 
+        struct_array = cast(pa.StructArray, pa.array(self._series))
+
         flat_series = {}
         index = None
         for field in fields:
-            list_array = cast(pa.ListArray, pa.array(self._series.struct.field(field)))
+            list_array = cast(pa.ListArray, struct_array.field(field))
             if index is None:
                 index = np.repeat(self._series.index.values, np.diff(list_array.offsets))
             flat_series[field] = pd.Series(
@@ -94,7 +109,6 @@ class NestSeriesAccessor(MutableMapping):
     @property
     def fields(self) -> list[str]:
         """Names of the nested columns"""
-        # For some reason, .struct.dtypes is cached, so we will use NestedExtensionArray directly
         return self._series.array.field_names
 
     def set_flat_field(self, field: str, value: ArrayLike) -> None:
@@ -176,14 +190,22 @@ class NestSeriesAccessor(MutableMapping):
         pd.Series
             The list-array field.
         """
-        return self._series.struct.field(field)
+        struct_array = cast(pa.StructArray, pa.array(self._series))
+        list_array = struct_array.field(field)
+        return pd.Series(
+            list_array,
+            dtype=pd.ArrowDtype(list_array.type),
+            index=self._series.index,
+            name=field,
+            copy=False,
+        )
 
     def __getitem__(self, key: str | list[str]) -> pd.Series:
         if isinstance(key, list):
             new_array = self._series.array.view_fields(key)
             return pd.Series(new_array, index=self._series.index, name=self._series.name)
 
-        series = self._series.struct.field(key).list.flatten()
+        series = self.get_list_series(key).list.flatten()
         series.index = np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets))
         series.name = key
         return series
@@ -232,9 +254,7 @@ class NestSeriesAccessor(MutableMapping):
         self.pop_field(key)
 
     def __iter__(self) -> Generator[str, None, None]:
-        # For some reason, .struct.dtypes is cached, so we will use NestedExtensionArray directly
         yield from iter(self._series.array.field_names)
 
     def __len__(self) -> int:
-        # For some reason, .struct.dtypes is cached, so we will use NestedExtensionArray directly
         return len(self._series.array.field_names)

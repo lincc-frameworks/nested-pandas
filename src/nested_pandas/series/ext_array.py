@@ -80,6 +80,8 @@ class NestedExtensionArray(ArrowExtensionArray):
         # The previous line may return an iterator, but parent's _from_sequence needs Sequence
         if not isinstance(scalars, Sequence) and isinstance(scalars, Collection):
             scalars = list(scalars)
+        if isinstance(dtype, NestedDtype):
+            dtype = dtype.to_pandas_arrow_dtype()
         return super()._from_sequence(scalars, dtype=dtype, copy=copy)
 
     @staticmethod
@@ -102,6 +104,15 @@ class NestedExtensionArray(ArrowExtensionArray):
                 # compare offsets from the first list array with the current one
                 if not first_list_array.offsets.equals(list_array.offsets):
                     raise ValueError("Offsets of all ListArrays must be the same")
+
+    @classmethod
+    def from_arrow_ext_array(cls, array: ArrowExtensionArray) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Create a NestedExtensionArray from pandas' ArrowExtensionArray"""
+        return cls(array._pa_array)
+
+    def to_arrow_ext_array(self) -> ArrowExtensionArray:
+        """Convert the extension array to pandas' ArrowExtensionArray"""
+        return ArrowExtensionArray(self._pa_array)
 
     def _replace_pa_array(self, pa_array: pa.ChunkedArray, *, validate: bool) -> None:
         if validate:
