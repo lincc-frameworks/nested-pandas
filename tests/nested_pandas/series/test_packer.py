@@ -129,7 +129,7 @@ def test_pack_lists():
     series = packer.pack_lists(packed_df)
 
     for field_name in packed_df.columns:
-        assert_series_equal(series.struct.field(field_name), packed_df[field_name])
+        assert_series_equal(series.nest.get_list_series(field_name), packed_df[field_name])
 
 
 def test_pack_dfs():

@@ -5,6 +5,7 @@ import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from numpy.testing import assert_array_equal
+from pandas.core.arrays import ArrowExtensionArray
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 
@@ -626,3 +627,33 @@ def test_delete_last_field_raises():
 
     with pytest.raises(ValueError):
         ext_array.pop_field("b")
+
+
+def test_from_arrow_ext_array():
+    """Tests that we can create a NestedExtensionArray from an ArrowExtensionArray."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1, 2])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = ArrowExtensionArray(struct_array)
+
+    from_arrow = NestedExtensionArray.from_arrow_ext_array(ext_array)
+    assert_series_equal(pd.Series(ext_array), pd.Series(from_arrow), check_dtype=False)
+
+
+def test_to_arrow_ext_array():
+    """Tests that we can create an ArrowExtensionArray from a NestedExtensionArray."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1, 2])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    to_arrow = ext_array.to_arrow_ext_array()
+    assert_series_equal(pd.Series(ext_array), pd.Series(to_arrow), check_dtype=False)
