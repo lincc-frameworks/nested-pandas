@@ -99,5 +99,5 @@ def test_query():
     nest_queried = base.query("nested.c > 1")
     assert len(nest_queried.nested.nest.to_flat()) == 5
 
-    nest_queried = base.query("nested.c > 1 and nested.d>2")
+    nest_queried = base.query("(nested.c > 1) and (nested.d>2)")
     assert len(nest_queried.nested.nest.to_flat()) == 4
