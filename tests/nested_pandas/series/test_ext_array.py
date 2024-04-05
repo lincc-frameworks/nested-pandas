@@ -3,7 +3,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 from nested_pandas import NestedDtype
-from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar
 from numpy.testing import assert_array_equal
 from pandas.core.arrays import ArrowExtensionArray
 from pandas.testing import assert_frame_equal, assert_series_equal
@@ -74,10 +74,10 @@ def test_series_built_from_dict():
     assert_series_equal(series, pd.Series(desired_ext_array))
 
 
-def test__convert_df_to_pa_scalar():
-    """Test that we can convert a DataFrame to a pyarrow scalar."""
+def test_convert_df_to_pa_scalar():
+    """Test that we can convert a DataFrame to a pyarrow struct_scalar."""
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
-    pa_scalar = NestedExtensionArray._convert_df_to_pa_scalar(df, type=None)
+    pa_scalar = convert_df_to_pa_scalar(df, pa_type=None)
 
     assert pa_scalar == pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
@@ -85,10 +85,10 @@ def test__convert_df_to_pa_scalar():
     )
 
 
-def test__convert_df_to_pa_from_scalar():
-    """Test that we can convert a DataFrame to a pyarrow scalar."""
+def test_convert_df_to_pa_from_scalar():
+    """Test that we can convert a DataFrame to a pyarrow struct_scalar."""
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
-    pa_scalar = NestedExtensionArray._convert_df_to_pa_scalar(df, type=None)
+    pa_scalar = convert_df_to_pa_scalar(df, pa_type=None)
 
     assert pa_scalar == pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
@@ -96,7 +96,7 @@ def test__convert_df_to_pa_from_scalar():
     )
 
 
-def test__convert_df_to_pa_from_series():
+def test__box_pa_array_from_series_of_df():
     """Test that we can convert a DataFrame to a pyarrow scalar."""
     series = pd.Series(
         [
@@ -104,7 +104,7 @@ def test__convert_df_to_pa_from_series():
             pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
         ]
     )
-    list_of_dicts = list(NestedExtensionArray._convert_df_value_to_pa(series, type=None))
+    list_of_dicts = list(NestedExtensionArray._box_pa_array(series, pa_type=None))
 
     desired_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
 
@@ -114,13 +114,13 @@ def test__convert_df_to_pa_from_series():
     ]
 
 
-def test__convert_df_to_pa_from_list():
-    """Test that we can convert a DataFrame to a pyarrow scalar."""
+def test__box_pa_array_from_list_of_df():
+    """Test that we can convert a DataFrame to a pyarrow struct_scalar."""
     list_of_dfs = [
         pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}),
         pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
     ]
-    list_of_dicts = list(NestedExtensionArray._convert_df_value_to_pa(list_of_dfs, type=None))
+    list_of_dicts = list(NestedExtensionArray._box_pa_array(list_of_dfs, pa_type=None))
 
     desired_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
 
@@ -480,7 +480,7 @@ def test_view_fields_raises_for_non_unique_fields():
 
 
 def test_set_flat_field_new_field_scalar():
-    """Tests setting a new field with a scalar value."""
+    """Tests setting a new field with a struct_scalar value."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
