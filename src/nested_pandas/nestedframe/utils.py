@@ -1,9 +1,10 @@
 def _ensure_spacing(expr) -> str:
     """Ensure that an eval string has spacing"""
-    single_val_operators = ["+", "-", "*", "/", "%", ">", "<", "|", "&", "~", "="]  # omit "(" and ")"
-    check_for_doubles = ["=", "/", "*", ">", "<"]
-    double_val_operators = ["==", "//", "**", ">=", "<="]
-    expr_list = [*expr]
+    single_val_operators = {"+", "-", "*", "/", "%", ">", "<", "|", "&", "~", "="}  # omit "(" and ")"
+    check_for_doubles = {"=", "/", "*", ">", "<"}
+    double_val_operators = {"==", "//", "**", ">=", "<="}
+    expr_list = expr
+
     i = 0
     spaced_expr = ""
     while i < len(expr_list):
