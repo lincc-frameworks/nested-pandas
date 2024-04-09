@@ -62,7 +62,7 @@ def read_parquet(
     df = NestedFrame(pd.read_parquet(data, engine, columns))
 
     for pack_key in to_pack:
-        col_subset = pack_columns[pack_key] if pack_columns is not None else None
+        col_subset = pack_columns.get(pack_key, None) if pack_columns is not None else None
         packed = pd.read_parquet(to_pack[pack_key], engine=engine, columns=col_subset)
         df = df.add_nested(packed, pack_key)
 
