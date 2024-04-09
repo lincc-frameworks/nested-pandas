@@ -2,16 +2,22 @@
 from __future__ import annotations
 
 import pandas as pd
+from pandas._libs import lib
+from pandas._typing import (
+    DtypeBackend,
+    FilePath,
+    ReadBuffer,
+)
 
 from .core import NestedFrame
 
 
 def read_parquet(
-    data: str,
+    data: FilePath | ReadBuffer[bytes],
     to_pack: dict,
-    engine: str = "auto",
     columns: list[str] | None = None,
     pack_columns: dict | None = None,
+    dtype_backend: DtypeBackend | lib.NoDefault = lib.no_default,
 ) -> NestedFrame:
     """
     Load a parquet object from a file path and load a set of other
@@ -37,33 +43,32 @@ def read_parquet(
         A dictionary of parquet data paths (same criteria as `data`), where
         each key reflects the desired column name to pack the data into and
         each value reflects the parquet data to pack.
-    engine : {{'auto', 'pyarrow', 'fastparquet'}}, default 'auto'
-        Parquet library to use. If 'auto', then the option
-        ``io.parquet.engine`` is used. The default ``io.parquet.engine``
-        behavior is to try 'pyarrow', falling back to 'fastparquet' if
-        'pyarrow' is unavailable.
-
-        When using the ``'pyarrow'`` engine and no storage options are provided
-        and a filesystem is implemented by both ``pyarrow.fs`` and ``fsspec``
-        (e.g. "s3://"), then the ``pyarrow.fs`` filesystem is attempted first.
-        Use the filesystem keyword with an instantiated fsspec filesystem
-        if you wish to use its implementation.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     pack_columns: dict, default=None
         If not None, selects a set of columns from each keyed nested parquet
         object to read from the nested files.
+    dtype_backend : {{'numpy_nullable', 'pyarrow'}}, default 'numpy_nullable'
+        Back-end data type applied to the resultant :class:`DataFrame`
+        (still experimental). Behaviour is as follows:
+
+        * ``"numpy_nullable"``: returns nullable-dtype-backed :class:`DataFrame`
+          (default).
+        * ``"pyarrow"``: returns pyarrow-backed nullable :class:`ArrowDtype`
+          DataFrame.
 
     Returns
     -------
     NestedFrame
     """
 
-    df = NestedFrame(pd.read_parquet(data, engine, columns))
+    df = NestedFrame(pd.read_parquet(data, engine="pyarrow", columns=columns, dtype_backend=dtype_backend))
 
     for pack_key in to_pack:
         col_subset = pack_columns.get(pack_key, None) if pack_columns is not None else None
-        packed = pd.read_parquet(to_pack[pack_key], engine=engine, columns=col_subset)
+        packed = pd.read_parquet(
+            to_pack[pack_key], engine="pyarrow", columns=col_subset, dtype_backend=dtype_backend
+        )
         df = df.add_nested(packed, pack_key)
 
     return df
