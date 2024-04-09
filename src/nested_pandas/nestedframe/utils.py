@@ -15,7 +15,7 @@ def _ensure_spacing(expr) -> str:
                 if "".join(expr_list[i : i + 2]) in double_val_operators:
                     if spaced_expr[-1] != " ":
                         spaced_expr += " "
-                    spaced_expr += "".join(expr_list[i : i + 2])
+                    spaced_expr += expr_list[i : i + 2]
                     if expr_list[i + 2] != " ":
                         spaced_expr += " "
                     i += 1  # skip ahead an extra time
