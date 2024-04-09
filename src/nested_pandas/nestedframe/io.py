@@ -26,6 +26,7 @@ def read_parquet(
     Docstring based on the Pandas equivalent.
 
     #TODO after MVP: Include full kwarg-set
+    #TODO: Switch dtype backend default?
 
     Parameters
     ----------
