@@ -111,6 +111,7 @@ def test_name_vs_construct_from_string(fields):
         "nested<int64>",  # no field name specified
         "nested<[int64]>",  # no field name specified
         "nested<a:[int64]>",  # separator must be ": " with space
+        "nested<a: [int64],b: [float32]>",  # separator must be ", " with space
         "nested<a: int64>",  # missed [] - nested list
         "nested<a: [complex64]>",  # not an arrow type
         "nested<a: [list<item: double>]>",  # complex arrow types are not supported

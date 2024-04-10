@@ -79,11 +79,6 @@ class NestedDtype(ExtensionDtype):
         fields_str = string.removeprefix("nested<").removesuffix(">")
 
         field_strings = fields_str.split(", ")
-        if len(field_strings) == 0:
-            raise TypeError(
-                "Not a valid nested type string, expected at least a single field inside "
-                "'nested<x: [type], ...>'"
-            )
 
         fields = {}
         for field_string in field_strings:
