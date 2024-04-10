@@ -198,6 +198,7 @@ class NestSeriesAccessor(MutableMapping):
         flat_array = list_array.flatten()
         return pd.Series(
             flat_array,
+            dtype=pd.ArrowDtype(flat_array.type),
             index=np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets)),
             name=field,
             copy=False,
@@ -231,10 +232,7 @@ class NestSeriesAccessor(MutableMapping):
             new_array = self._series.array.view_fields(key)
             return pd.Series(new_array, index=self._series.index, name=self._series.name)
 
-        series = self.get_list_series(key).list.flatten()
-        series.index = np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets))
-        series.name = key
-        return series
+        return self.get_flat_series(key)
 
     def __setitem__(self, key: str, value: ArrayLike) -> None:
         # TODO: we can be much-much smarter about the performance here
