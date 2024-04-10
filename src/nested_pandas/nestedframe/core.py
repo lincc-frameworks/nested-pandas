@@ -1,7 +1,10 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+from pandas._libs import lib
+from pandas._typing import AnyAll, Axis, IndexLabel
 
 from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
@@ -154,3 +157,134 @@ class NestedFrame(pd.DataFrame):
                 # TODO: does not work with queries that empty the dataframe
                 result[expr] = result[expr].nest.query_flat(exprs_to_use[expr])
         return result
+
+    def dropna(
+        self,
+        *,
+        axis: Axis = 0,
+        how: AnyAll | lib.NoDefault = lib.no_default,
+        thresh: int | lib.NoDefault = lib.no_default,
+        on_nested: bool = False,
+        subset: IndexLabel | None = None,
+        inplace: bool = False,
+        ignore_index: bool = False,
+    ) -> NestedFrame | None:
+        """
+        Remove missing values.
+
+        Parameters
+        ----------
+        axis : {0 or 'index', 1 or 'columns'}, default 0
+            Determine if rows or columns which contain missing values are
+            removed.
+
+            * 0, or 'index' : Drop rows which contain missing values.
+            * 1, or 'columns' : Drop columns which contain missing value.
+
+            Only a single axis is allowed.
+
+        how : {'any', 'all'}, default 'any'
+            Determine if row or column is removed from DataFrame, when we have
+            at least one NA or all NA.
+
+            * 'any' : If any NA values are present, drop that row or column.
+            * 'all' : If all values are NA, drop that row or column.
+        thresh : int, optional
+            Require that many non-NA values. Cannot be combined with how.
+        on_nested : str or bool, optional
+            If not False, applies the call to the nested dataframe in the
+            column with label equal to the provided string. If specified,
+            the nested dataframe should align with any columns given in
+            `subset`.
+        subset : column label or sequence of labels, optional
+            Labels along other axis to consider, e.g. if you are dropping rows
+            these would be a list of columns to include.
+
+            Access nested columns using `nested_df.nested_col` (where
+            `nested_df` refers to a particular nested dataframe and
+            `nested_col` is a column of that nested dataframe).
+        inplace : bool, default False
+            Whether to modify the DataFrame rather than creating a new one.
+        ignore_index : bool, default ``False``
+            If ``True``, the resulting axis will be labeled 0, 1, …, n - 1.
+
+            .. versionadded:: 2.0.0
+
+        Returns
+        -------
+        DataFrame or None
+            DataFrame with NA entries dropped from it or None if ``inplace=True``.
+
+        Notes
+        -----
+        Operations that target a particular nested structure return a dataframe
+        with rows of that particular nested structure affected.
+        """
+
+        # determine target dataframe
+
+        # first check the subset kwarg input
+        subset_target = []
+        if subset:
+            if type(subset) is str:
+                subset = [subset]
+            for col in subset:
+                col = col.split(".")[0] if "." in col else col
+                if col in self.nested_columns:
+                    subset_target.append(col)
+                elif col in self.columns:
+                    subset_target.append("base")
+
+            # Check for 1 target
+            subset_target = np.unique(subset_target)
+            if len(subset_target) > 1:  # prohibit multi-target operations
+                raise ValueError(
+                    f"Targeted multiple nested structures ({target}), write one command per target dataframe"
+                )
+            elif len(subset_target) == 0:
+                raise ValueError(
+                    "Provided base columns or nested layer did not match any found in the nestedframe"
+                )
+            subset_target = subset_target[0]
+
+        # Next check the on_nested kwarg input
+        # import pdb;pdb.set_trace()
+        if on_nested:
+            if on_nested not in self.nested_columns:
+                raise ValueError("Provided nested layer not found in nested dataframes")
+
+        # Resolve target layer
+        target = "base"
+        if on_nested and subset_target:
+            if on_nested != subset_target:
+                raise ValueError(
+                    f"Provided on_nested={on_nested}, but subset columns are from {subset_target}. Make sure these are aligned or just use subset."
+                )
+            else:
+                target = subset_target
+        elif on_nested:
+            target = on_nested
+        elif subset_target:
+            target = subset_target
+
+        if target == "base":
+            return super().dropna(
+                axis=axis, how=how, thresh=thresh, subset=subset, inplace=inplace, ignore_index=ignore_index
+            )
+        else:
+            if subset is not None:
+                subset = [col.split(".")[-1] for col in subset]
+            # import pdb;pdb.set_trace()
+            self[target] = packer.pack_flat(
+                self[target]
+                .nest.to_flat()
+                .dropna(
+                    axis=axis,
+                    how=how,
+                    thresh=thresh,
+                    subset=subset,
+                    inplace=inplace,
+                    ignore_index=ignore_index,
+                )
+            )
+            return self
