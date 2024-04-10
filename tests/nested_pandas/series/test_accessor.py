@@ -4,6 +4,7 @@ import pyarrow as pa
 import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.packer import pack_flat
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
@@ -503,3 +504,28 @@ def test___len__():
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
     assert len(series.nest) == 2
+
+
+def test_to_flat_dropna():
+    """Test that to_flat() gives a valid dataframe, based on GH22
+
+    https://github.com/lincc-frameworks/nested-pandas/issues/22
+    """
+
+    flat = pd.DataFrame(
+        data={"c": [0.0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    nested = pack_flat(flat, name="nested")
+
+    new_flat = nested.nest.to_flat()
+    # .dropna() was failing in the issue report
+    filtered = new_flat.dropna(subset="c")
+
+    assert_frame_equal(
+        filtered,
+        pd.DataFrame(
+            data={"c": [0.0, 2, 4, 1, 3, 1, 4, 1], "d": [5, 4, 7, 5, 1, 9, 3, 4]},
+            index=[0, 0, 0, 1, 1, 2, 2, 2],
+        ),
+    )
