@@ -131,6 +131,11 @@ def test_dropna():
     assert len(dn_hierarchical) == 3
     assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
 
+    # Test hierarchical column subset and on_nested
+    dn_hierarchical = base.dropna(on_nested="nested", subset="nested.c")
+    assert len(dn_hierarchical) == 3
+    assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
+
 
 def test_dropna_errors():
     """Test that the various dropna exceptions trigger"""
