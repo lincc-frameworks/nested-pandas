@@ -374,7 +374,7 @@ def test___getitem___multiple_fields():
     )
 
 
-def test___setitem___with_flat():
+def test___setitem__():
     """Test that the .nest["field"] = ... works for a single field."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -398,8 +398,8 @@ def test___setitem___with_flat():
     )
 
 
-def test___setitem___with_list():
-    """Test that the .nest["field"] = ... works for a single field."""
+def test___setitem___raises_for_wrong_length():
+    """Test that the .nest["field"] = ... raises for a wrong length."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -409,56 +409,30 @@ def test___setitem___with_list():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    series.nest["c"] = [["a", "b", "c"], ["d", "e", "f"]]
-
-    assert_series_equal(
-        series.nest["c"],
-        pd.Series(
-            data=["a", "b", "c", "d", "e", "f"],
-            index=[0, 0, 0, 1, 1, 1],
-            name="c",
-            dtype=pd.ArrowDtype(pa.string()),
-        ),
-    )
+    with pytest.raises(ValueError):
+        series.nest["a"] = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
 
-def test___setited___raises_for_ambiguous_lengths_1():
-    """Test that the .nest["field"] = ... raises for ambiguous lengths of the right hand side."""
+def test___setitem___raises_for_wrong_index():
+    """Test that the .nest["field"] = ... raises for a wrong index."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array(
-                [
-                    np.array(
-                        [
-                            1.0,
-                        ]
-                    ),
-                    np.array([2.0]),
-                ]
-            ),
-            pa.array([-np.array([6.0]), -np.array([5.0])]),
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
         ],
         names=["a", "b"],
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    with pytest.raises(ValueError):
-        series.nest["c"] = ["a", "b", "c"]
-
-
-def test___setited___raises_for_ambiguous_lengths_2():
-    """Test that the .nest["field"] = ... raises for ambiguous lengths of the right hand side."""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([1.0, 2.0]), np.array([])]),
-            pa.array([-np.array([6.0, 5.0]), -np.array([])]),
-        ],
-        names=["a", "b"],
+    flat_series = pd.Series(
+        data=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        index=[0, 1, 1, 1, 1, 1],
+        name="a",
+        dtype=pd.ArrowDtype(pa.float64()),
     )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
     with pytest.raises(ValueError):
-        series.nest["c"] = ["a", "b", "c"]
+        series.nest["a"] = flat_series
 
 
 def test___delitem__():
