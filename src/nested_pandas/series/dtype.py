@@ -70,32 +70,27 @@ class NestedDtype(ExtensionDtype):
 
         Raises
         ------
-        ValueError
+        TypeError
             If the string is not a valid nested type string or if the element types
             are parametric pyarrow types.
         """
         if not string.startswith("nested<") or not string.endswith(">"):
-            raise ValueError("Not a valid nested type string, expected 'nested<...>'")
+            raise TypeError("Not a valid nested type string, expected 'nested<...>'")
         fields_str = string.removeprefix("nested<").removesuffix(">")
 
         field_strings = fields_str.split(", ")
-        if len(field_strings) == 0:
-            raise ValueError(
-                "Not a valid nested type string, expected at least a single field inside "
-                "'nested<x: [type], ...>'"
-            )
 
         fields = {}
         for field_string in field_strings:
             try:
                 field_name, field_type = field_string.split(": ", maxsplit=1)
             except ValueError as e:
-                raise ValueError(
+                raise TypeError(
                     "Not a valid nested type string, expected 'nested<x: [type], ...>', got invalid field "
                     f"string '{field_string}'"
                 ) from e
             if not field_type.startswith("[") or not field_type.endswith("]"):
-                raise ValueError(
+                raise TypeError(
                     "Not a valid nested type string, expected 'nested<x: [type], ...>', got invalid field "
                     f"type string '{field_type}'"
                 )
@@ -105,7 +100,7 @@ class NestedDtype(ExtensionDtype):
             try:
                 pa_value_type = pa.type_for_alias(value_type)
             except ValueError as e:
-                raise ValueError(
+                raise TypeError(
                     f"Parsing pyarrow specific parameters in the string is not supported yet: {value_type}. "
                     "Please use NestedDtype() or NestedDtype.from_fields() instead."
                 ) from e

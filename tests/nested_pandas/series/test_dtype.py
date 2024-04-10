@@ -99,6 +99,30 @@ def test_name_vs_construct_from_string(fields):
     assert dtype == NestedDtype.construct_from_string(dtype.name)
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        "float",  # not a nested type
+        "nested(f: [int64])",  # must be <> instead
+        "ts<in64>",  # 'ts' was a previous name, now we use 'nested'
+        "nested",  # no type specified
+        "nested<a: [int64]",  # missed closing bracket
+        "nested<>",  # no field specified
+        "nested<int64>",  # no field name specified
+        "nested<[int64]>",  # no field name specified
+        "nested<a:[int64]>",  # separator must be ": " with space
+        "nested<a: [int64],b: [float32]>",  # separator must be ", " with space
+        "nested<a: int64>",  # missed [] - nested list
+        "nested<a: [complex64]>",  # not an arrow type
+        "nested<a: [list<item: double>]>",  # complex arrow types are not supported
+    ],
+)
+def test_construct_from_string_raises(s):
+    """Test that we raise an error when constructing NestedDtype from invalid string."""
+    with pytest.raises(TypeError):
+        NestedDtype.construct_from_string(s)
+
+
 def test_construct_array_type():
     """Test that NestedDtype.construct_array_type() returns NestedExtensionArray."""
     assert NestedDtype.construct_array_type() is NestedExtensionArray
