@@ -226,7 +226,7 @@ class NestedFrame(pd.DataFrame):
         # first check the subset kwarg input
         subset_target = []
         if subset:
-            if type(subset) is str:
+            if isinstance(subset, str):
                 subset = [subset]
             for col in subset:
                 col = col.split(".")[0] if "." in col else col
@@ -239,7 +239,7 @@ class NestedFrame(pd.DataFrame):
             subset_target = np.unique(subset_target)
             if len(subset_target) > 1:  # prohibit multi-target operations
                 raise ValueError(
-                    f"Targeted multiple nested structures ({target}), write one command per target dataframe"
+                    f"Targeted multiple nested structures ({subset_target}), write one command per target dataframe"  # noqa
                 )
             elif len(subset_target) == 0:
                 raise ValueError(
@@ -248,24 +248,22 @@ class NestedFrame(pd.DataFrame):
             subset_target = subset_target[0]
 
         # Next check the on_nested kwarg input
-        # import pdb;pdb.set_trace()
-        if on_nested:
-            if on_nested not in self.nested_columns:
-                raise ValueError("Provided nested layer not found in nested dataframes")
+        if on_nested not in self.nested_columns:
+            raise ValueError("Provided nested layer not found in nested dataframes")
 
         # Resolve target layer
         target = "base"
         if on_nested and subset_target:
             if on_nested != subset_target:
                 raise ValueError(
-                    f"Provided on_nested={on_nested}, but subset columns are from {subset_target}. Make sure these are aligned or just use subset."
+                    f"Provided on_nested={on_nested}, but subset columns are from {subset_target}. Make sure these are aligned or just use subset."  # noqa
                 )
             else:
                 target = subset_target
         elif on_nested:
-            target = on_nested
+            target = str(on_nested)
         elif subset_target:
-            target = subset_target
+            target = str(subset_target)
 
         if target == "base":
             return super().dropna(
@@ -274,7 +272,6 @@ class NestedFrame(pd.DataFrame):
         else:
             if subset is not None:
                 subset = [col.split(".")[-1] for col in subset]
-            # import pdb;pdb.set_trace()
             self[target] = packer.pack_flat(
                 self[target]
                 .nest.to_flat()
