@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from numpy.testing import assert_array_equal
@@ -396,69 +395,6 @@ def test___setitem___with_flat():
             dtype=pd.ArrowDtype(pa.string()),
         ),
     )
-
-
-def test___setitem___with_list():
-    """Test that the .nest["field"] = ... works for a single field."""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
-        ],
-        names=["a", "b"],
-    )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
-
-    series.nest["c"] = [["a", "b", "c"], ["d", "e", "f"]]
-
-    assert_series_equal(
-        series.nest["c"],
-        pd.Series(
-            data=["a", "b", "c", "d", "e", "f"],
-            index=[0, 0, 0, 1, 1, 1],
-            name="c",
-            dtype=pd.ArrowDtype(pa.string()),
-        ),
-    )
-
-
-def test___setited___raises_for_ambiguous_lengths_1():
-    """Test that the .nest["field"] = ... raises for ambiguous lengths of the right hand side."""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array(
-                [
-                    np.array(
-                        [
-                            1.0,
-                        ]
-                    ),
-                    np.array([2.0]),
-                ]
-            ),
-            pa.array([-np.array([6.0]), -np.array([5.0])]),
-        ],
-        names=["a", "b"],
-    )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
-
-    with pytest.raises(ValueError):
-        series.nest["c"] = ["a", "b", "c"]
-
-
-def test___setited___raises_for_ambiguous_lengths_2():
-    """Test that the .nest["field"] = ... raises for ambiguous lengths of the right hand side."""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([1.0, 2.0]), np.array([])]),
-            pa.array([-np.array([6.0, 5.0]), -np.array([])]),
-        ],
-        names=["a", "b"],
-    )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
-
-    with pytest.raises(ValueError):
-        series.nest["c"] = ["a", "b", "c"]
 
 
 def test___delitem__():

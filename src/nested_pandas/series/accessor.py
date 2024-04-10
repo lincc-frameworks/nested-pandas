@@ -177,6 +177,32 @@ class NestSeriesAccessor(MutableMapping):
             return pd.Series([], dtype=self._series.dtype)
         return pack_sorted_df_into_struct(flat)
 
+    def get_flat_series(self, field: str) -> pd.Series:
+        """Get the flat-array field as a Series
+
+        Parameters
+        ----------
+        field : str
+            Name of the field to get.
+
+        Returns
+        -------
+        pd.Series
+            The flat-array field.
+        """
+
+        # TODO: we should make proper missed values handling here
+
+        struct_array = cast(pa.StructArray, pa.array(self._series))
+        list_array = cast(pa.ListArray, struct_array.field(field))
+        flat_array = list_array.flatten()
+        return pd.Series(
+            flat_array,
+            index=np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets)),
+            name=field,
+            copy=False,
+        )
+
     def get_list_series(self, field: str) -> pd.Series:
         """Get the list-array field as a Series
 
@@ -214,41 +240,30 @@ class NestSeriesAccessor(MutableMapping):
         # TODO: we can be much-much smarter about the performance here
         # TODO: think better about underlying pa.ChunkArray in both self._series.array and value
 
+        ndim = np.ndim(value)
+
         # Everything is empty, do nothing
-        if len(self._series) == 0 and np.ndim(value) != 0:
-            array = pa.array(value)
+        if len(self._series) == 0 and ndim != 0:
+            array = pa.array(value, from_pandas=True)
             if len(array) == 0:
                 return
 
-        if len(self._series) == self.flat_length:
-            raise ValueError(
-                f"Cannot use `.nest[{key}] = value` when the series has the same count of 'list' rows as"
-                "'flat' rows, because it is ambiguous whether the input is a 'flat' or a 'list' array. Use"
-                "`.nest.set_flat_field()` or `.nest.set_list_field()` instead."
-            )
-
         # Set single value for all rows
-        if np.ndim(value) == 0:
+        if ndim == 0:
             self.set_flat_field(key, value)
             return
 
-        pa_array = pa.array(value)
+        pa_array = pa.array(value, from_pandas=True)
 
         # Input is a flat array of values
-        if len(pa_array) == self.flat_length:
-            self.set_flat_field(key, pa_array)
-            return
+        if len(pa_array) != self.flat_length:
+            ValueError(
+                f"Cannot set field {key} with value of length {len(pa_array)}, the value is expected to be "
+                f"either a scalar, a 'flat' array of length {self.flat_length}, or a 'list' array of length "
+                f"{len(self._series)}."
+            )
 
-        # Input is a list-array of values
-        if len(pa_array) == len(self._series):
-            self.set_list_field(key, pa_array)
-            return
-
-        raise ValueError(
-            f"Cannot set field {key} with value of length {len(pa_array)}, the value is expected to be "
-            f"either a scalar, a 'flat' array of length {self.flat_length}, or a 'list' array of length "
-            f"{len(self._series)}."
-        )
+        self.set_flat_field(key, pa_array)
 
     def __delitem__(self, key: str) -> None:
         self.pop_field(key)
