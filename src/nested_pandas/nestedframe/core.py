@@ -228,12 +228,15 @@ class NestedFrame(pd.DataFrame):
         if subset:
             if isinstance(subset, str):
                 subset = [subset]
+
             for col in subset:
                 col = col.split(".")[0] if "." in col else col
                 if col in self.nested_columns:
                     subset_target.append(col)
                 elif col in self.columns:
                     subset_target.append("base")
+
+            # import pdb;pdb.set_trace()
 
             # Check for 1 target
             subset_target = np.unique(subset_target)
@@ -248,7 +251,7 @@ class NestedFrame(pd.DataFrame):
             subset_target = subset_target[0]
 
         # Next check the on_nested kwarg input
-        if on_nested not in self.nested_columns:
+        if on_nested and on_nested not in self.nested_columns:
             raise ValueError("Provided nested layer not found in nested dataframes")
 
         # Resolve target layer

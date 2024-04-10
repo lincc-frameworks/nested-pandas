@@ -130,3 +130,32 @@ def test_dropna():
     dn_hierarchical = base.dropna(subset="nested.c")
     assert len(dn_hierarchical) == 3
     assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
+
+
+def test_dropna_errors():
+    """Test that the various dropna exceptions trigger"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.NaN, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    # Test multi-target
+    with pytest.raises(ValueError):
+        base.dropna(subset=["b", "nested.c"])
+
+    # Test no-target
+    with pytest.raises(ValueError):
+        base.dropna(subset=["not_nested.c"])
+
+    # Test bad on-nested value
+    with pytest.raises(ValueError):
+        base.dropna(on_nested="not_nested")
+
+    # Test on-nested + subset disagreement
+    with pytest.raises(ValueError):
+        base.dropna(on_nested="nested", subset=["b"])
