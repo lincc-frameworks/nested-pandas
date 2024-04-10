@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from numpy.testing import assert_array_equal
@@ -373,7 +374,7 @@ def test___getitem___multiple_fields():
     )
 
 
-def test___setitem___with_flat():
+def test___setitem__():
     """Test that the .nest["field"] = ... works for a single field."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -395,6 +396,43 @@ def test___setitem___with_flat():
             dtype=pd.ArrowDtype(pa.string()),
         ),
     )
+
+
+def test___setitem___raises_for_wrong_length():
+    """Test that the .nest["field"] = ... raises for a wrong length."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    with pytest.raises(ValueError):
+        series.nest["a"] = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+
+
+def test___setitem___raises_for_wrong_index():
+    """Test that the .nest["field"] = ... raises for a wrong index."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    flat_series = pd.Series(
+        data=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        index=[0, 1, 1, 1, 1, 1],
+        name="a",
+        dtype=pd.ArrowDtype(pa.float64()),
+    )
+
+    with pytest.raises(ValueError):
+        series.nest["a"] = flat_series
 
 
 def test___delitem__():
