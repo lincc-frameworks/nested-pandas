@@ -230,7 +230,7 @@ class NestedFrame(pd.DataFrame):
                 subset = [subset]
 
             for col in subset:
-                col = col.split(".")[0] if "." in col else col
+                col = col.split(".")[0]
                 if col in self.nested_columns:
                     subset_target.append(col)
                 elif col in self.columns:
