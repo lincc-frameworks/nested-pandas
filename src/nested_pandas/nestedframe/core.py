@@ -236,8 +236,6 @@ class NestedFrame(pd.DataFrame):
                 elif col in self.columns:
                     subset_target.append("base")
 
-            # import pdb;pdb.set_trace()
-
             # Check for 1 target
             subset_target = np.unique(subset_target)
             if len(subset_target) > 1:  # prohibit multi-target operations
