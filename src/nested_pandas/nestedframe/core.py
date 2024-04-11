@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from pandas._libs import lib
 from pandas._typing import AnyAll, Axis, IndexLabel
+from pandas.api.extensions import no_default
 
 from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
@@ -206,8 +207,8 @@ class NestedFrame(pd.DataFrame):
         self,
         *,
         axis: Axis = 0,
-        how: AnyAll | lib.NoDefault = lib.no_default,
-        thresh: int | lib.NoDefault = lib.no_default,
+        how: AnyAll | lib.NoDefault = no_default,
+        thresh: int | lib.NoDefault = no_default,
         on_nested: bool = False,
         subset: IndexLabel | None = None,
         inplace: bool = False,
@@ -279,24 +280,22 @@ class NestedFrame(pd.DataFrame):
         if subset is not None:
             subset = [col.split(".")[-1] for col in subset]
         if inplace:
-            self[target] = packer.pack_flat(
-                self[target]
-                .nest.to_flat()
-                .dropna(
-                    axis=axis,
-                    how=how,
-                    thresh=thresh,
-                    subset=subset,
-                    inplace=inplace,
-                    ignore_index=ignore_index,
-                )
+            target_flat = self[target].nest.to_flat()
+            target_flat.dropna(
+                axis=axis,
+                how=how,
+                thresh=thresh,
+                subset=subset,
+                inplace=inplace,
+                ignore_index=ignore_index,
             )
+            self[target] = packer.pack_flat(target_flat)
             return self
+        # Or if not inplace
         new_df = self.copy()
         new_df[target] = packer.pack_flat(
             new_df[target]
             .nest.to_flat()
-            .copy()
             .dropna(
                 axis=axis,
                 how=how,

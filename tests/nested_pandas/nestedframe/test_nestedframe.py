@@ -137,10 +137,10 @@ def test_dropna():
     assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
 
 
-def test_dropna_inplace():
+def test_dropna_inplace_base():
     """Test in-place behavior of dropna"""
 
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.NaN, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [np.NaN, 4, 6]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
         data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
@@ -156,6 +156,19 @@ def test_dropna_inplace():
     # Test inplace=True with base layer
     base.dropna(subset=["b"], inplace=True)
     assert dn_base.equals(base)
+
+
+def test_dropna_inplace_nested():
+    """Test in-place behavior of dropna"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [np.NaN, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
 
     # Test inplace=False with nested layer
     dn_base = base.dropna(on_nested="nested", inplace=False)
