@@ -1,7 +1,11 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+from pandas._libs import lib
+from pandas._typing import AnyAll, Axis, IndexLabel
+from pandas.api.extensions import no_default
 
 from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
@@ -154,3 +158,155 @@ class NestedFrame(pd.DataFrame):
                 # TODO: does not work with queries that empty the dataframe
                 result[expr] = result[expr].nest.query_flat(exprs_to_use[expr])
         return result
+
+    def _resolve_dropna_target(self, on_nested, subset):
+        """resolves the target layer for a given set of dropna kwargs"""
+
+        nested_cols = self.nested_columns
+        columns = self.columns
+
+        # first check the subset kwarg input
+        subset_target = []
+        if subset:
+            if isinstance(subset, str):
+                subset = [subset]
+
+            for col in subset:
+                col = col.split(".")[0]
+                if col in nested_cols:
+                    subset_target.append(col)
+                elif col in columns:
+                    subset_target.append("base")
+                else:
+                    raise ValueError(f"Column name {col} not found in any base or nested columns")
+
+            # Check for 1 target
+            subset_target = np.unique(subset_target)
+            if len(subset_target) > 1:  # prohibit multi-target operations
+                raise ValueError(
+                    f"Targeted multiple nested structures ({subset_target}), write one command per target dataframe"  # noqa
+                )
+            subset_target = str(subset_target[0])
+
+        # Next check the on_nested kwarg input
+        if on_nested and on_nested not in nested_cols:
+            raise ValueError("Provided nested layer not found in nested dataframes")
+
+        # Resolve target layer
+        target = "base"
+        if on_nested and subset_target:
+            if on_nested != subset_target:
+                raise ValueError(
+                    f"Provided on_nested={on_nested}, but subset columns are from {subset_target}. Make sure these are aligned or just use subset."  # noqa
+                )
+            else:
+                target = subset_target
+        elif on_nested:
+            target = str(on_nested)
+        elif subset_target:
+            target = str(subset_target)
+        return target, subset
+
+    def dropna(
+        self,
+        *,
+        axis: Axis = 0,
+        how: AnyAll | lib.NoDefault = no_default,
+        thresh: int | lib.NoDefault = no_default,
+        on_nested: bool = False,
+        subset: IndexLabel | None = None,
+        inplace: bool = False,
+        ignore_index: bool = False,
+    ) -> NestedFrame | None:
+        """
+        Remove missing values for one layer of the NestedFrame.
+
+        Parameters
+        ----------
+        axis : {0 or 'index', 1 or 'columns'}, default 0
+            Determine if rows or columns which contain missing values are
+            removed.
+
+            * 0, or 'index' : Drop rows which contain missing values.
+            * 1, or 'columns' : Drop columns which contain missing value.
+
+            Only a single axis is allowed.
+
+        how : {'any', 'all'}, default 'any'
+            Determine if row or column is removed from DataFrame, when we have
+            at least one NA or all NA.
+
+            * 'any' : If any NA values are present, drop that row or column.
+            * 'all' : If all values are NA, drop that row or column.
+        thresh : int, optional
+            Require that many non-NA values. Cannot be combined with how.
+        on_nested : str or bool, optional
+            If not False, applies the call to the nested dataframe in the
+            column with label equal to the provided string. If specified,
+            the nested dataframe should align with any columns given in
+            `subset`.
+        subset : column label or sequence of labels, optional
+            Labels along other axis to consider, e.g. if you are dropping rows
+            these would be a list of columns to include.
+
+            Access nested columns using `nested_df.nested_col` (where
+            `nested_df` refers to a particular nested dataframe and
+            `nested_col` is a column of that nested dataframe).
+        inplace : bool, default False
+            Whether to modify the DataFrame rather than creating a new one.
+        ignore_index : bool, default ``False``
+            If ``True``, the resulting axis will be labeled 0, 1, …, n - 1.
+
+            .. versionadded:: 2.0.0
+
+        Returns
+        -------
+        DataFrame or None
+            DataFrame with NA entries dropped from it or None if ``inplace=True``.
+
+        Notes
+        -----
+        Operations that target a particular nested structure return a dataframe
+        with rows of that particular nested structure affected.
+
+        Values for `on_nested` and `subset` should be consistent in pointing
+        to a single layer, multi-layer operations are not supported at this
+        time.
+        """
+
+        # determine target dataframe
+        target, subset = self._resolve_dropna_target(on_nested, subset)
+
+        if target == "base":
+            return super().dropna(
+                axis=axis, how=how, thresh=thresh, subset=subset, inplace=inplace, ignore_index=ignore_index
+            )
+        if subset is not None:
+            subset = [col.split(".")[-1] for col in subset]
+        if inplace:
+            target_flat = self[target].nest.to_flat()
+            target_flat.dropna(
+                axis=axis,
+                how=how,
+                thresh=thresh,
+                subset=subset,
+                inplace=inplace,
+                ignore_index=ignore_index,
+            )
+            self[target] = packer.pack_flat(target_flat)
+            return self
+        # Or if not inplace
+        new_df = self.copy()
+        new_df[target] = packer.pack_flat(
+            new_df[target]
+            .nest.to_flat()
+            .dropna(
+                axis=axis,
+                how=how,
+                thresh=thresh,
+                subset=subset,
+                inplace=inplace,
+                ignore_index=ignore_index,
+            )
+        )
+        return new_df
