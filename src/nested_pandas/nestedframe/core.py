@@ -158,6 +158,50 @@ class NestedFrame(pd.DataFrame):
                 result[expr] = result[expr].nest.query_flat(exprs_to_use[expr])
         return result
 
+    def _resolve_dropna_target(self, on_nested, subset):
+        """resolves the target layer for a given set of dropna kwargs"""
+        # first check the subset kwarg input
+        subset_target = []
+        if subset:
+            if isinstance(subset, str):
+                subset = [subset]
+
+            for col in subset:
+                col = col.split(".")[0]
+                if col in self.nested_columns:
+                    subset_target.append(col)
+                elif col in self.columns:
+                    subset_target.append("base")
+                else:
+                    raise ValueError(f"Column name {col} not found in any base or nested columns")
+
+            # Check for 1 target
+            subset_target = np.unique(subset_target)
+            if len(subset_target) > 1:  # prohibit multi-target operations
+                raise ValueError(
+                    f"Targeted multiple nested structures ({subset_target}), write one command per target dataframe"  # noqa
+                )
+            subset_target = str(subset_target[0])
+
+        # Next check the on_nested kwarg input
+        if on_nested and on_nested not in self.nested_columns:
+            raise ValueError("Provided nested layer not found in nested dataframes")
+
+        # Resolve target layer
+        target = "base"
+        if on_nested and subset_target:
+            if on_nested != subset_target:
+                raise ValueError(
+                    f"Provided on_nested={on_nested}, but subset columns are from {subset_target}. Make sure these are aligned or just use subset."  # noqa
+                )
+            else:
+                target = subset_target
+        elif on_nested:
+            target = str(on_nested)
+        elif subset_target:
+            target = str(subset_target)
+        return target, subset
+
     def dropna(
         self,
         *,
@@ -170,7 +214,7 @@ class NestedFrame(pd.DataFrame):
         ignore_index: bool = False,
     ) -> NestedFrame | None:
         """
-        Remove missing values.
+        Remove missing values for one layer of the NestedFrame.
 
         Parameters
         ----------
@@ -219,60 +263,22 @@ class NestedFrame(pd.DataFrame):
         -----
         Operations that target a particular nested structure return a dataframe
         with rows of that particular nested structure affected.
+
+        Values for `on_nested` and `subset` should be consistent in pointing
+        to a single layer, multi-layer operations are not supported at this
+        time.
         """
 
         # determine target dataframe
-
-        # first check the subset kwarg input
-        subset_target = []
-        if subset:
-            if isinstance(subset, str):
-                subset = [subset]
-
-            for col in subset:
-                col = col.split(".")[0]
-                if col in self.nested_columns:
-                    subset_target.append(col)
-                elif col in self.columns:
-                    subset_target.append("base")
-
-            # Check for 1 target
-            subset_target = np.unique(subset_target)
-            if len(subset_target) > 1:  # prohibit multi-target operations
-                raise ValueError(
-                    f"Targeted multiple nested structures ({subset_target}), write one command per target dataframe"  # noqa
-                )
-            elif len(subset_target) == 0:
-                raise ValueError(
-                    "Provided base columns or nested layer did not match any found in the nestedframe"
-                )
-            subset_target = subset_target[0]
-
-        # Next check the on_nested kwarg input
-        if on_nested and on_nested not in self.nested_columns:
-            raise ValueError("Provided nested layer not found in nested dataframes")
-
-        # Resolve target layer
-        target = "base"
-        if on_nested and subset_target:
-            if on_nested != subset_target:
-                raise ValueError(
-                    f"Provided on_nested={on_nested}, but subset columns are from {subset_target}. Make sure these are aligned or just use subset."  # noqa
-                )
-            else:
-                target = subset_target
-        elif on_nested:
-            target = str(on_nested)
-        elif subset_target:
-            target = str(subset_target)
+        target, subset = self._resolve_dropna_target(on_nested, subset)
 
         if target == "base":
             return super().dropna(
                 axis=axis, how=how, thresh=thresh, subset=subset, inplace=inplace, ignore_index=ignore_index
             )
-        else:
-            if subset is not None:
-                subset = [col.split(".")[-1] for col in subset]
+        if subset is not None:
+            subset = [col.split(".")[-1] for col in subset]
+        if inplace:
             self[target] = packer.pack_flat(
                 self[target]
                 .nest.to_flat()
@@ -286,3 +292,18 @@ class NestedFrame(pd.DataFrame):
                 )
             )
             return self
+        new_df = self.copy()
+        new_df[target] = packer.pack_flat(
+            new_df[target]
+            .nest.to_flat()
+            .copy()
+            .dropna(
+                axis=axis,
+                how=how,
+                thresh=thresh,
+                subset=subset,
+                inplace=inplace,
+                ignore_index=ignore_index,
+            )
+        )
+        return new_df
