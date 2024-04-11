@@ -161,6 +161,10 @@ class NestedFrame(pd.DataFrame):
 
     def _resolve_dropna_target(self, on_nested, subset):
         """resolves the target layer for a given set of dropna kwargs"""
+
+        nested_cols = self.nested_columns
+        columns = self.columns
+
         # first check the subset kwarg input
         subset_target = []
         if subset:
@@ -169,9 +173,9 @@ class NestedFrame(pd.DataFrame):
 
             for col in subset:
                 col = col.split(".")[0]
-                if col in self.nested_columns:
+                if col in nested_cols:
                     subset_target.append(col)
-                elif col in self.columns:
+                elif col in columns:
                     subset_target.append("base")
                 else:
                     raise ValueError(f"Column name {col} not found in any base or nested columns")
@@ -185,7 +189,7 @@ class NestedFrame(pd.DataFrame):
             subset_target = str(subset_target[0])
 
         # Next check the on_nested kwarg input
-        if on_nested and on_nested not in self.nested_columns:
+        if on_nested and on_nested not in nested_cols:
             raise ValueError("Provided nested layer not found in nested dataframes")
 
         # Resolve target layer
