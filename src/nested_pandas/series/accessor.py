@@ -99,7 +99,7 @@ class NestSeriesAccessor(MutableMapping):
                 name=field,
                 copy=False,
             )
-        return pd.DataFrame(flat_series)
+        return pd.DataFrame(flat_series, index=pd.Series(index, name=self._series.index.name))
 
     @property
     def flat_length(self) -> int:

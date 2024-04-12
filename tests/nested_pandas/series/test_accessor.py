@@ -87,7 +87,10 @@ def test_to_flat():
         ],
         names=["a", "b"],
     )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    series = pd.Series(
+        struct_array, dtype=NestedDtype(struct_array.type), index=pd.Series([0, 1], name="idx")
+    )
 
     flat = series.nest.to_flat()
 
@@ -106,10 +109,12 @@ def test_to_flat():
                 copy=False,
             ),
         },
+        index=pd.Index([0, 0, 0, 1, 1, 1], name="idx"),
     )
 
     assert_array_equal(flat.dtypes, desired.dtypes)
     assert_array_equal(flat.index, desired.index)
+    assert flat.index.name == desired.index.name
 
     for column in flat.columns:
         assert_array_equal(flat[column], desired[column])
