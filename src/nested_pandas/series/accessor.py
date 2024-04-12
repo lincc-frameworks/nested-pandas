@@ -99,6 +99,7 @@ class NestSeriesAccessor(MutableMapping):
                 name=field,
                 copy=False,
             )
+        # Note that index should now not be none since we iterated over at least one field
         return pd.DataFrame(flat_series, index=pd.Series(index, name=self._series.index.name))
 
     @property
