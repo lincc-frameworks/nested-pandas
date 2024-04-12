@@ -33,6 +33,6 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     if join:
         return df.join(counts)
     # else just return the counts NestedFrame
-    if isinstance(counts, pd.Series):
+    if isinstance(counts, pd.Series):  # for by=None, which returns a Series
         counts = NestedFrame(counts.to_frame())
     return counts
