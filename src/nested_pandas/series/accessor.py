@@ -95,10 +95,11 @@ class NestSeriesAccessor(MutableMapping):
                 index = np.repeat(self._series.index.values, np.diff(list_array.offsets))
             flat_series[field] = pd.Series(
                 list_array.flatten(),
-                index=index,
+                index=pd.Series(index, name=self._series.index.name),
                 name=field,
                 copy=False,
             )
+
         return pd.DataFrame(flat_series)
 
     @property
