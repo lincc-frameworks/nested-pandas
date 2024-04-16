@@ -160,8 +160,16 @@ class NestedExtensionArray(ArrowExtensionArray):
 
         # Hack with np.empty is the only way to force numpy to create 1-d array of objects
         result = np.empty(shape=array.shape, dtype=object)
+
+        # TODO: delete block once confirmed NA is better to return
+        # fill NaNs - Fill with an empty dictionary using the same columns
+        # nan_vals = pd.isna(array)
+        # if sum(nan_vals) > 0:
+        #    na_idx = np.where(nan_vals)
+        #    array[na_idx] = {key: [] for key in array[np.where(~nan_vals)[0][0]].keys()}
+
         # We do copy=False here because user's 'copy' is already handled by ArrowExtensionArray.to_numpy
-        result[:] = [pd.DataFrame(value, copy=False) for value in array]
+        result[:] = [pd.DataFrame(value, copy=False) if not pd.isna(value) else pd.NA for value in array]
         return result
 
     def __setitem__(self, key, value) -> None:

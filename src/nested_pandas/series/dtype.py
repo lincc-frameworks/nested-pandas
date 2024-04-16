@@ -13,7 +13,6 @@ from pandas.api.extensions import register_extension_dtype
 from pandas.core.arrays import ExtensionArray
 from pandas.core.dtypes.base import ExtensionDtype
 
-from nested_pandas.series.na import NA, NAType
 from nested_pandas.series.utils import is_pa_type_a_list
 
 __all__ = ["NestedDtype"]
@@ -29,9 +28,9 @@ class NestedDtype(ExtensionDtype):
     """Attributes to use as metadata for __eq__ and __hash__"""
 
     @property
-    def na_value(self) -> NAType:
+    def na_value(self) -> pd.NA:
         """The missing value for this dtype"""
-        return NA
+        return pd.NA
 
     type = pd.DataFrame
     """The type of the array's elements, always pd.DataFrame"""
