@@ -78,6 +78,22 @@ def test_add_nested():
     assert base.nested.nest.to_flat().equals(nested)
 
 
+def test_add_nested_with_mismatched_index():
+    """Test add_nested when index values of base are missing matches in nested"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 1, 1, 1],  # no data for index value of "2"
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    assert "nested" in base.columns
+    assert pd.isna(base.loc[2]["nested"])
+
+
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
 
