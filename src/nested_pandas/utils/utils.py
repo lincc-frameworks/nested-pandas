@@ -6,6 +6,8 @@ from nested_pandas import NestedFrame
 def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     """Counts the number of rows of a nested dataframe.
 
+    #TODO: Does not work when any nested dataframes are empty (NaN)
+
     Parameters
     ----------
     df: NestedFrame
