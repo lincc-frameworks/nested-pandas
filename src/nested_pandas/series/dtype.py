@@ -28,7 +28,7 @@ class NestedDtype(ExtensionDtype):
     """Attributes to use as metadata for __eq__ and __hash__"""
 
     @property
-    def na_value(self) -> pd.NA:
+    def na_value(self) -> Type[pd.NA]:
         """The missing value for this dtype"""
         return pd.NA
 
