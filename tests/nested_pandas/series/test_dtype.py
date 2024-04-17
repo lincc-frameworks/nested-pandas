@@ -3,7 +3,6 @@ import pyarrow as pa
 import pytest
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
-from nested_pandas.series.na import NA
 
 
 @pytest.mark.parametrize(
@@ -62,7 +61,7 @@ def test_from_fields():
 def test_na_value():
     """Test that NestedDtype.na_value is a singleton instance of NAType."""
     dtype = NestedDtype(pa.struct([pa.field("a", pa.list_(pa.int64()))]))
-    assert dtype.na_value is NA
+    assert dtype.na_value is pd.NA
 
 
 def test_fields():
