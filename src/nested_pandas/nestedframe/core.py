@@ -358,15 +358,13 @@ class NestedFrame(pd.DataFrame):
         # Parse through the initial args to determine the columns to apply the function to
         requested_columns = []
         for arg in args:
-            is_column = isinstance(arg, str) and self._is_known_column(arg)
-            if is_column:
-                layer = "base" if "." not in arg else arg.split(".")[0]
-                col = arg.split(".")[-1]
-                requested_columns.append((layer, col))
-            else:
+            if not isinstance(arg, str) or not self._is_known_column(arg):
                 # We've reached an argument that is not a valid column, so we assume
                 # the remaining args are extra arguments to the function
                 break
+            layer = "base" if "." not in arg else arg.split(".")[0]
+            col = arg.split(".")[-1]
+            requested_columns.append((layer, col))
 
         # We require the first *args to be the columns to apply the function to so iterated
         if not requested_columns:
@@ -375,7 +373,7 @@ class NestedFrame(pd.DataFrame):
         # The remaining args are the extra arguments to the function other than columns
         extra_args = []
         if len(requested_columns) < len(args):
-            extra_args = args[len(requested_columns) :]
+            extra_args = args[len(requested_columns):]
 
         # Translates the requested columns into the scalars or arrays we pass to func.
         def translate_cols(frame, layer, col):
