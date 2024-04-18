@@ -1,12 +1,13 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+from typing import List
+
 import numpy as np
 import pandas as pd
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
-from typing import List
 
 from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
@@ -316,7 +317,7 @@ class NestedFrame(pd.DataFrame):
         )
         return new_df
 
-    def reduce(self, func, *args, **kwargs)  -> NestedFrame:
+    def reduce(self, func, *args, **kwargs) -> NestedFrame:
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
 
