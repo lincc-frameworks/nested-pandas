@@ -1,8 +1,6 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 import pandas as pd
 from pandas._libs import lib
@@ -375,7 +373,7 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("No columns in `*args` specified to apply function to")
 
         # The remaining args are the extra arguments to the function other than columns
-        extra_args: List[Any] = []
+        extra_args: tuple[Any, ...] = () # empty tuple to make mypy happy
         if len(requested_columns) < len(args):
             extra_args = args[len(requested_columns) :]
 
