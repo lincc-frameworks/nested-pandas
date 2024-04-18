@@ -315,7 +315,7 @@ class NestedFrame(pd.DataFrame):
         )
         return new_df
 
-    def reduce(self, func, *args, **kwargs) -> pd.DataFrame:
+    def reduce(self, func, *args, **kwargs)  -> NestedFrame:
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
 
@@ -368,12 +368,12 @@ class NestedFrame(pd.DataFrame):
             col = arg.split(".")[-1]
             requested_columns.append((layer, col))
 
-        # We require the first *args to be the columns to apply the function to so iterated
+        # We require the first *args to be the columns to apply the function to
         if not requested_columns:
             raise ValueError("No columns in `*args` specified to apply function to")
 
         # The remaining args are the extra arguments to the function other than columns
-        extra_args: tuple[Any, ...] = []
+        extra_args: List[Any] = []
         if len(requested_columns) < len(args):
             extra_args = args[len(requested_columns) :]
 
