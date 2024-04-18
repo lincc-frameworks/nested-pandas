@@ -344,7 +344,7 @@ class NestedFrame(pd.DataFrame):
         The recommend return value of func should be a `pd.Series` where the indices are the names of the
         output columns in the dataframe returned by `reduce`. Note however that in cases where func
         returns a single value there may be a performance benefit to returning the scalar value
-        rather than a `pd.Series`. 
+        rather than a `pd.Series`.
 
         Example User Function:
         ```
