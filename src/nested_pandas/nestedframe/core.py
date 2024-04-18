@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from pandas._libs import lib
-from pandas._typing import AnyAll, Axis, IndexLabel
+from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
 
 from nested_pandas.series import packer
@@ -326,9 +326,11 @@ class NestedFrame(pd.DataFrame):
         Parameters
         ----------
         func : callable
-            Function to apply to each nested dataframe. The first arguments to `func` should be which columns to apply the function to.
+            Function to apply to each nested dataframe. The first arguments to `func` should be which 
+            columns to apply the function to.
         args : positional arguments
-            Positional arguments to pass to the function, the first *args should be the names of the columns to apply the function to.
+            Positional arguments to pass to the function, the first *args should be the names of the
+            columns to apply the function to.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
