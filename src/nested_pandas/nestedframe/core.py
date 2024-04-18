@@ -58,6 +58,10 @@ class NestedFrame(pd.DataFrame):
             return False
         return False
 
+    def _is_known_column(self, colname) -> bool:
+        """Determine whether a string is a known column name"""
+        return colname in self.columns or self._is_known_hierarchical_column(colname)
+
     def add_nested(self, nested, name) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs a dataframe into a nested column"""
         # Add sources to objects
@@ -310,3 +314,67 @@ class NestedFrame(pd.DataFrame):
             )
         )
         return new_df
+
+    def reduce(self, func, *args, **kwargs) -> pd.DataFrame:
+        """
+        Takes a function and applies it to each top-level row of the NestedFrame.
+
+        The user may specify which columns the function is applied to, with
+        columns from the 'base' layer being passsed to the function as
+        scalars and columns from the nested layers being passed as numpy arrays.
+
+        Parameters
+        ----------
+        func : callable
+            Function to apply to each nested dataframe. The first arguments to `func` should be which columns to apply the function to.
+        args : positional arguments
+            Positional arguments to pass to the function, the first *args should be the names of the columns to apply the function to.
+        kwargs : keyword arguments, optional
+            Keyword arguments to pass to the function.
+
+        Returns
+        -------
+        `NestedFrame`
+            `NestedFrame` with the results of the function applied to the columns of the frame.
+        """
+        # Parse through the initial args to determine the columns to apply the function to
+        requested_columns = []
+        for arg in args:
+            is_column = isinstance(arg, str) and self._is_known_column(arg)
+            if is_column:
+                layer = "base" if "." not in arg else arg.split(".")[0]
+                col = arg.split(".")[-1]
+                requested_columns.append((layer, col))
+            else:
+                # We've reached an argument that is not a valid column, so we assume
+                # the remaining args are extra arguments to the function
+                break
+
+        # We require the first *args to be the columns to apply the function to so iterated
+        if not requested_columns:
+            raise ValueError("No columns in `*args` specified to apply function to")
+
+        # The remaining args are the extra arguments to the function other than columns
+        extra_args = []
+        if len(requested_columns) < len(args):
+            extra_args = args[len(requested_columns) :]
+
+        # Translates the requested columns into the scalars or arrays we pass to func.
+        def translate_cols(frame, layer, col):
+            if layer == "base":
+                # We pass the "base" column as a scalar
+                return frame[col]
+            return frame[layer][col].to_numpy()
+
+        # Note that this applys the function to each row of the nested dataframe. For
+        # the columns within packed frames, note taht we're directly accessing the dataframe
+        # within the cell of that row without having to unpack and flatten.
+        result = self.apply(
+            lambda x: func(
+                *[translate_cols(x, layer, col) for layer, col in requested_columns], *extra_args, **kwargs
+            ),
+            axis=1,  # to apply func on each row of our nested frame
+            result_type="expand",  # to return a DataFrame when possible
+        )
+
+        return result
