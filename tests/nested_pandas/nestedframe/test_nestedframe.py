@@ -222,3 +222,83 @@ def test_dropna_errors():
     # Test on-nested + subset disagreement
     with pytest.raises(ValueError):
         base.dropna(on_nested="nested", subset=["b"])
+
+
+def test_reduce():
+    """Tests that we can call reduce on a NestedFrame with a custom function."""
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    to_pack2 = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 3, 1, 2, 4],
+            "e": [2, 9, 4, 1, 23, 3, 1, 4, 1],
+            "f": [5, 4, 7, 5, 3, 25, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    # Add two nested layers to pack into our dataframe
+    nf = nf.add_nested(to_pack, "packed").add_nested(to_pack2, "packed2")
+
+    # Define a simple custom function to apply to the nested data
+    def get_max(col1, col2):
+        # returns the max value within each specified colun
+        return pd.Series([col1.max(), col2.max()], index=["max_col1", "max_col2"])
+
+    # The expected max values for of our nested columns
+    expected_max_c = [4, 10, 4]
+    expected_max_d = [7, 5, 9]
+    expected_max_e = [9, 23, 4]
+
+    # Test that we raise an error when no arguments are provided
+    with pytest.raises(ValueError):
+        nf.reduce(get_max)
+
+    # Batch only on columns in the first packed layer
+    result = nf.reduce(get_max, "packed.c", "packed.d")
+    assert len(result) == len(nf)
+    assert isinstance(result, NestedFrame)
+    assert result.index.name == "idx"
+    for i in range(len(result)):
+        assert result["max_col1"].values[i] == expected_max_c[i]
+        assert result["max_col2"].values[i] == expected_max_d[i]
+
+    # Batch on columns in the first and second packed layers
+    result = nf.reduce(get_max, "packed.c", "packed2.e")
+    assert len(result) == len(nf)
+    assert isinstance(result, NestedFrame)
+    assert result.index.name == "idx"
+    for i in range(len(result)):
+        assert result["max_col1"].values[i] == expected_max_c[i]
+        assert result["max_col2"].values[i] == expected_max_e[i]
+
+    # Test that we can pass a scalar from the base layer to the reduce function and that
+    # the user can also provide non-column arguments (in this case, the list of column names)
+    def offset_avg(offset, col_to_avg, column_names):
+        # A simple function which adds a scalar 'offset' to a column which is then averaged.
+        return pd.Series([(offset + col_to_avg).mean()], index=column_names)
+
+    expected_offset_avg = [
+        sum([2, 4, 6]) / 3.0,
+        sum([14, 8, 7]) / 3.0,
+        sum([7, 10, 7]) / 3.0,
+    ]
+
+    result = nf.reduce(offset_avg, "b", "packed.c", ["offset_avg"])
+    assert len(result) == len(nf)
+    assert isinstance(result, NestedFrame)
+    assert result.index.name == "idx"
+    for i in range(len(result)):
+        assert result["offset_avg"].values[i] == expected_offset_avg[i]
