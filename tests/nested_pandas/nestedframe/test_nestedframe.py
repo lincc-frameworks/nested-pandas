@@ -78,6 +78,22 @@ def test_add_nested():
     assert base.nested.nest.to_flat().equals(nested)
 
 
+def test_add_nested_with_mismatched_index():
+    """Test add_nested when index values of base are missing matches in nested"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 1, 1, 1],  # no data for index value of "2"
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    assert "nested" in base.columns
+    assert pd.isna(base.loc[2]["nested"])
+
+
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
 
@@ -206,3 +222,52 @@ def test_dropna_errors():
     # Test on-nested + subset disagreement
     with pytest.raises(ValueError):
         base.dropna(on_nested="nested", subset=["b"])
+
+
+def test_reduce():
+    """ Tests that we can call reduce on a NestedFrame """
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    to_pack2 = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 3, 1, 2, 4],
+            "e": [2, 9, 4, 1, 23, 3, 1, 4, 1],
+            "f": [5, 4, 7, 5, 3, 25, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    nf = nf.add_nested(to_pack, "packed").add_nested(to_pack2, "packed2")
+
+    # Define a simple custom function to apply to the nested data
+    def get_max(col1, col2):
+        return max(col1.max(), col2.max())
+
+    # Batch only on columns in the first packed layer
+    result = nf.reduce(get_max, "packed.c", "packed.d")
+    assert len(result) == len(nf)
+
+    # Batch on columns in the first and second packed layers
+    result = nf.reduce(get_max, "packed.c", "packed2.e")
+    assert len(result) == len(nf)
+
+    # Batch only on colums in the base layer of the nested frame
+    result = nf.reduce(get_max, "a", "b")
+    assert len(result) == len(nf)
+
+    result = nf.reduce(get_max, "a", "packed.c")
+    assert len(result) == len(nf)
+
+    assert 5 == 3
