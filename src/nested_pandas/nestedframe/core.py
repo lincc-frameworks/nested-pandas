@@ -326,7 +326,7 @@ class NestedFrame(pd.DataFrame):
         Parameters
         ----------
         func : callable
-            Function to apply to each nested dataframe. The first arguments to `func` should be which 
+            Function to apply to each nested dataframe. The first arguments to `func` should be which
             columns to apply the function to.
         args : positional arguments
             Positional arguments to pass to the function, the first *args should be the names of the
