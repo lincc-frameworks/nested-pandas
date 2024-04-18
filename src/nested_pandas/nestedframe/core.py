@@ -336,6 +336,24 @@ class NestedFrame(pd.DataFrame):
         -------
         `NestedFrame`
             `NestedFrame` with the results of the function applied to the columns of the frame.
+
+        Notes
+        -----
+        The recommend return value of func should be a `pd.Series` where the indices are the names of the
+        output columns in the dataframe returned by `reduce`.
+
+        Example User Function:
+        ```
+        import pandas as pd
+
+        def my_sum(col1, col2):
+            return pd.Series(
+                [sum(col1), sum(col2)],
+                index=["sum_col1", "sum_col2"],
+            )
+
+        ```
+
         """
         # Parse through the initial args to determine the columns to apply the function to
         requested_columns = []
