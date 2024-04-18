@@ -28,7 +28,8 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     """
 
     if by is None:
-        counts = df[nested].apply(lambda x: len(x)).rename(f"n_{nested}")
+        # to_flat() is faster than direct apply in this case
+        counts = df[nested].nest.to_flat().groupby(level=0).apply(lambda x: len(x)).rename(f"n_{nested}")
     else:
         counts = df[nested].apply(lambda x: x[by].value_counts())
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
