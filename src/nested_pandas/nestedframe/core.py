@@ -373,7 +373,7 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("No columns in `*args` specified to apply function to")
 
         # The remaining args are the extra arguments to the function other than columns
-        extra_args: list[Any] = []
+        extra_args: tuple[Any, ...] = []
         if len(requested_columns) < len(args):
             extra_args = args[len(requested_columns) :]
 
