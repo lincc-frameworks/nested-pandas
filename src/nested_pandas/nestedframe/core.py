@@ -379,22 +379,32 @@ class NestedFrame(pd.DataFrame):
         if len(requested_columns) < len(args):
             extra_args = args[len(requested_columns) :]
 
+        # find targeted layers
+        layers = np.unique([col[0] for col in requested_columns])
+
+        # build a flat dataframe with array columns to apply to the function
+        apply_df = NestedFrame()
+        for layer in layers:
+            if layer == "base":
+                columns = [col[1] for col in requested_columns if col[0] == layer]
+                apply_df = apply_df.join(self[columns], how="right")
+            else:
+                # TODO: It should be faster to pass these columns to to_lists, but its 20x slower
+                # columns = [col[1] for col in requested_columns if col[0] == layer]
+                apply_df = apply_df.join(self[layer].nest.to_lists(), how="right")
+
         # Translates the requested columns into the scalars or arrays we pass to func.
         def translate_cols(frame, layer, col):
             if layer == "base":
                 # We pass the "base" column as a scalar
                 return frame[col]
-            return frame[layer][col].to_numpy()
+            return np.array(frame[col])
 
-        # Note that this applys the function to each row of the nested dataframe. For
-        # the columns within packed frames, note taht we're directly accessing the dataframe
-        # within the cell of that row without having to unpack and flatten.
-        result = self.apply(
+        # send arrays along to the apply call
+        result = apply_df.apply(
             lambda x: func(
                 *[translate_cols(x, layer, col) for layer, col in requested_columns], *extra_args, **kwargs
             ),
-            axis=1,  # to apply func on each row of our nested frame
-            result_type="expand",  # to return a DataFrame when possible
+            axis=1,  # to apply func on each row of our nested frame)
         )
-
         return result
