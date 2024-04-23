@@ -242,7 +242,17 @@ def test_reduce():
 
     to_pack2 = pd.DataFrame(
         data={
-            "time": [1, 2, 3, 1, 2, 3, 1, 2, 4],
+            "time2": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                3,
+                1,
+                2,
+                4,
+            ],  # TODO: fix duplicate name in join once to_list subset bug fixed
             "e": [2, 9, 4, 1, 23, 3, 1, 4, 1],
             "f": [5, 4, 7, 5, 3, 25, 9, 3, 4],
         },
