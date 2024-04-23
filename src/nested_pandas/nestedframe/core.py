@@ -387,11 +387,11 @@ class NestedFrame(pd.DataFrame):
         for layer in layers:
             if layer == "base":
                 columns = [col[1] for col in requested_columns if col[0] == layer]
-                apply_df = apply_df.join(self[columns], how="right")
+                apply_df = apply_df.join(self[columns], how="outer")
             else:
                 # TODO: It should be faster to pass these columns to to_lists, but its 20x slower
                 # columns = [col[1] for col in requested_columns if col[0] == layer]
-                apply_df = apply_df.join(self[layer].nest.to_lists(), how="right")
+                apply_df = apply_df.join(self[layer].nest.to_lists(), how="outer")
 
         # Translates the requested columns into the scalars or arrays we pass to func.
         def translate_cols(frame, layer, col):
