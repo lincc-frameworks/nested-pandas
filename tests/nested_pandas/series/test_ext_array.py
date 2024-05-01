@@ -1,12 +1,170 @@
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 from nested_pandas import NestedDtype
-from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar
+from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar, replace_with_mask
 from numpy.testing import assert_array_equal
 from pandas.core.arrays import ArrowExtensionArray
 from pandas.testing import assert_frame_equal, assert_series_equal
+
+
+def test_replace_with_mask():
+    """Test replace_with_mask with struct array of lists."""
+    array = pa.chunked_array(
+        pa.array([{"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}]),
+        type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+    )
+    mask = pa.array([True, False])
+    value = pa.array([{"a": [0, 0, 0], "b": [0.0, 0.0, 0.0]}], type=array.chunk(0).type)
+    desired = pa.chunked_array(
+        [
+            pa.array(
+                [{"a": [0, 0, 0], "b": [0.0, 0.0, 0.0]}, {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}],
+                type=array.chunk(0).type,
+            )
+        ]
+    )
+    # pyarrow returns a single bool for ==
+    assert replace_with_mask(array, mask, value) == desired
+
+
+@pytest.mark.parametrize(
+    "array,mask,value",
+    [
+        (
+            pa.array([1, 2, 3]),
+            pa.array([True, False, False]),
+            pa.array([0]),
+        ),
+        (
+            pa.array([1, 2, 3, 4, 5]),
+            pa.array([True, False, True, False, True]),
+            pa.array([0, 0, 0]),
+        ),
+    ],
+)
+def test_replace_with_mask_vs_pyarrow(array, mask, value):
+    """Test that replace_with_mask is equivalent to pyarrow.compute.replace_with_mask."""
+    chunked_array = pa.chunked_array([array])
+    desired = pc.replace_with_mask(chunked_array, mask, value)
+    actual = replace_with_mask(chunked_array, mask, value)
+    # pyarrow returns a single bool for ==
+    assert actual == desired
+
+
+def test__from_sequence_with_pyarrow_array():
+    """Test that we can convert a pyarrow array to a NestedExtensionArray."""
+    sequence = pa.array(
+        [{"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}],
+        type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+    )
+    actual = NestedExtensionArray._from_sequence(sequence, dtype=None)
+    desired = NestedExtensionArray(sequence)
+    # pyarrow returns a single bool for ==
+    assert actual.equals(desired)
+
+
+def test__from_sequence_with_ndarray_of_dicts():
+    """Test that we can convert a numpy array of dictionaries to a NestedExtensionArray."""
+    sequence = np.array(
+        [
+            {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+            {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
+        ]
+    )
+    actual = NestedExtensionArray._from_sequence(sequence, dtype=None)
+    desired = NestedExtensionArray(
+        pa.array(
+            sequence,
+            type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+        )
+    )
+    assert actual.equals(desired)
+
+
+def test__from_sequence_with_list_of_dicts_with_dtype():
+    """Test that we can convert a list of dictionaries to a NestedExtensionArray."""
+    a = [1, 2, 3]
+    b = [-4.0, np.nan, -6.0]
+    # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
+    b_desired = [-4.0, None, -6.0]
+    sequence = [
+        {"a": a, "b": b},
+        {"a": np.array(a), "b": np.array(b)},
+        {"a": pd.Series(a), "b": b},
+        {"a": pa.array(a), "b": pd.Series(b, dtype=pd.ArrowDtype(pa.float64()))},
+        None,
+    ]
+    actual = NestedExtensionArray._from_sequence(
+        sequence, dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
+    )
+    desired = NestedExtensionArray(
+        pa.array(
+            [{"a": a, "b": b_desired}] * 4 + [None],
+            type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+        )
+    )
+    assert actual.equals(desired)
+
+
+def test__from_sequence_with_list_of_df():
+    """Test that we can convert a list of DataFrames to a NestedExtensionArray."""
+    a = [1, 2, 3]
+    b = [-4.0, np.nan, -6.0]
+    # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
+    b_desired = [-4.0, None, -6.0]
+    sequence = [
+        pd.DataFrame({"a": a, "b": b}),
+        pd.DataFrame(
+            {
+                "a": pd.Series(a, dtype=pd.ArrowDtype(pa.int64())),
+                "b": pd.Series(b, dtype=pd.ArrowDtype(pa.float64())),
+            }
+        ),
+        None,
+        pd.NA,
+    ]
+
+    actual = NestedExtensionArray._from_sequence(sequence, dtype=None)
+    desired = NestedExtensionArray(
+        pa.array(
+            [{"a": a, "b": b_desired}] * 2 + [None] * 2,
+            type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+        )
+    )
+    assert actual.equals(desired)
+
+
+def test__from_sequence_with_ndarray_of_df_with_dtype():
+    """Test that we can convert a numpy array of DataFrames to a NestedExtensionArray."""
+    a = [1, 2, 3]
+    b = [-4.0, np.nan, -6.0]
+    # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
+    b_desired = [-4.0, None, -6.0]
+    sequence_list = [
+        pd.DataFrame({"a": a, "b": b}),
+        pd.DataFrame(
+            {
+                "a": pd.Series(a, dtype=pd.ArrowDtype(pa.float64())),
+                "b": pd.Series(b, dtype=pd.ArrowDtype(pa.float64())),
+            }
+        ),
+        None,
+    ]
+    sequence = np.empty(len(sequence_list), dtype=object)
+    sequence[:] = sequence_list
+    actual = NestedExtensionArray._from_sequence(
+        sequence, dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
+    )
+    desired = NestedExtensionArray(
+        pa.array(
+            [{"a": a, "b": b_desired}] * 2 + [None],
+            type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+        )
+    )
+    assert actual.equals(desired)
 
 
 def test_ext_array_dtype():

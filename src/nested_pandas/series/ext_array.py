@@ -423,7 +423,7 @@ class NestedExtensionArray(ExtensionArray):
             return pa.scalar(None, type=pa_type, from_pandas=True)
         if isinstance(value, pd.DataFrame):
             return convert_df_to_pa_scalar(value, pa_type=pa_type)
-        return pa.scalar(value, type=pa_type)
+        return pa.scalar(value, type=pa_type, from_pandas=True)
 
     @classmethod
     def _box_pa_array(
@@ -438,7 +438,13 @@ class NestedExtensionArray(ExtensionArray):
             try:
                 pa_array = pa.array(value, type=pa_type)
             except (ValueError, TypeError, KeyError):
-                pa_array = pa.array(cls._box_pa_scalar(v, pa_type=pa_type) for v in value)
+                scalars: list[pa.Scalar] = []
+                for v in value:
+                    # If pa_type is not specified, then cast to the first non-null type
+                    if pa_type is None and len(scalars) > 0 and not isinstance(scalars[-1], pa.NullScalar):
+                        pa_type = scalars[-1].type
+                    scalars.append(cls._box_pa_scalar(v, pa_type=pa_type))
+                pa_array = pa.array(scalars)
                 # We already copied the data into scalars
                 copy = False
 
