@@ -478,7 +478,24 @@ def test_list_offsets():
     assert_array_equal(ext_array.list_offsets, desired)
 
 
-def test___getitem__():
+def test___getitem___with_integer():
+    """Test [i] is a valid DataFrame."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    second_row_as_df = ext_array[1]
+    assert_frame_equal(
+        second_row_as_df, pd.DataFrame({"a": np.array([1.0, 2.0, 1.0]), "b": -np.array([3.0, 4.0, 5.0])})
+    )
+
+
+def test_series___getitem___with_integer():
     """Tests series[i] is a valid DataFrame."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -493,6 +510,61 @@ def test___getitem__():
     assert_frame_equal(
         second_row_as_df, pd.DataFrame({"a": np.array([1.0, 2.0, 1.0]), "b": -np.array([3.0, 4.0, 5.0])})
     )
+
+
+def test_series___getitem___with_slice():
+    """Test series[i:j:step]"""
+    item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, -5.0, -6.0]}
+    series = pd.Series(
+        [item, None, item, item, None, None, item],
+        dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
+    )
+    sliced = series[-1:0:-2].reset_index(drop=True)
+    assert_series_equal(sliced, pd.Series([item, None, item], dtype=series.dtype))
+
+
+def test_series___getitem___with_slice_object():
+    """Test series[slice(first, last, step)]"""
+    item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, None, -6.0]}
+    series = pd.Series(
+        [item, None, item, item, None, None, item],
+        dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
+    )
+    sliced = series[slice(-1, None, -2)].reset_index(drop=True)
+    assert sliced.equals(pd.Series([item, None, item, item], dtype=series.dtype))
+
+
+def test_series___getitem___with_list_of_integers():
+    """Test series[[i, j, k]]"""
+    item = {"a": [None, 2.0, 3.0], "b": [-4.0, -5.0, -6.0]}
+    series = pd.Series(
+        [item, None, item, item, None, None, item],
+        dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
+    )
+    sliced = series[[0, 2, 5]].reset_index(drop=True)
+    assert sliced.equals(pd.Series([item, item, None], dtype=series.dtype))
+
+
+def test_series___getitem___with_integer_ndarray():
+    """Test sesries[np.array([i, j, k])]"""
+    item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, pd.NA, -6.0]}
+    series = pd.Series(
+        [item, None, item, item, None, None, item],
+        dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
+    )
+    sliced = series[np.array([6, 1, 0, 6])].reset_index(drop=True)
+    assert sliced.equals(pd.Series([item, None, item, item], dtype=series.dtype))
+
+
+def test_series___getitem___with_boolean_ndarray():
+    """Test series[np.array([True, False, True, ...])]"""
+    item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, -5.0, -6.0]}
+    series = pd.Series(
+        [item, None, item, item, None, None, item],
+        dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
+    )
+    sliced = series[np.array([True, False, False, False, False, True, True])].reset_index(drop=True)
+    assert_series_equal(sliced, pd.Series([item, None, item], dtype=series.dtype))
 
 
 def test_series_apply_udf_argument():

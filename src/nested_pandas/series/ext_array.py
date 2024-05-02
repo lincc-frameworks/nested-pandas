@@ -82,12 +82,12 @@ class NestedExtensionArray(ExtensionArray):
         pa_array = cls._box_pa_array(scalars, pa_type=pa_type, copy=copy)
         return cls(pa_array)
 
-    # Not implemented yet, but we can add it later for things like pd.read_csv()
+    # Tricky to implement, but required by things like pd.read_csv
     @classmethod
     def _from_sequence_of_strings(cls, strings, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined] # noqa: F821
         return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)
 
-    # TODO: implement
+    # We do not implement it. ArrowExtensionArray does not implement it for struct arrays
     @classmethod
     def _from_factorized(cls, values, original):
         return super()._from_factorized(values, original)
