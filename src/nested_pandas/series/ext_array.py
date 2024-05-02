@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from copy import deepcopy
 from typing import Any, Callable, cast
 
 import numpy as np
@@ -21,14 +20,12 @@ from nested_pandas.series.utils import enumerate_chunks, is_pa_type_a_list
 __all__ = ["NestedExtensionArray"]
 
 
-def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None) -> pa.DataType | None:
+def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | None) -> pa.DataType | None:
     """Convert the dtype to pyarrow.DataType"""
     if isinstance(dtype, NestedDtype):
         return dtype.pyarrow_dtype
     if isinstance(dtype, pd.ArrowDtype):
         return dtype.pyarrow_dtype
-    if isinstance(dtype, pa.DataType):
-        return dtype
     return None
 
 
@@ -78,8 +75,22 @@ class NestedExtensionArray(ExtensionArray):
 
     @classmethod
     def _from_sequence(cls, scalars, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Construct a NestedExtensionArray from a sequence of scalars.
+
+        Parameters
+        ----------
+        scalars : Sequence
+            The sequence of scalars: disctionaries, DataFrames, None, pd.NA, pa.Array or anything convertible
+            to PyArrow scalars.
+        dtype : dtype or None
+            dtype of the resulting array
+        copy : bool
+            Ignored, because PyArrow arrays are immutable.
+        """
+        del copy
+
         pa_type = to_pyarrow_dtype(dtype)
-        pa_array = cls._box_pa_array(scalars, pa_type=pa_type, copy=copy)
+        pa_array = cls._box_pa_array(scalars, pa_type=pa_type)
         return cls(pa_array)
 
     # Tricky to implement, but required by things like pd.read_csv
@@ -103,7 +114,10 @@ class NestedExtensionArray(ExtensionArray):
                 return type(self)(self._pa_array.take(pa_item), validate=False)
             if item.dtype.kind == "b":
                 return type(self)(self._pa_array.filter(pa_item), validate=False)
-            raise IndexError("Only integers, slices and integer or " "boolean arrays are valid indices.")
+            # It should be covered by check_array_indexer above
+            raise IndexError(
+                "Only integers, slices and integer or " "boolean arrays are valid indices."
+            )  # pragma: no cover
 
         if isinstance(item, tuple):
             item = unpack_tuple_and_ellipses(item)
@@ -114,19 +128,13 @@ class NestedExtensionArray(ExtensionArray):
         scalar_or_array = self._pa_array[item]
         if isinstance(scalar_or_array, pa.StructScalar):
             return self._convert_struct_scalar_to_df(scalar_or_array, copy=False)
-        if isinstance(scalar_or_array, pa.Scalar):
-            raise ValueError(f"Unexpected failure in {type(self).__name__}.__getitem__")
-        if not isinstance(scalar_or_array, pa.ChunkedArray):
-            raise ValueError(f"Unexpected failure in {type(self).__name__}.__getitem__")
+        # Logically, it must be a pa.ChunkedArray if it is not a scalar
         pa_array = cast(pa.ChunkedArray, scalar_or_array)
         return type(self)(pa_array, validate=False)
 
     def __setitem__(self, key, value) -> None:
         # TODO: optimize for many chunks:
         # if key is not in some of the chunks, we can keep their original values
-
-        if isinstance(key, tuple) and len(key) == 1:
-            key = key[0]
 
         key = check_array_indexer(self, key)
 
@@ -149,15 +157,18 @@ class NestedExtensionArray(ExtensionArray):
             pa_mask = pa.array(np_mask)
         elif key.dtype.kind == "b":
             pa_mask = pa.array(key)
-        else:
-            raise IndexError("Only integers, slices and integer or boolean arrays are valid indices.")
+        # Should be covered by check_array_indexer
+        else:  # pragma: no cover
+            raise IndexError(
+                "Only integers, slices and integer or boolean arrays are valid indices."
+            )  # pragma: no cover
 
         # Try to convert to struct_scalar first, if it fails, convert to array
         try:
             scalar = self._box_pa_scalar(value, pa_type=self._pyarrow_dtype)
         except (ValueError, TypeError):
             # Copy will happen later in replace_with_mask() anyway
-            value = self._box_pa_array(value, pa_type=self._pyarrow_dtype, copy=False)
+            value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
             # Our replace_with_mask implementation doesm't work with scalars
             value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
@@ -177,10 +188,10 @@ class NestedExtensionArray(ExtensionArray):
         for value in self._pa_array:
             yield self._convert_struct_scalar_to_df(value, copy=False)
 
+    # We do not implement it yet, because pa.compute.equal does not work for struct arrays
+    # ArrowExtensionArray does not implement it for struct arrays neither
     def __eq__(self, other):
-        if not isinstance(other, type(self)):
-            other = type(self)(other)
-        return self._pa_array.equals(other._pa_array)
+        return super().__eq__(other)
 
     def to_numpy(self, dtype: None = None, copy: bool = False, na_value: Any = no_default) -> np.ndarray:
         """Convert the extension array to a numpy array.
@@ -311,7 +322,7 @@ class NestedExtensionArray(ExtensionArray):
         indices_array = np.asanyarray(indices)
 
         if len(self._pa_array) == 0 and (indices_array >= 0).any():
-            raise IndexError("cannot do a non-empty take")
+            raise IndexError("cannot do a non-empty take from empty array")
         if indices_array.size > 0 and indices_array.max() >= len(self._pa_array):
             raise IndexError("out of bounds value in 'indices'.")
 
@@ -326,9 +337,8 @@ class NestedExtensionArray(ExtensionArray):
             indices_array = pa.array(indices_array, mask=fill_mask)
 
             result = self._pa_array.take(indices_array)
-            # Technically, filling nulls with nulls would also work but would cause a copy
             if not pa.compute.is_null(fill_value).as_py():
-                result = pa.compute.fill_null(result, fill_value)
+                result = pa.compute.if_else(fill_mask, fill_value, result)
             return type(self)(result)
 
         if (indices_array < 0).any():
@@ -383,7 +393,10 @@ class NestedExtensionArray(ExtensionArray):
         return self._pa_array == other._pa_array
 
     def dropna(self) -> Self:
-        """Return a new ExtensionArray with missing values removed."""
+        """Return a new ExtensionArray with missing values removed.
+
+        Note that this applies to the top-level struct array, not to the list arrays.
+        """
         return type(self)(pa.compute.drop_null(self._pa_array))
 
     # End of ExtensionArray overrides #
@@ -408,13 +421,7 @@ class NestedExtensionArray(ExtensionArray):
 
     # Adopted from ArrowExtensionArray
     def __setstate__(self, state):
-        # We keep the same implementation as ArrowExtensionArray, so ignoring linter which propsoses
-        # to rewrite it as a ternary expression
-        if "_data" in state:  # noqa: SIM108
-            data = state.pop("_data")
-        else:
-            data = state["_pa_array"]
-        state["_pa_array"] = pa.chunked_array(data)
+        state["_pa_array"] = pa.chunked_array(state["_pa_array"])
         self.__dict__.update(state)
 
     # End of Additional magic methods #
@@ -423,7 +430,9 @@ class NestedExtensionArray(ExtensionArray):
     def _box_pa_scalar(cls, value, *, pa_type: pa.DataType | None) -> pa.Scalar:
         """Convert a value to a PyArrow scalar with the specified type."""
         if isinstance(value, pa.Scalar):
-            return value
+            if pa_type is None:
+                return value
+            return value.cast(pa_type)
         if value is pd.NA or value is None:
             return pa.scalar(None, type=pa_type, from_pandas=True)
         if isinstance(value, pd.DataFrame):
@@ -431,9 +440,7 @@ class NestedExtensionArray(ExtensionArray):
         return pa.scalar(value, type=pa_type, from_pandas=True)
 
     @classmethod
-    def _box_pa_array(
-        cls, value, *, pa_type: pa.DataType | None, copy: bool = False
-    ) -> pa.Array | pa.ChunkedArray:
+    def _box_pa_array(cls, value, *, pa_type: pa.DataType | None) -> pa.Array | pa.ChunkedArray:
         """Convert a value to a PyArrow array with the specified type."""
         if isinstance(value, cls):
             pa_array = value._pa_array
@@ -449,17 +456,21 @@ class NestedExtensionArray(ExtensionArray):
                     if pa_type is None and len(scalars) > 0 and not isinstance(scalars[-1], pa.NullScalar):
                         pa_type = scalars[-1].type
                     scalars.append(cls._box_pa_scalar(v, pa_type=pa_type))
+                # We recast the scalars to the specified type.
+                # Logically, we should 1) have `pa_type is not None` here,
+                # 2) only "head" null-scalars to be not cast to the specified type.
+                # However, we just cast everything to the specified type here.
+                if pa_type is None:
+                    pa_type = scalars[-1].type
+                scalars = [s.cast(pa_type) for s in scalars]
                 pa_array = pa.array(scalars)
                 # We already copied the data into scalars
-                copy = False
 
         # We always cast - even if the type is the same, it does not hurt
         # If the type is different the result may still be a view, so we do not set copy=False
         if pa_type is not None:
             pa_array = pa_array.cast(pa_type)
 
-        if copy:
-            pa_array = deepcopy(pa_array)
         return pa_array
 
     @classmethod
