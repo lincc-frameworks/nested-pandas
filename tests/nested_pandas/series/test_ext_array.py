@@ -381,27 +381,33 @@ def test___setitem___single_df_to_all_rows():
 
 
 def test___setitem___list_of_dfs():
-    """Tests nested_ext_array[:] = [pd.DataFrame(...), pd.DataFrame(...), ...]"""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+    """Tests nested_ext_array[1::2] = [pd.DataFrame(...), pd.DataFrame(...), ...]"""
+    struct_array = pa.array(
+        [
+            {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+            {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
+            None,
+            None,
+            {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+            None,
         ],
-        names=["a", "b"],
+        type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
     )
     ext_array = NestedExtensionArray(struct_array)
-
-    ext_array[:] = [
+    ext_array[1::2] = [
+        None,
         pd.DataFrame({"a": [5, 6], "b": [100.0, 200.0]}),
         pd.DataFrame({"a": [7, 8], "b": [300.0, 400.0]}),
     ]
-
-    desired_struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([5, 6]), np.array([7, 8])]),
-            pa.array([np.array([100.0, 200.0]), np.array([300.0, 400.0])]),
-        ],
-        names=["a", "b"],
+    desired_struct_array = pa.array(
+        [
+            {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+            None,
+            None,
+            {"a": [5, 6], "b": [100.0, 200.0]},
+            {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+            {"a": [7, 8], "b": [300.0, 400.0]},
+        ]
     )
     desired = NestedExtensionArray(desired_struct_array)
 
@@ -409,7 +415,7 @@ def test___setitem___list_of_dfs():
 
 
 def test___setitem___series_of_dfs():
-    """Tests nested_ext_array[:] = pd.Series([pd.DataFrame(...), pd.DataFrame(...), ...])"""
+    """Tests nested_ext_array[[1,0]] = pd.Series([pd.DataFrame(...), pd.DataFrame(...), ...])"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
@@ -419,7 +425,7 @@ def test___setitem___series_of_dfs():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    ext_array[:] = pd.Series(
+    ext_array[[1, 0]] = pd.Series(
         [
             pd.DataFrame({"a": [5, 6], "b": [100.0, 200.0]}),
             pd.DataFrame({"a": [7, 8], "b": [300.0, 400.0]}),
@@ -428,8 +434,43 @@ def test___setitem___series_of_dfs():
 
     desired_struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([5, 6]), np.array([7, 8])]),
-            pa.array([np.array([100.0, 200.0]), np.array([300.0, 400.0])]),
+            pa.array([np.array([7, 8]), np.array([5, 6])]),
+            pa.array([np.array([300.0, 400.0]), np.array([100.0, 200.0])]),
+        ],
+        names=["a", "b"],
+    )
+    desired = NestedExtensionArray(desired_struct_array)
+
+    assert ext_array._pa_array == desired._pa_array
+    assert ext_array.equals(desired)
+
+
+def test___setitem___other_ext_array():
+    """Tests nested_ext_array[[1,0]] = pd.Series([pd.DataFrame(...), pd.DataFrame(...), ...])"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    other_struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([5, 6]), np.array([7, 8]), np.array([7, 8])]),
+            pa.array([np.array([100.0, 200.0]), np.array([300.0, 400.0]), np.array([300.0, 400.0])]),
+        ],
+        names=["a", "b"],
+    )
+    other_ext_array = NestedExtensionArray(other_struct_array)
+
+    ext_array[[1, 0, 0]] = other_ext_array
+
+    desired_struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([7, 8]), np.array([5, 6])]),
+            pa.array([np.array([300.0, 400.0]), np.array([100.0, 200.0])]),
         ],
         names=["a", "b"],
     )

@@ -141,7 +141,9 @@ class NestedExtensionArray(ExtensionArray):
         if len(key) == 0:
             return
 
+        argsort: np.ndarray | None = None
         if key.dtype.kind in "iu":
+            _, argsort = np.unique(key, return_index=True)
             np_mask = np.zeros(len(self), dtype=np.bool_)
             np_mask[key] = True
             pa_mask = pa.array(np_mask)
@@ -159,6 +161,9 @@ class NestedExtensionArray(ExtensionArray):
         else:
             # Our replace_with_mask implementation doesm't work with scalars
             value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
+
+        if argsort is not None:
+            value = value.take(argsort)
 
         # We cannot use pa.compute.replace_with_mask(), it is not implemented for struct arrays:
         # https://github.com/apache/arrow/issues/29558
