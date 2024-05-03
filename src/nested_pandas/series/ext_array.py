@@ -68,9 +68,7 @@ def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None) ->
 def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array) -> pa.ChunkedArray:
     """Replace the elements of the array with the value where the mask is True"""
     # TODO: performance optimization
-    # It may be more performant to convert input arrays to a numpy array of PyArrow scalars and replace
-    # the values in numpy, then convert back to PyArrow. This way we can avoid the overhead of creating a
-    # large broadcast_value when we just need to replace a few values.
+    # https://github.com/lincc-frameworks/nested-pandas/issues/52
 
     # If mask is [False, True, False, True], mask_cumsum will be [0, 1, 1, 2]
     # So we put value items to the right positions in broadcast_value, while duplicate some other items for
@@ -169,8 +167,8 @@ class NestedExtensionArray(ExtensionArray):
         return type(self)(pa_array, validate=False)
 
     def __setitem__(self, key, value) -> None:
-        # TODO: optimize for many chunks:
-        # if key is not in some of the chunks, we can keep their original values
+        # TODO: optimize for many chunks
+        # https://github.com/lincc-frameworks/nested-pandas/issues/53
 
         key = check_array_indexer(self, key)
 
@@ -393,6 +391,7 @@ class NestedExtensionArray(ExtensionArray):
 
     def _formatter(self, boxed: bool = False) -> Callable[[Any], str | None]:
         # TODO: make formatted strings more pretty
+        # https://github.com/lincc-frameworks/nested-pandas/issues/50
         if boxed:
 
             def box_formatter(value):
