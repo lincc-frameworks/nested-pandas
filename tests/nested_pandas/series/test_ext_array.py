@@ -56,19 +56,19 @@ def test_replace_with_mask_vs_pyarrow(array, mask, value):
     assert actual == desired
 
 
-def test__from_sequence_with_pyarrow_array():
+def test_from_sequence_with_pyarrow_array():
     """Test that we can convert a pyarrow array to a NestedExtensionArray."""
     sequence = pa.array(
         [{"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}],
         type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
     )
-    actual = NestedExtensionArray._from_sequence(sequence, dtype=None)
+    actual = NestedExtensionArray.from_sequence(sequence, dtype=None)
     desired = NestedExtensionArray(sequence)
     # pyarrow returns a single bool for ==
     assert actual.equals(desired)
 
 
-def test__from_sequence_with_ndarray_of_dicts():
+def test_from_sequence_with_ndarray_of_dicts():
     """Test that we can convert a numpy array of dictionaries to a NestedExtensionArray."""
     sequence = np.array(
         [
@@ -76,7 +76,7 @@ def test__from_sequence_with_ndarray_of_dicts():
             {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
         ]
     )
-    actual = NestedExtensionArray._from_sequence(sequence, dtype=None)
+    actual = NestedExtensionArray.from_sequence(sequence, dtype=None)
     desired = NestedExtensionArray(
         pa.array(
             sequence,
@@ -86,7 +86,7 @@ def test__from_sequence_with_ndarray_of_dicts():
     assert actual.equals(desired)
 
 
-def test__from_sequence_with_list_of_dicts_with_dtype():
+def test_from_sequence_with_list_of_dicts_with_dtype():
     """Test that we can convert a list of dictionaries to a NestedExtensionArray."""
     a = [1, 2, 3]
     b = [-4.0, np.nan, -6.0]
@@ -99,7 +99,7 @@ def test__from_sequence_with_list_of_dicts_with_dtype():
         {"a": pa.array(a), "b": pd.Series(b, dtype=pd.ArrowDtype(pa.float64()))},
         None,
     ]
-    actual = NestedExtensionArray._from_sequence(
+    actual = NestedExtensionArray.from_sequence(
         sequence, dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
     )
     desired = NestedExtensionArray(
@@ -111,7 +111,7 @@ def test__from_sequence_with_list_of_dicts_with_dtype():
     assert actual.equals(desired)
 
 
-def test__from_sequence_with_list_of_df():
+def test_from_sequence_with_list_of_df():
     """Test that we can convert a list of DataFrames to a NestedExtensionArray."""
     a = [1, 2, 3]
     b = [-4.0, np.nan, -6.0]
@@ -129,7 +129,7 @@ def test__from_sequence_with_list_of_df():
         pd.NA,
     ]
 
-    actual = NestedExtensionArray._from_sequence(sequence, dtype=None)
+    actual = NestedExtensionArray.from_sequence(sequence, dtype=None)
     desired = NestedExtensionArray(
         pa.array(
             [{"a": a, "b": b_desired}] * 2 + [None] * 2,
@@ -139,7 +139,7 @@ def test__from_sequence_with_list_of_df():
     assert actual.equals(desired)
 
 
-def test__from_sequence_with_ndarray_of_df_with_dtype():
+def test_from_sequence_with_ndarray_of_df_with_dtype():
     """Test that we can convert a numpy array of DataFrames to a NestedExtensionArray."""
     a = [1, 2, 3]
     b = [-4.0, np.nan, -6.0]
@@ -157,7 +157,7 @@ def test__from_sequence_with_ndarray_of_df_with_dtype():
     ]
     sequence = np.empty(len(sequence_list), dtype=object)
     sequence[:] = sequence_list
-    actual = NestedExtensionArray._from_sequence(
+    actual = NestedExtensionArray.from_sequence(
         sequence, dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
     )
     desired = NestedExtensionArray(
@@ -169,7 +169,7 @@ def test__from_sequence_with_ndarray_of_df_with_dtype():
     assert actual.equals(desired)
 
 
-def test__from_sequence_with_arrow_dtyped_series():
+def test_from_sequence_with_arrow_dtyped_series():
     """Test that we can convert pd.Series(..., dtype=pd.ArrowDtype) to a NestedExtensionArray."""
     a = [1, 2, 3]
     b = [-4.0, np.nan, -6.0]
@@ -181,7 +181,7 @@ def test__from_sequence_with_arrow_dtyped_series():
 
     sequence = pd.Series([{"a": a, "b": b}] * 2 + [None], dtype=arrow_dtype)
 
-    actual = NestedExtensionArray._from_sequence(sequence, dtype=arrow_dtype)
+    actual = NestedExtensionArray.from_sequence(sequence, dtype=arrow_dtype)
     desired = NestedExtensionArray(
         pa.array(
             [{"a": a, "b": b_desired}] * 2 + [None],
@@ -189,6 +189,25 @@ def test__from_sequence_with_arrow_dtyped_series():
         )
     )
     assert actual.equals(desired)
+
+
+def test_from_sequence_with_arrow_array_and_dtype():
+    """Test that we can convert pa.StructArray to a NestedExtensionArray."""
+    a = [1, 2, 3]
+    b = [-4.0, None, -6.0]
+
+    pa_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+    new_pa_type = pa.struct([pa.field("a", pa.list_(pa.float64())), pa.field("b", pa.list_(pa.float64()))])
+
+    pa_array = pa.array(
+        [{"a": a, "b": b}, {"a": a, "b": b}, None],
+        type=pa_type,
+    )
+
+    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type)._pa_array
+    desired = pa.chunked_array([pa_array.cast(new_pa_type)])
+    # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
+    assert actual == desired
 
 
 def test_ext_array_dtype():
@@ -312,13 +331,13 @@ def test__box_pa_array_from_list_of_df():
     ]
 
 
-def test__from_sequence():
+def test_from_sequence():
     """Test that we can convert a list of DataFrames to a NestedExtensionArray."""
     list_of_dfs = [
         pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}),
         pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
     ]
-    ext_array = NestedExtensionArray._from_sequence(list_of_dfs, dtype=None)
+    ext_array = NestedExtensionArray.from_sequence(list_of_dfs, dtype=None)
 
     desired = NestedExtensionArray(
         pa.StructArray.from_arrays(
@@ -604,14 +623,14 @@ def test___getitem___with_integer():
 def test___getitem___with_integer_ndarray():
     """Test ext_array[np.array([i1,i2,i3])]"""
     item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, -5.0, -6.0]}
-    ext_array = NestedExtensionArray._from_sequence([item, None, item, None, item])
+    ext_array = NestedExtensionArray.from_sequence([item, None, item, None, item])
     sliced = ext_array[np.array([3, 1, 0, 0])]
-    assert sliced.equals(NestedExtensionArray._from_sequence([None, None, item, item]))
+    assert sliced.equals(NestedExtensionArray.from_sequence([None, None, item, item]))
 
 
 def test___getitem___raises_for_invalid_ndarray_dtype():
     """Test ext_array[np.array([3.14])] fails"""
-    ext_array = NestedExtensionArray._from_sequence([{"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, None])
+    ext_array = NestedExtensionArray.from_sequence([{"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, None])
     with pytest.raises(IndexError):
         _sliced = ext_array[np.array([3.14])]
 
@@ -619,7 +638,7 @@ def test___getitem___raises_for_invalid_ndarray_dtype():
 def test___getitem___with_ellipsis():
     """Test ext_array[...]"""
     item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, -5.0, -6.0]}
-    ext_array = NestedExtensionArray._from_sequence([item, None, item, item, None, None, item])
+    ext_array = NestedExtensionArray.from_sequence([item, None, item, item, None, None, item])
     sliced = ext_array[...]
     assert sliced.equals(ext_array)
 
@@ -627,7 +646,7 @@ def test___getitem___with_ellipsis():
 def test___getitem___with_single_element_tuple():
     """Test ext_array[(i,)]"""
     item = {"a": [1.0, 2.0, 3.0], "b": [-4.0, -5.0, -6.0]}
-    ext_array = NestedExtensionArray._from_sequence([item, None, item, item, None, None, item])
+    ext_array = NestedExtensionArray.from_sequence([item, None, item, item, None, None, item])
     df = ext_array[(2,)]
     assert_frame_equal(df, pd.DataFrame(item))
 
@@ -706,7 +725,7 @@ def test_series___getitem___with_boolean_ndarray():
 
 def test_isna_when_all_na():
     """Tests isna() when all values are None."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         [None, None, None], dtype=NestedDtype.from_fields({"a": pa.int64()})
     )
     assert_array_equal(ext_array.isna(), np.array([True, True, True]))
@@ -714,7 +733,7 @@ def test_isna_when_all_na():
 
 def test_isna_when_none_na():
     """Tests isna() when no values are None."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         [{"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}],
         dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
     )
@@ -723,7 +742,7 @@ def test_isna_when_none_na():
 
 def test_isna_when_some_na():
     """Tests isna() when some values are None."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         [None, {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, pd.NA, pa.scalar(None)],
         dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()}),
     )
@@ -736,7 +755,7 @@ def test_isna_when_some_na():
 )
 def test__hasna(data, desired):
     """Tests _hasna()."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         data, dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
     )
     assert ext_array._hasna == desired
@@ -785,7 +804,7 @@ def test__hasna(data, desired):
 )
 def test_take(allow_fill, fill_value, desired_sequence):
     """Tests .take([i1, i2, i3])."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         [
             {"a": [1, 2, 3], "b": [-4.0, None, -6.0]},
             None,
@@ -794,7 +813,7 @@ def test_take(allow_fill, fill_value, desired_sequence):
         ]
     )
     indices = [1, 0, 0, 2, 3, -1]
-    desired = NestedExtensionArray._from_sequence(desired_sequence, dtype=ext_array.dtype)
+    desired = NestedExtensionArray.from_sequence(desired_sequence, dtype=ext_array.dtype)
 
     result = ext_array.take(indices, allow_fill=allow_fill, fill_value=fill_value)
     assert result.equals(desired)
@@ -802,7 +821,7 @@ def test_take(allow_fill, fill_value, desired_sequence):
 
 def test_take_raises_for_empty_array_and_non_empty_index():
     """Tests that .take([i1, i2, i3]) raises for empty array"""
-    ext_array = NestedExtensionArray._from_sequence([], dtype=NestedDtype.from_fields({"a": pa.int64()}))
+    ext_array = NestedExtensionArray.from_sequence([], dtype=NestedDtype.from_fields({"a": pa.int64()}))
     with pytest.raises(IndexError):
         _result = ext_array.take([0, 1, 2])
 
@@ -818,7 +837,7 @@ def test_take_raises_for_empty_array_and_non_empty_index():
 )
 def test_take_raises_for_out_of_bounds_index(indices):
     """Tests that .take([i1, i2, i3]) raises for out of bounds index."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         [None, None], dtype=NestedDtype.from_fields({"a": pa.int64()})
     )
     with pytest.raises(IndexError):
@@ -827,7 +846,7 @@ def test_take_raises_for_out_of_bounds_index(indices):
 
 def test__formatter_unboxed():
     """Tests formatting of array values, when displayed alone."""
-    formatter = NestedExtensionArray._from_sequence(
+    formatter = NestedExtensionArray.from_sequence(
         [], dtype=NestedDtype.from_fields({"a": pa.int64()})
     )._formatter(boxed=False)
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
@@ -836,7 +855,7 @@ def test__formatter_unboxed():
 
 def test__formatter_boxed():
     """Tests formatting of array values, when displayed in a DataFrame or Series"""
-    formatter = NestedExtensionArray._from_sequence(
+    formatter = NestedExtensionArray.from_sequence(
         [], dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
     )._formatter(boxed=True)
     d = {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}
@@ -846,7 +865,7 @@ def test__formatter_boxed():
 
 def test__formetter_boxed_na():
     """Tests formatting of NA array value, when displayed in a DataFrame or Series"""
-    formatter = NestedExtensionArray._from_sequence(
+    formatter = NestedExtensionArray.from_sequence(
         [], dtype=NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
     )._formatter(boxed=True)
     assert formatter(pd.NA) == str(pd.NA)
@@ -874,7 +893,7 @@ def test_nbytes():
 
 def test_pickability():
     """Test that the extension array can be dumped and loaded back with pickle."""
-    ext_array = NestedExtensionArray._from_sequence(
+    ext_array = NestedExtensionArray.from_sequence(
         [{"a": [1, None, 3], "b": [-4.0, -5.0, None]}, None, {"a": [100] * 10_000, "b": [-7.0] * 10_000}]
     )
     pickled = pickle.loads(pickle.dumps(ext_array))
@@ -884,16 +903,16 @@ def test_pickability():
 def test__concat_same_type():
     """Test concatenating of three NestedExtensionArrays with the same dtype."""
     dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
-    array1 = NestedExtensionArray._from_sequence(
+    array1 = NestedExtensionArray.from_sequence(
         [{"a": [1, 2, None], "b": [-2.0, None, -4.0]}, {"a": [None], "b": [3.14]}], dtype=dtype
     )
-    array2 = NestedExtensionArray._from_sequence(
+    array2 = NestedExtensionArray.from_sequence(
         [{"a": [4, 5, 6], "b": [-7.0, -8.0, -9.0]}, None], dtype=dtype
     )
-    array3 = NestedExtensionArray._from_sequence([], dtype=dtype)
-    array4 = NestedExtensionArray._from_sequence([None], dtype=dtype)
+    array3 = NestedExtensionArray.from_sequence([], dtype=dtype)
+    array4 = NestedExtensionArray.from_sequence([None], dtype=dtype)
 
-    desired = NestedExtensionArray._from_sequence(
+    desired = NestedExtensionArray.from_sequence(
         [
             {"a": [1, 2, None], "b": [-2.0, None, -4.0]},
             {"a": [None], "b": [3.14]},
@@ -910,10 +929,10 @@ def test__concat_same_type():
 def test_equals():
     """Test that two NestedExtensionArrays are equal."""
     dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
-    array1 = NestedExtensionArray._from_sequence(
+    array1 = NestedExtensionArray.from_sequence(
         [{"a": [1, 2, None], "b": [-2.0, None, -4.0]}, {"a": [None], "b": [3.14]}, None], dtype=dtype
     )
-    array2 = NestedExtensionArray._from_sequence(
+    array2 = NestedExtensionArray.from_sequence(
         [
             pd.DataFrame({"a": [1, 2, pd.NA], "b": [-2.0, pd.NA, -4.0]}),
             pd.DataFrame({"a": [pd.NA], "b": [3.14]}),
@@ -927,7 +946,7 @@ def test_equals():
 
 def test_equals_when_other_is_different_type():
     """Test that equals() raises for different dtypes."""
-    ext_array = NestedExtensionArray._from_sequence([{"a": [1, None, 3], "b": [-4.0, -5.0, None]}, None])
+    ext_array = NestedExtensionArray.from_sequence([{"a": [1, None, 3], "b": [-4.0, -5.0, None]}, None])
     other = ext_array.to_arrow_ext_array()
     assert not ext_array.equals(other)
 
@@ -935,7 +954,7 @@ def test_equals_when_other_is_different_type():
 def test_dropna():
     """Test .dropna()"""
     dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
-    array = NestedExtensionArray._from_sequence(
+    array = NestedExtensionArray.from_sequence(
         [
             {"a": [1, 2, None], "b": [-2.0, None, -4.0]},
             {"a": [None], "b": [3.14]},
@@ -945,7 +964,7 @@ def test_dropna():
         dtype=dtype,
     )
 
-    desired = NestedExtensionArray._from_sequence(
+    desired = NestedExtensionArray.from_sequence(
         [
             {"a": [1, 2, None], "b": [-2.0, None, -4.0]},
             {"a": [None], "b": [3.14]},
@@ -1007,7 +1026,7 @@ def test___array__():
     np_array = np.array(ext_array)
     assert np_array.dtype == object
 
-    new_ext_array = NestedExtensionArray._from_sequence(np_array)
+    new_ext_array = NestedExtensionArray.from_sequence(np_array)
     assert new_ext_array.dtype == ext_array.dtype
     assert new_ext_array.equals(ext_array)
 
@@ -1505,7 +1524,7 @@ def test_series_interpolate():
 
 
 def test__from_sequence_of_strings():
-    """We do not support _from_sequence_of_strings() which would apply things like pd.read_csv()"""
+    """We do not support from_sequence_of_strings() which would apply things like pd.read_csv()"""
     with pytest.raises(NotImplementedError):
         NestedExtensionArray._from_sequence_of_strings(["1,2,3", "4,5,6"])
 
@@ -1514,5 +1533,5 @@ def test__from_factorized():
     """We do not support _from_factorized() which would apply pd.factorize()"""
     with pytest.raises(NotImplementedError):
         NestedExtensionArray._from_factorized(
-            [0], NestedExtensionArray._from_sequence([{"a": [1, 2, 3], "b": [4, 5, 6]}])
+            [0], NestedExtensionArray.from_sequence([{"a": [1, 2, 3], "b": [4, 5, 6]}])
         )

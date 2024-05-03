@@ -54,12 +54,14 @@ from nested_pandas.series.utils import enumerate_chunks, is_pa_type_a_list
 __all__ = ["NestedExtensionArray"]
 
 
-def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | None) -> pa.DataType | None:
+def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None) -> pa.DataType | None:
     """Convert the dtype to pyarrow.DataType"""
     if isinstance(dtype, NestedDtype):
         return dtype.pyarrow_dtype
     if isinstance(dtype, pd.ArrowDtype):
         return dtype.pyarrow_dtype
+    if isinstance(dtype, pa.DataType):
+        return dtype
     return None
 
 
@@ -531,6 +533,26 @@ class NestedExtensionArray(ExtensionArray):
 
         self._pa_array = values
         self._dtype = NestedDtype(values.type)
+
+    @classmethod
+    def from_sequence(cls, scalars, *, dtype: NestedDtype | pd.ArrowDtype | pa.DataType = None) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Construct a NestedExtensionArray from a sequence of items
+
+        Parameters
+        ----------
+        scalars : Sequence
+            The sequence of items: dictionaries (key is column name, value is array-like of nested elements),
+            DataFrames, None, pd.NA, pa.Array or anything convertible to PyArrow scalars of struct type with
+            list fields of the same lengths.
+        dtype : dtype or None
+            NestedDtype of the resulting array, or a type to infer from: pd.ArrowDtype or pa.DataType.
+
+        Returns
+        -------
+        NestedExtensionArray
+            The constructed extension array.
+        """
+        return cls._from_sequence(scalars, dtype=dtype)
 
     @property
     def _pyarrow_dtype(self) -> pa.DataType:
