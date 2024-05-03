@@ -7,6 +7,86 @@ from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 
+def test_pack_with_flat_df():
+    """Test pack(pd.DataFrame)."""
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4],
+            "b": [0, 1, 0, 1],
+        },
+        index=[1, 2, 1, 2],
+    )
+    series = packer.pack(df, name="series")
+
+    desired = pd.Series(
+        data=[
+            (np.array([1, 3]), np.array([0, 0])),
+            (np.array([2, 4]), np.array([1, 1])),
+        ],
+        index=[1, 2],
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        name="series",
+    )
+    assert_series_equal(series, desired)
+
+
+def test_pack_with_flat_df_and_index():
+    """Test pack(pd.DataFrame)."""
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4],
+            "b": [0, 1, 0, 1],
+        },
+        index=[1, 2, 1, 2],
+    )
+    series = packer.pack(df, name="series", index=[101, 102])
+
+    desired = pd.Series(
+        data=[
+            (np.array([1, 3]), np.array([0, 0])),
+            (np.array([2, 4]), np.array([1, 1])),
+        ],
+        index=[101, 102],
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        name="series",
+    )
+    assert_series_equal(series, desired)
+
+
+def test_pack_with_series_of_dfs():
+    """Test pack(pd.Series([pd.DataFrame(), ...]))."""
+    input_series = pd.Series(
+        [
+            pd.DataFrame(
+                {
+                    "a": [1, 2],
+                    "b": [0, 1],
+                },
+            ),
+            pd.DataFrame(
+                {
+                    "a": [3, 4],
+                    "b": [0, 1],
+                },
+            ),
+        ],
+        index=[1, 2],
+        name="series",
+    )
+    series = packer.pack(input_series, name="nested")
+
+    desired = pd.Series(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[1, 2],
+        name="nested",
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+    )
+    assert_series_equal(series, desired)
+
+
 def test_pack_flat_into_df():
     """Test pack_flat_into_df()."""
     df = pd.DataFrame(
@@ -132,8 +212,8 @@ def test_pack_lists():
         assert_series_equal(series.nest.get_list_series(field_name), packed_df[field_name])
 
 
-def test_pack_dfs():
-    """Test pack_dfs()."""
+def test_pack_seq_with_dfs_and_index():
+    """Test pack_seq()."""
     dfs = [
         pd.DataFrame(
             data={
@@ -164,7 +244,7 @@ def test_pack_dfs():
             index=[103, 103, 103],
         ),
     ]
-    series = packer.pack_dfs(dfs, index=[100, 101, 102, 103])
+    series = packer.pack_seq(dfs, index=[100, 101, 102, 103])
 
     desired = pd.Series(
         data=[
@@ -175,6 +255,75 @@ def test_pack_dfs():
         ],
         index=[100, 101, 102, 103],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+    )
+    assert_series_equal(series, desired)
+
+
+def test_pack_seq_with_different_elements_and_index():
+    """Test pack_seq() with different elements and index"""
+    seq = [
+        pd.DataFrame(
+            data={
+                "a": [1, 2],
+                "b": [0, 1],
+            },
+        ),
+        None,
+        {"a": [3, 4], "b": [-1, 0]},
+        pd.NA,
+    ]
+    series = packer.pack_seq(seq, index=[100, 101, 102, 103])
+
+    desired = pd.Series(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            None,
+            (np.array([3, 4]), np.array([-1, 0])),
+            pd.NA,
+        ],
+        index=[100, 101, 102, 103],
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+    )
+    assert_series_equal(series, desired)
+
+
+def test_pack_seq_with_series_of_dfs():
+    """Test pack_seq(pd.Series([pd.DataFrame(), ...]))."""
+    input_series = pd.Series(
+        [
+            pd.DataFrame(
+                {
+                    "a": [1, 2],
+                    "b": [0, 1],
+                },
+            ),
+            pd.DataFrame(
+                {
+                    "a": [3, 4],
+                    "b": [0, 1],
+                },
+            ),
+            pd.DataFrame(
+                {
+                    "a": [5, 6],
+                    "b": [0, 1],
+                },
+            ),
+        ],
+        index=[100, 101, 102],
+        name="series",
+    )
+    series = packer.pack_seq(input_series)
+
+    desired = pd.Series(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+            (np.array([5, 6]), np.array([0, 1])),
+        ],
+        index=[100, 101, 102],
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        name="series",
     )
     assert_series_equal(series, desired)
 

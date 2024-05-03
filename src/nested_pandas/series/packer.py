@@ -16,10 +16,45 @@ import pyarrow as pa
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 
-__all__ = ["pack_flat", "pack_lists", "pack_dfs"]
+__all__ = ["pack", "pack_flat", "pack_lists", "pack_seq"]
 
 
 N_ROWS_INFER_DTYPE = 1000
+
+
+def pack(
+    obj,
+    name: str | None = None,
+    *,
+    index=None,
+    dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
+) -> pd.Series:
+    """Pack a "flat" dataframe or a sequence of dataframes into a "nested" series.
+
+    Parameters
+    ----------
+    obj : pd.DataFrame or Sequence of
+        Input dataframe, with repeated indexes, or a sequence of dataframes or missed values.
+    name : str, optional
+        Name of the output series.
+    index : convertable to pd.Index, optional
+        Index of the output series. If obj is a pd.DataFrame, it is always nested by the original index,
+        and this value is used to override the index after the nesting.
+    dtype : dtype or None
+        NestedDtype of the output series, or other type to derive from. If None,
+        the dtype is inferred from the first non-missing dataframe.
+
+    Returns
+    -------
+    pd.Series
+        Output series.
+    """
+    if isinstance(obj, pd.DataFrame):
+        nested = pack_flat(obj, name=name)
+        if index is not None:
+            nested.index = index
+        return nested
+    return pack_seq(obj, name=name, index=index, dtype=dtype)
 
 
 def pack_flat_into_df(df: pd.DataFrame, name=None) -> pd.DataFrame:
@@ -86,35 +121,40 @@ def pack_flat(df: pd.DataFrame, name: str | None = None) -> pd.Series:
     return pack_sorted_df_into_struct(flat, name=name)
 
 
-def pack_dfs(dfs: Sequence[pd.DataFrame], index: object = None, name: str | None = None) -> pd.Series:
+def pack_seq(
+    sequence: Sequence,
+    name: str | None = None,
+    *,
+    index: object = None,
+    dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
+) -> pd.Series:
     """Pack a sequence of "flat" dataframes into a "nested" series.
 
     Parameters
     ----------
-    dfs : Sequence[pd.DataFrame]
-        Input sequence of dataframes.
-    index : pd.Index, optional
-        Index of the output series.
+    sequence : Sequence of pd.DataFrame or None or pd.NA or convertible to pa.StructScalar
+        Input sequence of dataframes or missed values.
     name : str, optional
         Name of the output series.
+    index : pd.Index, optional
+        Index of the output series.
+    dtype : dtype or None
+        NestedDtype of the output series, or other type to derive from. If None,
+        the dtype is inferred from the first non-missing dataframe.
 
     Returns
     -------
     pd.Series
         Output series.
     """
-    if isinstance(dfs, pd.Series) and index is None:
-        index = dfs.index
+    if isinstance(sequence, pd.Series):
+        if index is None:
+            index = sequence.index
+        if name is None:
+            name = sequence.name
 
-    first_df = dfs.iloc[0] if hasattr(dfs, "iloc") else dfs[0]
-
-    field_types = {
-        column: pa.array(first_df[column].iloc[:N_ROWS_INFER_DTYPE]).type for column in first_df.columns
-    }
-    dtype = NestedDtype.from_fields(field_types)
-    dummy_value: dict[str, list] = {column: [] for column in first_df.columns}
-    series = pd.Series([dummy_value] * len(dfs), dtype=dtype, index=index, name=name)
-    series[:] = dfs
+    ext_array = NestedExtensionArray.from_sequence(sequence, dtype=dtype)
+    series = pd.Series(ext_array, index=index, name=name, copy=False)
     return series
 
 
