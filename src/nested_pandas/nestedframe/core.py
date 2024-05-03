@@ -398,7 +398,7 @@ class NestedFrame(pd.DataFrame):
             if layer == "base":
                 # We pass the "base" column as a scalar
                 return frame[col]
-            return np.array(frame[col])
+            return np.asarray(frame[col])
 
         # send arrays along to the apply call
         result = apply_df.apply(
