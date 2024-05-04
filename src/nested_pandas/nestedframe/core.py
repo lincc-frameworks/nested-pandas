@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
@@ -62,10 +63,39 @@ class NestedFrame(pd.DataFrame):
         """Determine whether a string is a known column name"""
         return colname in self.columns or self._is_known_hierarchical_column(colname)
 
-    def add_nested(self, nested, name) -> Self:  # type: ignore[name-defined] # noqa: F821
-        """Packs a dataframe into a nested column"""
+    def add_nested(
+        self, obj, name: str, *, dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Packs input object to a nested column and adds it to the NestedFrame
+
+        This method returns a new NestedFrame with the added nested column.
+
+        Parameters
+        ----------
+        obj : pd.DataFrame or a sequence of items convertible to nested structures
+            The object to be packed into nested pd.Series and added to
+            the NestedFrame. If a DataFrame is passed, it must have non-unique
+            index values, which are used to pack the DataFrame. If a sequence
+            of elements is passed, it is packed into a nested pd.Series.
+            Sequence elements may be individual pd.DataFrames, dictionaries
+            (keys are nested column names, values are arrays of the same
+            length), or any other object convertible to pa.StructArray.
+            Additionally, None and pd.NA are allowed as elements to represent
+            missing values.
+        name : str
+            The name of the nested column to be added to the NestedFrame.
+        dtype : dtype or None
+            NestedDtype to use for the nested column; pd.ArrowDtype or
+            pa.DataType can also be used to specify the nested dtype. If None,
+            the dtype is inferred from the input object.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with the added nested column.
+        """
         # Add sources to objects
-        packed = packer.pack_flat(nested, name=name)
+        packed = packer.pack(obj, name=name, dtype=dtype)
         label = packed.name
         return self.assign(**{f"{label}": packed})
 

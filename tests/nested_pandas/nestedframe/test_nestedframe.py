@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from nested_pandas import NestedFrame
+from pandas.testing import assert_frame_equal
 
 
 def test_nestedframe_construction():
@@ -62,7 +63,7 @@ def test_is_known_hierarchical_column():
     assert not base._is_known_hierarchical_column("base.a")
 
 
-def test_add_nested():
+def test_add_nested_with_flat_df():
     """Test that add_nested correctly adds a nested column to the base df"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
@@ -78,7 +79,7 @@ def test_add_nested():
     assert base.nested.nest.to_flat().equals(nested)
 
 
-def test_add_nested_with_mismatched_index():
+def test_add_nested_with_flat_df_and_mismatched_index():
     """Test add_nested when index values of base are missing matches in nested"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
@@ -92,6 +93,40 @@ def test_add_nested_with_mismatched_index():
 
     assert "nested" in base.columns
     assert pd.isna(base.loc[2]["nested"])
+
+
+def test_add_nested_with_series():
+    """Test that add_nested correctly adds a nested column to the base df"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.Series(
+        data=[pd.DataFrame({"c": [0, 1]}), pd.DataFrame({"c": [1, 2]}), pd.DataFrame({"c": [2, 3]})],
+        index=[0, 1, 2],
+        name="c",
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    assert "nested" in base.columns
+    for i in range(3):
+        assert_frame_equal(base.iloc[i]["nested"], nested[i])
+
+
+def test_add_nested_with_series_and_mismatched_index():
+    """Test add_nested when index values of base are missing matches in nested"""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.Series(
+        data=[pd.DataFrame({"c": [0, 1]}), pd.DataFrame({"c": [2, 3]})],
+        index=[0, 2],  # no data for index value of "1"
+        name="c",
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    assert "nested" in base.columns
+    assert pd.isna(base.loc[1]["nested"])
 
 
 def test_query():
