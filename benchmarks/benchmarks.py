@@ -35,13 +35,61 @@ class AssignSingleDfToNestedSeries:
         )
         self.series = pd.Series(
             [original_df] * self.n_objects,
-            # Sorting is happening somewhere, so we need to order by field name here
+            # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we
+            # need to order by field name here for backwards compatibility.
             dtype=NestedDtype.from_fields({"band": pa.string(), "flux": pa.float64(), "time": pa.float64()}),
         )
 
     def run(self):
         """Run the benchmark."""
         self.series[self.n_objects // 2] = self.new_df
+
+    def time_run(self):
+        """Benchmark the runtime of changing a single nested series element."""
+        self.run()
+
+    def peakmem_run(self):
+        """Benchmark the memory usage of changing a single nested series element."""
+        self.run()
+
+
+class ReassignHalfOfNestedSeries:
+    """Benchmark the performance of changing a lot of nested series elements"""
+
+    n_objects = 10_000
+    n_sources = 100
+    series: pd.Series
+    new_series: pd.Series
+
+    def setup(self):
+        """Set up the benchmark environment."""
+        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to
+        # order by field name here for backwards compatibility.
+        dtype = NestedDtype.from_fields({"band": pa.string(), "flux": pa.float64(), "time": pa.float64()})
+        original_df = pd.DataFrame(
+            {
+                "time": np.linspace(0, 1, self.n_sources),
+                "flux": np.arange(self.n_sources, dtype=np.float64),
+                "band": np.full_like("sdssu", self.n_sources),
+            }
+        )
+        self.series = pd.Series(
+            [original_df] * self.n_objects,
+            dtype=dtype,
+        )
+
+        new_df = pd.DataFrame(
+            {
+                "time": np.arange(self.n_sources, dtype=np.float64),
+                "flux": np.linspace(0, 1, self.n_sources),
+                "band": np.full_like("lsstg", self.n_sources),
+            }
+        )
+        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)
+
+    def run(self):
+        """Run the benchmark."""
+        self.series[::2] = self.new_series
 
     def time_run(self):
         """Benchmark the runtime of changing a single nested series element."""
