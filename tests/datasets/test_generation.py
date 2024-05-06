@@ -5,7 +5,7 @@ from nested_pandas.datasets import generate_data
 @pytest.mark.parametrize("n_layers", [10, {"nested_a": 10, "nested_b": 20}])
 def test_generate_data(n_layers):
     """test the data generator function"""
-    nf = generate_data(10, n_layers)
+    nf = generate_data(10, n_layers, seed=1)
 
     if isinstance(n_layers, int):
         assert len(nf.nested.nest.to_flat()) == 100
@@ -21,4 +21,4 @@ def test_generate_data(n_layers):
 def test_generate_data_bad_input():
     """test a poor n_layer input to generate_data"""
     with pytest.raises(TypeError):
-        generate_data(10, "nested")
+        generate_data(10, "nested", seed=1)
