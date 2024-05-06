@@ -46,7 +46,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
                 "t": randomstate.random(layer_size * n_base) * 20,
                 "flux": randomstate.random(layer_size * n_base) * 100,
                 "band": randomstate.choice(["r", "g"], size=layer_size * n_base),
-                "index": np.array(range(0, layer_size * n_base)) % n_base,
+                "index": np.arange(layer_size * n_base) % n_base,
             }
             layer_nf = NestedFrame(data=layer_data).set_index("index")
             base_nf = base_nf.add_nested(layer_nf, key)
