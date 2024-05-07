@@ -23,6 +23,78 @@
         "version": "561679277ad2275813ce0c17ad97dbe31f41b12cdb6533009f12ae1f7b057caf",
         "warmup_time": -1
     },
+    "benchmarks.NestedFrameAddNested.peakmem_run": {
+        "code": "class NestedFrameAddNested:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of adding a nested layer\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        # use provided seed, \"None\" acts as if no seed is provided\n        randomstate = np.random.RandomState(seed=1)\n    \n        # Generate base data\n        base_data = {\"a\": randomstate.random(self.n_base), \"b\": randomstate.random(self.n_base) * 2}\n        self.base_nf = NestedFrame(data=base_data)\n    \n        layer_data = {\n            \"t\": randomstate.random(self.layer_size * self.n_base) * 20,\n            \"flux\": randomstate.random(self.layer_size * self.n_base) * 100,\n            \"band\": randomstate.choice([\"r\", \"g\"], size=self.layer_size * self.n_base),\n            \"index\": np.arange(self.layer_size * self.n_base) % self.n_base,\n        }\n        self.layer_nf = NestedFrame(data=layer_data).set_index(\"index\")",
+        "name": "benchmarks.NestedFrameAddNested.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "7222660c05e164eeabe42a9ea1f18045af2e407dd1e1bb788010eaad7294ba85"
+    },
+    "benchmarks.NestedFrameAddNested.time_run": {
+        "code": "class NestedFrameAddNested:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of adding a nested layer\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        # use provided seed, \"None\" acts as if no seed is provided\n        randomstate = np.random.RandomState(seed=1)\n    \n        # Generate base data\n        base_data = {\"a\": randomstate.random(self.n_base), \"b\": randomstate.random(self.n_base) * 2}\n        self.base_nf = NestedFrame(data=base_data)\n    \n        layer_data = {\n            \"t\": randomstate.random(self.layer_size * self.n_base) * 20,\n            \"flux\": randomstate.random(self.layer_size * self.n_base) * 100,\n            \"band\": randomstate.choice([\"r\", \"g\"], size=self.layer_size * self.n_base),\n            \"index\": np.arange(self.layer_size * self.n_base) % self.n_base,\n        }\n        self.layer_nf = NestedFrame(data=layer_data).set_index(\"index\")",
+        "min_run_count": 2,
+        "name": "benchmarks.NestedFrameAddNested.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "51982ce9982d11255339dc387081a0db496f1856294c479e72d65e2a4f5fb506",
+        "warmup_time": -1
+    },
+    "benchmarks.NestedFrameQuery.peakmem_run": {
+        "code": "class NestedFrameQuery:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of applying the two queries\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "name": "benchmarks.NestedFrameQuery.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "cdc2254d41009fb5e493b99ed753b9d677a385388103705b16f1b486c03217c2"
+    },
+    "benchmarks.NestedFrameQuery.time_run": {
+        "code": "class NestedFrameQuery:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of applying the two queries\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "min_run_count": 2,
+        "name": "benchmarks.NestedFrameQuery.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "e9944ed6698261a36de55f71c8228b4fcaa8a50b56657fd8132fc6488238f484",
+        "warmup_time": -1
+    },
+    "benchmarks.NestedFrameReduce.peakmem_run": {
+        "code": "class NestedFrameReduce:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of applying the reduce function\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "name": "benchmarks.NestedFrameReduce.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "0dc3aac5f09ea8525a745669cff6fca764fabb7cbe35db18f7d46f7377bfea12"
+    },
+    "benchmarks.NestedFrameReduce.time_run": {
+        "code": "class NestedFrameReduce:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of applying the reduce function\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "min_run_count": 2,
+        "name": "benchmarks.NestedFrameReduce.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "5259b45d6e432e2b3eb25050a9581ac63703fbbae1e1fd98cc2fe7b83a9e8b95",
+        "warmup_time": -1
+    },
     "benchmarks.ReassignHalfOfNestedSeries.peakmem_run": {
         "code": "class ReassignHalfOfNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_fields({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
         "name": "benchmarks.ReassignHalfOfNestedSeries.peakmem_run",
