@@ -175,8 +175,6 @@ class NestedFrameQuery:
 
     def run(self):
         """Run the benchmark."""
-        # Apply base layer query
-        self.nf = self.nf.query("a > 0.2")
 
         # Apply nested layer query
         self.nf = self.nf.query("nested.band == 'g'")
