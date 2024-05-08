@@ -1,5 +1,5 @@
 # nested-pandas
-Efficient Pandas representation for nested associated datasets.
+Efficient pandas representation for nested associated datasets.
 
 Nested-Pandas extends the [pandas](https://pandas.pydata.org/) package with 
 tooling and support for nested dataframes packed into values of top-level 
