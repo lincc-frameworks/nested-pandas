@@ -1,15 +1,16 @@
 # nested-pandas
 Efficient Pandas representation for nested associated datasets.
 
-Nested-Pandas extends the Pandas package with tooling and support for nested 
-dataframes packed into values of top-level dataframe columns. Pyarrow is used
-intrinsically to aid in scalability and performance.
+Nested-Pandas extends the [pandas](https://pandas.pydata.org/) package with 
+tooling and support for nested dataframes packed into values of top-level 
+dataframe columns. Pyarrow is used intrinsically to aid in scalability and 
+performance.
 
 ![image](./nestedframe.png)
 
-Nested-Pandas is motivated by time-domain Astronomy use-cases, where we see
+Nested-Pandas is motivated by time-domain astronomy use cases, where we see
 typically two levels of information, information about astronomical objects and
-then an associated set of n measurements of those objects. Nested-Pandas offers
+then an associated set of `N` measurements of those objects. Nested-Pandas offers
 a performant and memory-efficient package for working with these types of datasets. 
 
 Core advantages being:
