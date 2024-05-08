@@ -5,7 +5,7 @@ nested-pandas is available to install with pip, using the "nested-pandas" packag
 
 .. code-block:: bash
 
-    pip install nested-pandas
+    % pip install nested-pandas
 
 
 This will grab the latest release version of nested-pandas from pip.
