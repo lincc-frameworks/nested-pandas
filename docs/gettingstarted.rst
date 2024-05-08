@@ -10,3 +10,4 @@ we encourage you to open an issue on the
 
     Installing nested-pandas <gettingstarted/installation>
     Contribution Guide <gettingstarted/contributing>
+    Quickstart Guide <gettingstarted/quickstart>
