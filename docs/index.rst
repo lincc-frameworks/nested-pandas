@@ -2,7 +2,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to nested_pandas's documentation!
+Welcome to nested-pandas's documentation!
 ========================================================================================
 
 Dev Guide - Getting Started
@@ -46,5 +46,6 @@ Notes:
    :hidden:
 
    Home page <self>
+   Getting Started <gettingstarted>
    API Reference <autoapi/index>
    Notebooks <notebooks>
