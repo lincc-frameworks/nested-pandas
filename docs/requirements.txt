@@ -7,4 +7,4 @@ nbsphinx
 sphinx
 sphinx-autoapi
 sphinx-copybutton
-sphinx-rtd-theme
+sphinx-book-theme
