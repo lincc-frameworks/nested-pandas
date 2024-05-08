@@ -1,5 +1,27 @@
 # nested-pandas
-WORK IN PROGRESS: Efficient Pandas representation for nested associated datasets.
+Efficient Pandas representation for nested associated datasets.
+
+Nested-Pandas extends the Pandas package with tooling and support for nested 
+dataframes packed into values of top-level dataframe columns. Pyarrow is used
+intrinsically to aid in scalability and performance.
+
+![image](./nestedframe.png)
+
+Nested-Pandas is motivated by time-domain Astronomy use-cases, where we see
+typically two levels of information, information about astronomical objects and
+then an associated set of n measurements of those objects. Nested-Pandas offers
+a performant and memory-efficient package for working with these types of datasets. 
+
+Core advantages being:
+* hierarchical column access
+* efficient packing of nested information into inputs to custom user functions
+* avoiding costly groupby operations
+
+
+
+This is a LINCC Frameworks project - find more information about LINCC Frameworks [here](https://lsstdiscoveryalliance.org/programs/lincc-frameworks/).
+
+
 
 [![Template](https://img.shields.io/badge/Template-LINCC%20Frameworks%20Python%20Project%20Template-brightgreen)](https://lincc-ppt.readthedocs.io/en/latest/)
 
