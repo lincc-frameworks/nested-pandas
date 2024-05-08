@@ -10,7 +10,7 @@ nested-pandas is available to install with pip, using the "nested-pandas" packag
 
 This will grab the latest release version of nested-pandas from pip.
 
-Advanced Installation
+Installation from Source
 ---------------------
 
 In some cases, installation via pip may not be sufficient. In particular, if you're looking to grab the latest
