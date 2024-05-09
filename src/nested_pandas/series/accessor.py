@@ -92,7 +92,7 @@ class NestSeriesAccessor(MutableMapping):
         for field in fields:
             list_array = cast(pa.ListArray, struct_array.field(field))
             if index is None:
-                index = np.repeat(self._series.index.values, np.diff(list_array.offsets))
+                index = self.get_flat_index()
             flat_series[field] = pd.Series(
                 list_array.flatten(),
                 index=pd.Series(index, name=self._series.index.name),
@@ -178,6 +178,13 @@ class NestSeriesAccessor(MutableMapping):
             return pd.Series([], dtype=self._series.dtype)
         return pack_sorted_df_into_struct(flat)
 
+    def get_flat_index(self) -> pd.Index:
+        """Index of the flat arrays"""
+        return pd.Index(
+            np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets)),
+            name=self._series.index.name,
+        )
+
     def get_flat_series(self, field: str) -> pd.Series:
         """Get the flat-array field as a Series
 
@@ -200,7 +207,7 @@ class NestSeriesAccessor(MutableMapping):
         return pd.Series(
             flat_array,
             dtype=pd.ArrowDtype(flat_array.type),
-            index=np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets)),
+            index=self.get_flat_index(),
             name=field,
             copy=False,
         )
@@ -252,7 +259,7 @@ class NestSeriesAccessor(MutableMapping):
             self.set_flat_field(key, value)
             return
 
-        if isinstance(value, pd.Series) and not np.array_equal(self._series.index.values, value.index.values):
+        if isinstance(value, pd.Series) and not self.get_flat_index().equals(value.index):
             raise ValueError("Cannot set field with a Series of different index")
 
         pa_array = pa.array(value, from_pandas=True)
