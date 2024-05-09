@@ -404,6 +404,41 @@ def test___setitem__():
     )
 
 
+def test___setitem___with_series_with_index():
+    """Test that the .nest["field"] = pd.Series(...) works for a single field."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    flat_series = pd.Series(
+        data=["a", "b", "c", "d", "e", "f"],
+        index=[0, 0, 0, 1, 1, 1],
+        name="a",
+        dtype=pd.ArrowDtype(pa.string()),
+    )
+
+    series.nest["a"] = flat_series
+
+    assert_series_equal(
+        series.nest["a"],
+        flat_series,
+    )
+    assert_series_equal(
+        series.nest.get_list_series("a"),
+        pd.Series(
+            data=[np.array(["a", "b", "c"]), np.array(["d", "e", "f"])],
+            dtype=pd.ArrowDtype(pa.list_(pa.string())),
+            index=[0, 1],
+            name="a",
+        ),
+    )
+
+
 def test___setitem___raises_for_wrong_length():
     """Test that the .nest["field"] = ... raises for a wrong length."""
     struct_array = pa.StructArray.from_arrays(

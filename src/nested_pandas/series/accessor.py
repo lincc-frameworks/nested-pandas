@@ -260,8 +260,6 @@ class NestSeriesAccessor(MutableMapping):
             return
 
         if isinstance(value, pd.Series) and not self.get_flat_index().equals(value.index):
-            print(self._series.index)
-            print(value.index)
             raise ValueError("Cannot set field with a Series of different index")
 
         pa_array = pa.array(value, from_pandas=True)
