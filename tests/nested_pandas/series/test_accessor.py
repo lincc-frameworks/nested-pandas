@@ -23,6 +23,23 @@ def test_registered():
     _accessor = series.nest
 
 
+@pytest.mark.parametrize(
+    "series",
+    [
+        pd.Series([1, 2, 3]),
+        pd.Series([1.0, 2.0, 3.0], dtype=pd.ArrowDtype(pa.float64())),
+        pd.Series(
+            [{"a": [1, 2]}, {"a": [3, 4]}],
+            dtype=pd.ArrowDtype(pa.struct([pa.field("a", pa.list_(pa.int64()))])),
+        ),
+    ],
+)
+def test_does_not_work_for_non_nested_series(series):
+    """Test that the .nest accessor does not work for non-nested series."""
+    with pytest.raises(AttributeError):
+        _ = series.nest
+
+
 def test_to_lists():
     """Test that the .nest.to_lists() method works."""
     struct_array = pa.StructArray.from_arrays(
@@ -76,6 +93,21 @@ def test_to_lists_with_fields():
         },
     )
     assert_frame_equal(lists, desired)
+
+
+def test_to_lists_fails_for_empty_input():
+    """Test that the .nest.to_lists([]) fails when no fields are provided."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([]), np.array([])]),
+            pa.array([np.array([]), np.array([])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    with pytest.raises(ValueError):
+        _ = series.nest.to_lists([])
 
 
 def test_to_flat():
@@ -152,6 +184,21 @@ def test_to_flat_with_fields():
 
     for column in flat.columns:
         assert_array_equal(flat[column], desired[column])
+
+
+def test_to_flat_fails_for_empty_input():
+    """Test that the .nest.to_flat([]) fails when no fields are provided."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([]), np.array([])]),
+            pa.array([np.array([]), np.array([])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    with pytest.raises(ValueError):
+        _ = series.nest.to_flat([])
 
 
 def test_fields():
@@ -438,6 +485,36 @@ def test___setitem___with_series_with_index():
             dtype=pd.ArrowDtype(pa.list_(pa.string())),
             index=[0, 1],
             name="a",
+        ),
+    )
+
+
+def test___setitem___empty_series():
+    """Test that the series.nest["field"] = [] for empty series."""
+    empty_series = pd.Series([], dtype=NestedDtype.from_fields({"a": pa.float64()}))
+    empty_series.nest["a"] = []
+    assert len(empty_series) == 0
+
+
+def test___setitem___with_single_value():
+    """Test series.nest["field"] = const"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0])
+
+    series.nest["a"] = 1.0
+    assert_series_equal(
+        series.nest["a"],
+        pd.Series(
+            data=[1.0, 1.0, 1.0],
+            index=[0, 0, 0],
+            name="a",
+            dtype=pd.ArrowDtype(pa.float64()),
         ),
     )
 
