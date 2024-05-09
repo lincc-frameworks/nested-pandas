@@ -101,12 +101,14 @@ def test_to_flat():
                 index=[0, 0, 0, 1, 1, 1],
                 name="a",
                 copy=False,
+                dtype=pd.ArrowDtype(pa.float64()),
             ),
             "b": pd.Series(
                 data=[-4.0, -5.0, -6.0, -3.0, -4.0, -5.0],
                 index=[0, 0, 0, 1, 1, 1],
                 name="b",
                 copy=False,
+                dtype=pd.ArrowDtype(pa.float64()),
             ),
         },
         index=pd.Index([0, 0, 0, 1, 1, 1], name="idx"),
@@ -140,6 +142,7 @@ def test_to_flat_with_fields():
                 index=[0, 0, 0, 1, 1, 1],
                 name="a",
                 copy=False,
+                dtype=pd.ArrowDtype(pa.float64()),
             ),
         },
     )
@@ -527,7 +530,7 @@ def test_to_flat_dropna():
     """
 
     flat = pd.DataFrame(
-        data={"c": [0.0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
     nested = pack_flat(flat, name="nested")
@@ -542,4 +545,5 @@ def test_to_flat_dropna():
             data={"c": [0.0, 2, 4, 1, 3, 1, 4, 1], "d": [5, 4, 7, 5, 1, 9, 3, 4]},
             index=[0, 0, 0, 1, 1, 2, 2, 2],
         ),
+        check_dtype=False,  # filtered's Series are pd.ArrowDtype
     )

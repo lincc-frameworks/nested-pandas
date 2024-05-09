@@ -91,13 +91,15 @@ class NestSeriesAccessor(MutableMapping):
         index = None
         for field in fields:
             list_array = cast(pa.ListArray, struct_array.field(field))
+            flat_array = list_array.flatten()
             if index is None:
                 index = self.get_flat_index()
             flat_series[field] = pd.Series(
-                list_array.flatten(),
+                flat_array,
                 index=pd.Series(index, name=self._series.index.name),
                 name=field,
                 copy=False,
+                dtype=pd.ArrowDtype(flat_array.type),
             )
 
         return pd.DataFrame(flat_series)

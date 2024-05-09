@@ -76,7 +76,8 @@ def test_add_nested_with_flat_df():
     base = base.add_nested(nested, "nested")
 
     assert "nested" in base.columns
-    assert base.nested.nest.to_flat().equals(nested)
+    # to_flat() gives pd.ArrowDtype, so we skip dtype check here
+    assert_frame_equal(base.nested.nest.to_flat(), nested, check_dtype=False)
 
 
 def test_add_nested_with_flat_df_and_mismatched_index():
