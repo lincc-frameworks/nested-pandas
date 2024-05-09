@@ -47,5 +47,5 @@ Notes:
 
    Home page <self>
    Getting Started <gettingstarted>
-   API Reference <autoapi/index>
    Notebooks <notebooks>
+   API Reference <autoapi/index>

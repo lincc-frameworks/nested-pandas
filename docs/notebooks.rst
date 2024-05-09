@@ -3,4 +3,4 @@ Notebooks
 
 .. toctree::
 
-    Introducing Jupyter Notebooks <notebooks/intro_notebook>
+    Lower-level interfaces <notebooks/low_level.ipynb>
