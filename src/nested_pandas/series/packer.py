@@ -288,7 +288,6 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
         Output array of offsets, one element more than the number of unique
         index values.
     """
-    # TODO: implement multi-index support
     if not index.is_monotonic_increasing:
         raise ValueError("The index must be sorted")
 

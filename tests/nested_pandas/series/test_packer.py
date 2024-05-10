@@ -15,7 +15,7 @@ def test_pack_with_flat_df():
             "a": [1, 2, 3, 4],
             "b": [0, 1, 0, 1],
         },
-        index=[1, 2, 1, 2],
+        index=pd.MultiIndex.from_arrays(([1, 1, 1, 1], [1, 2, 1, 2])),
     )
     series = packer.pack(df, name="series")
 
@@ -24,7 +24,7 @@ def test_pack_with_flat_df():
             (np.array([1, 3]), np.array([0, 0])),
             (np.array([2, 4]), np.array([1, 1])),
         ],
-        index=[1, 2],
+        index=pd.MultiIndex.from_arrays(([1, 1], [1, 2])),
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
@@ -380,6 +380,21 @@ def test_view_sorted_series_as_list_array_raises_when_not_sorted():
         (pd.Index([1, 1, 2, 2, 3, 3, 4, 4, 4]), np.array([0, 2, 4, 6, 9])),
         (pd.Index([1, 1, 1, 1, 1, 1, 1, 1, 1]), np.array([0, 9])),
         (pd.Index([1, 2, 2, 2, 3, 3, 4]), np.array([0, 1, 4, 6, 7])),
+        (
+            pd.MultiIndex.from_product([[1, 2, 3], ["a", "a", "b", "b", "b"]]),
+            np.array([0, 2, 5, 7, 10, 12, 15]),
+        ),
+        (
+            pd.MultiIndex.from_arrays(
+                (
+                    [1, 1, 1, 1, 1, 1, 2, 2],
+                    ["a", "a", "a", "a", "b", "b", "z", "z"],
+                    [1, 2, 2, 2, 9, 9, 9, 9],
+                ),
+                names=["id1", "id2", "id3"],
+            ),
+            np.array([0, 1, 4, 6, 8]),
+        ),
     ],
 )
 def test_calculate_sorted_index_offsets(index, offsets):
