@@ -373,12 +373,18 @@ def test_view_sorted_series_as_list_array_raises_when_not_sorted():
         packer.view_sorted_series_as_list_array(series)
 
 
-def test_calculate_sorted_index_offsets():
+@pytest.mark.parametrize(
+    "index,offsets",
+    [
+        (pd.Index([1, 2, 3, 4]), np.array([0, 1, 2, 3, 4])),
+        (pd.Index([1, 1, 2, 2, 3, 3, 4, 4, 4]), np.array([0, 2, 4, 6, 9])),
+        (pd.Index([1, 1, 1, 1, 1, 1, 1, 1, 1]), np.array([0, 9])),
+        (pd.Index([1, 2, 2, 2, 3, 3, 4]), np.array([0, 1, 4, 6, 7])),
+    ],
+)
+def test_calculate_sorted_index_offsets(index, offsets):
     """Test calculate_sorted_index_offsets()."""
-    index = pd.Index([1, 1, 2, 2, 3, 3, 4, 4, 4])
-    actual = packer.calculate_sorted_index_offsets(index)
-    desired = np.array([0, 2, 4, 6, 9])
-    assert_array_equal(actual, desired)
+    assert_array_equal(packer.calculate_sorted_index_offsets(index), offsets)
 
 
 def test_calculate_sorted_index_offsets_raises_when_not_sorted():
