@@ -6,7 +6,7 @@ from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.packer import pack_flat
 from numpy.testing import assert_array_equal
-from pandas.testing import assert_frame_equal, assert_series_equal
+from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
 
 
 def test_registered():
@@ -343,6 +343,26 @@ def test_query_flat_empty_rows():
     desired = pd.Series([], dtype=series.dtype)
 
     assert_series_equal(filtered, desired)
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pd.DataFrame({"a": [1] * 10}, index=[1, 2, 2, 3, 3, 3, 4, 4, 4, 4]),
+        pd.DataFrame(
+            {"a": [1] * 10},
+            index=pd.MultiIndex.from_arrays(([1, 1, 1, 1, 1, 1, 2, 2, 2, 2], [0, 1, 1, 2, 2, 2, 1, 1, 0, 0])),
+        ),
+        pd.DataFrame({"a": [1] * 10}, index=[1, 0, 0, 3, 3, 3, 0, 0, 0, 0]),
+        pd.DataFrame(
+            {"a": [1] * 6}, index=pd.MultiIndex.from_arrays(([0, 1, 0, 1, 0, 1], [1, 0, 0, 1, 0, 2]))
+        ),
+    ],
+)
+def test_get_flat_index(df):
+    """Test .nest.get_flat_index() returns the index of the original flat df"""
+    series = pack_flat(df)
+    assert_index_equal(series.nest.get_flat_index(), df.index.sort_values())
 
 
 def test_get_list_series():

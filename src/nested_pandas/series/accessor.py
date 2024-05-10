@@ -182,10 +182,10 @@ class NestSeriesAccessor(MutableMapping):
 
     def get_flat_index(self) -> pd.Index:
         """Index of the flat arrays"""
-        return pd.Index(
-            np.repeat(self._series.index.values, np.diff(self._series.array.list_offsets)),
-            name=self._series.index.name,
-        )
+        flat_index = np.repeat(self._series.index, np.diff(self._series.array.list_offsets))
+        # pd.Index supports np.repeat, so flat_index is the same type as self._series.index
+        flat_index = cast(pd.Index, flat_index)
+        return flat_index
 
     def get_flat_series(self, field: str) -> pd.Series:
         """Get the flat-array field as a Series
