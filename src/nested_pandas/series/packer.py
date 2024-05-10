@@ -86,7 +86,7 @@ def pack_flat(df: pd.DataFrame, name: str | None = None) -> pd.Series:
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
 
-    # TODO: think about the case when the data is pre-sorted and we don't need a data copy.
+    # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
     flat = df.sort_index(kind="stable")
     return pack_sorted_df_into_struct(flat, name=name)
 
@@ -147,6 +147,9 @@ def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> pd.
     pd.Series
         Output series, with unique indexes.
     """
+    if not df.index.is_monotonic_increasing:
+        raise ValueError("The index of the input dataframe must be sorted")
+
     packed_df = view_sorted_df_as_list_arrays(df)
     # No need to validate the dataframe, the length of the nested arrays is forced to be the same by
     # the view_sorted_df_as_list_arrays function.
@@ -213,6 +216,9 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
         Output dataframe, with unique indexes. It is a view over the input
         dataframe, so it would mute the input dataframe if modified.
     """
+    if not df.index.is_monotonic_increasing:
+        raise ValueError("The index of the input dataframe must be sorted")
+
     offset_array = calculate_sorted_index_offsets(df.index)
     unique_index = df.index.values[offset_array[:-1]]
 
@@ -248,6 +254,9 @@ def view_sorted_series_as_list_array(
         Output series, with unique indexes. It is a view over the input series,
         so it would mute the input series if modified.
     """
+    if not series.index.is_monotonic_increasing:
+        raise ValueError("The index of the input series must be sorted")
+
     if offset is None:
         offset = calculate_sorted_index_offsets(series.index)
     if unique_index is None:
@@ -280,10 +289,10 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
         index values.
     """
     # TODO: implement multi-index support
-    index_diff = np.diff(index.values, prepend=index.values[0] - 1, append=index.values[-1] + 1)
+    if not index.is_monotonic_increasing:
+        raise ValueError("The index must be sorted")
 
-    if np.any(index_diff < 0):
-        raise ValueError("Table index must be strictly sorted.")
+    index_diff = np.diff(index.values, prepend=index.values[0] - 1, append=index.values[-1] + 1)
 
     offset = np.nonzero(index_diff)[0]
 
