@@ -285,13 +285,14 @@ def view_sorted_series_as_list_array(
 
     list_array = pa.ListArray.from_arrays(
         offset,
-        pa.array(series),
+        pa.array(series, from_pandas=True),
     )
     return pd.Series(
         list_array,
         dtype=pd.ArrowDtype(list_array.type),
         index=unique_index,
         copy=False,
+        name=series.name,
     )
 
 

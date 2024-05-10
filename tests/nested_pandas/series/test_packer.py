@@ -365,8 +365,10 @@ def test_view_sorted_df_as_list_arrays():
 def test_view_sorted_series_as_list_array():
     """Test view_sorted_series_as_list_array()."""
     series = pd.Series(
-        data=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+        data=[1, 2, 3, 4, 5, None, 7, 8, 9],
+        dtype=pd.Int64Dtype(),
         index=[1, 1, 2, 2, 3, 3, 4, 4, 4],
+        name="my_series",
     )
     nested = packer.view_sorted_series_as_list_array(series)
 
@@ -376,10 +378,11 @@ def test_view_sorted_series_as_list_array():
         data=[
             np.array([1, 2]),
             np.array([3, 4]),
-            np.array([5, 6]),
+            np.array([5, None]),
             np.array([7, 8, 9]),
         ],
         index=[1, 2, 3, 4],
         dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        name="my_series",
     )
     assert_series_equal(nested, desired_nested)
