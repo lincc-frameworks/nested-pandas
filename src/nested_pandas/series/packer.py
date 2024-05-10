@@ -220,7 +220,7 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("The index of the input dataframe must be sorted")
 
     offset_array = calculate_sorted_index_offsets(df.index)
-    unique_index = df.index.values[offset_array[:-1]]
+    unique_index = df.index[offset_array[:-1]]
 
     series_ = {
         column: view_sorted_series_as_list_array(df[column], offset_array, unique_index)
@@ -260,7 +260,7 @@ def view_sorted_series_as_list_array(
     if offset is None:
         offset = calculate_sorted_index_offsets(series.index)
     if unique_index is None:
-        unique_index = series.index.values[offset[:-1]]
+        unique_index = series.index[offset[:-1]]
 
     list_array = pa.ListArray.from_arrays(
         offset,
@@ -292,8 +292,9 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
     if not index.is_monotonic_increasing:
         raise ValueError("The index must be sorted")
 
-    index_diff = np.diff(index.values, prepend=index.values[0] - 1, append=index.values[-1] + 1)
-
-    offset = np.nonzero(index_diff)[0]
+    # pd.Index.duplicated returns False for the first occurance and True for all others.
+    # So our offsets would be indexes of these False values with the array length in the end.
+    offset_but_last = np.nonzero(~index.duplicated(keep="first"))[0]
+    offset = np.append(offset_but_last, len(index))
 
     return offset
