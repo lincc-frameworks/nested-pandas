@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series import packer
 from numpy.testing import assert_array_equal
@@ -14,7 +15,7 @@ def test_pack_with_flat_df():
             "a": [1, 2, 3, 4],
             "b": [0, 1, 0, 1],
         },
-        index=[1, 2, 1, 2],
+        index=pd.MultiIndex.from_arrays(([1, 1, 1, 1], [1, 2, 1, 2])),
     )
     series = packer.pack(df, name="series")
 
@@ -23,7 +24,7 @@ def test_pack_with_flat_df():
             (np.array([1, 3]), np.array([0, 0])),
             (np.array([2, 4]), np.array([1, 1])),
         ],
-        index=[1, 2],
+        index=pd.MultiIndex.from_arrays(([1, 1], [1, 2])),
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
@@ -87,55 +88,6 @@ def test_pack_with_series_of_dfs():
     assert_series_equal(series, desired)
 
 
-def test_pack_flat_into_df():
-    """Test pack_flat_into_df()."""
-    df = pd.DataFrame(
-        data={
-            "a": [7, 8, 9, 1, 2, 3, 4, 5, 6],
-            "b": [0, 1, 0, 0, 1, 0, 1, 0, 1],
-        },
-        index=[4, 4, 4, 1, 1, 2, 2, 3, 3],
-    )
-    actual = packer.pack_flat_into_df(df, name="struct")
-
-    desired = pd.DataFrame(
-        data={
-            "a": pd.Series(
-                data=[
-                    np.array([1, 2]),
-                    np.array([3, 4]),
-                    np.array([5, 6]),
-                    np.array([7, 8, 9]),
-                ],
-                dtype=pd.ArrowDtype(pa.list_(pa.int64())),
-                index=[1, 2, 3, 4],
-            ),
-            "b": pd.Series(
-                data=[
-                    np.array([0, 1]),
-                    np.array([0, 1]),
-                    np.array([0, 1]),
-                    np.array([0, 1, 0]),
-                ],
-                dtype=pd.ArrowDtype(pa.list_(pa.int64())),
-                index=[1, 2, 3, 4],
-            ),
-            "struct": pd.Series(
-                data=[
-                    (np.array([1, 2]), np.array([0, 1])),
-                    (np.array([3, 4]), np.array([0, 1])),
-                    (np.array([5, 6]), np.array([0, 1])),
-                    (np.array([7, 8, 9]), np.array([0, 1, 0])),
-                ],
-                dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
-                index=[1, 2, 3, 4],
-            ),
-        },
-    )
-
-    assert_frame_equal(actual, desired)
-
-
 def test_pack_flat():
     """Test pack_flat()."""
     df = pd.DataFrame(
@@ -184,6 +136,19 @@ def test_pack_sorted_df_into_struct():
     )
 
     assert_series_equal(actual, desired)
+
+
+def test_pack_sorted_df_into_struct_raises_when_not_sorted():
+    """Test pack_sorted_df_into_struct() raises when not sorted."""
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "b": [0, 1, 0, 1, 0, 1, 0, 1, 0],
+        },
+        index=[1, 2, 1, 2, 3, 3, 4, 4, 4],
+    )
+    with pytest.raises(ValueError):
+        packer.pack_sorted_df_into_struct(df)
 
 
 def test_pack_lists():
@@ -362,6 +327,19 @@ def test_view_sorted_df_as_list_arrays():
     assert_frame_equal(nested_df, desired_nested)
 
 
+def test_view_sorted_df_as_list_arrays_raises_when_not_sorted():
+    """Test view_sorted_df_as_list_arrays() raises when not sorted."""
+    flat_df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "b": [0, 1, 0, 1, 0, 1, 0, 1, 0],
+        },
+        index=[1, 2, 1, 2, 3, 3, 4, 4, 4],
+    )
+    with pytest.raises(ValueError):
+        packer.view_sorted_df_as_list_arrays(flat_df)
+
+
 def test_view_sorted_series_as_list_array():
     """Test view_sorted_series_as_list_array()."""
     series = pd.Series(
@@ -386,3 +364,49 @@ def test_view_sorted_series_as_list_array():
         name="my_series",
     )
     assert_series_equal(nested, desired_nested)
+
+
+def test_view_sorted_series_as_list_array_raises_when_not_sorted():
+    """Test view_sorted_series_as_list_array() raises when not sorted."""
+    series = pd.Series(
+        data=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+        index=[1, 2, 1, 2, 3, 3, 4, 4, 4],
+    )
+    with pytest.raises(ValueError):
+        packer.view_sorted_series_as_list_array(series)
+
+
+@pytest.mark.parametrize(
+    "index,offsets",
+    [
+        (pd.Index([1, 2, 3, 4]), np.array([0, 1, 2, 3, 4])),
+        (pd.Index([1, 1, 2, 2, 3, 3, 4, 4, 4]), np.array([0, 2, 4, 6, 9])),
+        (pd.Index([1, 1, 1, 1, 1, 1, 1, 1, 1]), np.array([0, 9])),
+        (pd.Index([1, 2, 2, 2, 3, 3, 4]), np.array([0, 1, 4, 6, 7])),
+        (
+            pd.MultiIndex.from_product([[1, 2, 3], ["a", "a", "b", "b", "b"]]),
+            np.array([0, 2, 5, 7, 10, 12, 15]),
+        ),
+        (
+            pd.MultiIndex.from_arrays(
+                (
+                    [1, 1, 1, 1, 1, 1, 2, 2],
+                    ["a", "a", "a", "a", "b", "b", "z", "z"],
+                    [1, 2, 2, 2, 9, 9, 9, 9],
+                ),
+                names=["id1", "id2", "id3"],
+            ),
+            np.array([0, 1, 4, 6, 8]),
+        ),
+    ],
+)
+def test_calculate_sorted_index_offsets(index, offsets):
+    """Test calculate_sorted_index_offsets()."""
+    assert_array_equal(packer.calculate_sorted_index_offsets(index), offsets)
+
+
+def test_calculate_sorted_index_offsets_raises_when_not_sorted():
+    """Test calculate_sorted_index_offsets() raises when not sorted."""
+    index = pd.Index([1, 2, 1, 2, 3, 3, 4, 4, 4])
+    with pytest.raises(ValueError):
+        packer.calculate_sorted_index_offsets(index)
