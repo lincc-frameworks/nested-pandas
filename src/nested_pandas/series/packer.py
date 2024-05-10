@@ -57,36 +57,6 @@ def pack(
     return pack_seq(obj, name=name, index=index, dtype=dtype)
 
 
-def pack_flat_into_df(df: pd.DataFrame, name=None) -> pd.DataFrame:
-    """Pack a "flat" dataframe into a "nested" dataframe.
-
-    For the input dataframe with repeated indexes, make a pandas.DataFrame,
-    where each original column is replaced by a column of lists, and,
-    optionally, a "structure" column is added, containing a structure of
-    lists with the original columns.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input dataframe, with repeated indexes.
-
-    name : str, optional
-        Name of the structure column. The default is None, which means no
-        structure column is added.
-
-    Returns
-    -------
-    pd.DataFrame
-        Output dataframe.
-    """
-    # TODO: we can optimize name=None case a bit
-    struct_series = pack_flat(df, name=name)
-    packed_df = struct_series.nest.to_lists()
-    if name is not None:
-        packed_df[name] = struct_series
-    return packed_df
-
-
 def pack_flat(df: pd.DataFrame, name: str | None = None) -> pd.Series:
     """Make a structure of lists representation of a "flat" dataframe.
 

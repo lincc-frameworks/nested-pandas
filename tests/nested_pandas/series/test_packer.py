@@ -87,55 +87,6 @@ def test_pack_with_series_of_dfs():
     assert_series_equal(series, desired)
 
 
-def test_pack_flat_into_df():
-    """Test pack_flat_into_df()."""
-    df = pd.DataFrame(
-        data={
-            "a": [7, 8, 9, 1, 2, 3, 4, 5, 6],
-            "b": [0, 1, 0, 0, 1, 0, 1, 0, 1],
-        },
-        index=[4, 4, 4, 1, 1, 2, 2, 3, 3],
-    )
-    actual = packer.pack_flat_into_df(df, name="struct")
-
-    desired = pd.DataFrame(
-        data={
-            "a": pd.Series(
-                data=[
-                    np.array([1, 2]),
-                    np.array([3, 4]),
-                    np.array([5, 6]),
-                    np.array([7, 8, 9]),
-                ],
-                dtype=pd.ArrowDtype(pa.list_(pa.int64())),
-                index=[1, 2, 3, 4],
-            ),
-            "b": pd.Series(
-                data=[
-                    np.array([0, 1]),
-                    np.array([0, 1]),
-                    np.array([0, 1]),
-                    np.array([0, 1, 0]),
-                ],
-                dtype=pd.ArrowDtype(pa.list_(pa.int64())),
-                index=[1, 2, 3, 4],
-            ),
-            "struct": pd.Series(
-                data=[
-                    (np.array([1, 2]), np.array([0, 1])),
-                    (np.array([3, 4]), np.array([0, 1])),
-                    (np.array([5, 6]), np.array([0, 1])),
-                    (np.array([7, 8, 9]), np.array([0, 1, 0])),
-                ],
-                dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
-                index=[1, 2, 3, 4],
-            ),
-        },
-    )
-
-    assert_frame_equal(actual, desired)
-
-
 def test_pack_flat():
     """Test pack_flat()."""
     df = pd.DataFrame(
