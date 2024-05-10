@@ -3,7 +3,7 @@ _commit: v2.0.1
 _src_path: gh:lincc-frameworks/python-project-template
 author_email: brantd@uw.edu
 author_name: LINCC Frameworks
-create_example_module: true
+create_example_module: false
 custom_install: true
 enforce_style:
 - ruff_lint
