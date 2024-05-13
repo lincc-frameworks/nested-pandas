@@ -1,10 +1,11 @@
 # nested-pandas
-Efficient pandas representation for nested associated datasets.
+An extension of pandas for efficient representation of nested
+associated datasets.
 
 Nested-Pandas extends the [pandas](https://pandas.pydata.org/) package with 
 tooling and support for nested dataframes packed into values of top-level 
 dataframe columns. [Pyarrow](https://arrow.apache.org/docs/python/index.html) 
-is used intrinsically to aid in scalability and performance.
+is used internally to aid in scalability and performance.
 
 ![image](./nestedframe.png)
 
