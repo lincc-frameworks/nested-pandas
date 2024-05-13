@@ -1,6 +1,6 @@
-Notebooks
+Tutorials
 ========================================================================================
 
 .. toctree::
 
-    Lower-level interfaces <notebooks/low_level.ipynb>
+    Lower-level interfaces <tutorials/low_level.ipynb>
