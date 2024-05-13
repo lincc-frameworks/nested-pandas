@@ -15,6 +15,7 @@ is used internally to aid in scalability and performance.
 
 .. image:: ../nestedframe.png
   :width: 600
+  :align: center
   :alt: Example NestedFrame
 
 
