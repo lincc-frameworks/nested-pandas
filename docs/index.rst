@@ -18,6 +18,16 @@ is used internally to aid in scalability and performance.
   :align: center
   :alt: Example NestedFrame
 
+Nested-Pandas is motivated by time-domain astronomy use cases, where we see
+typically two levels of information, information about astronomical objects and
+then an associated set of `N` measurements of those objects. Nested-Pandas offers
+a performant and memory-efficient package for working with these types of datasets. 
+
+Core advantages being:
+* hierarchical column access
+* efficient packing of nested information into inputs to custom user functions
+* avoiding costly groupby operations
+
 
 How to Use This Guide
 =====================
