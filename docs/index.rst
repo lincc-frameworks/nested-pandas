@@ -24,6 +24,7 @@ then an associated set of `N` measurements of those objects. Nested-Pandas offer
 a performant and memory-efficient package for working with these types of datasets. 
 
 Core advantages being:
+
 * hierarchical column access
 * efficient packing of nested information into inputs to custom user functions
 * avoiding costly groupby operations
