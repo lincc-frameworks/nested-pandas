@@ -14,7 +14,7 @@ dataframe columns. [Pyarrow](https://arrow.apache.org/docs/python/index.html)
 is used internally to aid in scalability and performance.
 
 .. image:: ../nestedframe.png
-  :width: 800
+  :width: 600
   :alt: Example NestedFrame
 
 
