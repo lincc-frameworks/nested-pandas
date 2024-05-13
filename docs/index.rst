@@ -13,7 +13,10 @@ tooling and support for nested dataframes packed into values of top-level
 dataframe columns. [Pyarrow](https://arrow.apache.org/docs/python/index.html) 
 is used internally to aid in scalability and performance.
 
-![image](../nestedframe.png)
+.. image:: ../nestedframe.png
+  :width: 800
+  :alt: Example NestedFrame
+
 
 How to Use This Guide
 =====================
@@ -22,7 +25,7 @@ Begin with the :doc:`Getting Started <gettingstarted/installation>`
 guide to learn the basics of installation and walkthrough a simple example of 
 using nested-pandas.
 
-The :doc:`Tutorials <tutorials>`_ 
+The :doc:`Tutorials <tutorials>`
 section showcases the fundamental features of nested-pandas.
 
 API-level information about nested-pandas is viewable in the 
