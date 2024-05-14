@@ -14,7 +14,7 @@ from .core import NestedFrame
 
 def read_parquet(
     data: FilePath | ReadBuffer[bytes],
-    to_pack: dict,
+    to_pack: dict | None = None,
     columns: list[str] | None = None,
     pack_columns: dict | None = None,
     dtype_backend: DtypeBackend | lib.NoDefault = lib.no_default,
@@ -40,10 +40,11 @@ def read_parquet(
         partitioned parquet files. Both pyarrow and fastparquet support
         paths to directories as well as file URLs. A directory path could be:
         ``file://localhost/path/to/tables`` or ``s3://bucket/partition_dir``.
-    to_pack: dict,
+    to_pack: dict, default=None
         A dictionary of parquet data paths (same criteria as `data`), where
         each key reflects the desired column name to pack the data into and
-        each value reflects the parquet data to pack.
+        each value reflects the parquet data to pack. If None, it assumes 
+        that any data to pack is already packed as a column within `data`.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     pack_columns: dict, default=None
@@ -64,7 +65,8 @@ def read_parquet(
     """
 
     df = NestedFrame(pd.read_parquet(data, engine="pyarrow", columns=columns, dtype_backend=dtype_backend))
-
+    if to_pack is None:
+        return df
     for pack_key in to_pack:
         col_subset = pack_columns.get(pack_key, None) if pack_columns is not None else None
         packed = pd.read_parquet(
