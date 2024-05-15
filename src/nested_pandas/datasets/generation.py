@@ -1,5 +1,5 @@
+
 import numpy as np
-import tempfile
 
 from nested_pandas import NestedFrame
 

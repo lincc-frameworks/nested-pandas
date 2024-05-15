@@ -43,7 +43,7 @@ def read_parquet(
     to_pack: dict, default=None
         A dictionary of parquet data paths (same criteria as `data`), where
         each key reflects the desired column name to pack the data into and
-        each value reflects the parquet data to pack. If None, it assumes 
+        each value reflects the parquet data to pack. If None, it assumes
         that any data to pack is already packed as a column within `data`.
     columns : list, default=None
         If not None, only these columns will be read from the file.

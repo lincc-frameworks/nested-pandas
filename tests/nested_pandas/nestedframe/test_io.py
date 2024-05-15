@@ -1,13 +1,10 @@
 import os
+import tempfile
 
 import pandas as pd
 import pytest
-from nested_pandas import NestedFrame
-from nested_pandas import read_parquet
-
+from nested_pandas import NestedFrame, read_parquet
 from pandas.testing import assert_frame_equal
-
-import tempfile
 
 
 @pytest.mark.parametrize("columns", [["a"], None])
@@ -65,6 +62,7 @@ def test_read_parquet(tmp_path, columns, pack_columns):
 
 
 def test_write_packed_parquet():
+    """ Tests writing a nested frame to a single parquet file. """
     # Generate some test data
     base = pd.DataFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
@@ -90,6 +88,7 @@ def test_write_packed_parquet():
     assert_frame_equal(nf, nf2)
 
 def test_write_parquet_by_layer():
+    """ Tests writing a nested frame to multiple parquet files."""
     base = pd.DataFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
     nested1 = pd.DataFrame(
