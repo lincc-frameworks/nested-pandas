@@ -442,7 +442,7 @@ class NestedFrame(pd.DataFrame):
         return result
 
     def to_parquet(self, path, by_layer=False, **kwargs) -> NestedFrame:
-        """ Creates parquet file(s) with the data of a NestedFrame, either
+        """Creates parquet file(s) with the data of a NestedFrame, either
         as a single parquet file where each nested dataset is packed into its
         own column or as an individual parquet file for each layer.
 
@@ -471,7 +471,7 @@ class NestedFrame(pd.DataFrame):
         if not by_layer:
             # We just defer to the pandas to_parquet method if we're not writing by layer
             # or there is only one layer in the NestedFrame.
-            super().to_parquet(path, engine='pyarrow', **kwargs)
+            super().to_parquet(path, engine="pyarrow", **kwargs)
         else:
             # If we're writing by layer, path must be an existing directory
             if not os.path.isdir(path):
@@ -483,6 +483,7 @@ class NestedFrame(pd.DataFrame):
 
             # Write each nested layer to a parquet file
             for layer in self.all_columns:
-                if layer != 'base':
+                if layer != "base":
                     path_layer = os.path.join(path, f"{layer}.parquet")
                     self[layer].nest.to_flat().to_parquet(path_layer, engine='pyarrow', **kwargs)
+        return None
