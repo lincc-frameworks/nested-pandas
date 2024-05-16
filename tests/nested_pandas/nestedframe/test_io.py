@@ -62,7 +62,7 @@ def test_read_parquet(tmp_path, columns, pack_columns):
 
 
 def test_write_packed_parquet():
-    """Tests writing a nested frame to a single parquet file. """
+    """Tests writing a nested frame to a single parquet file."""
     # Generate some test data
     base = pd.DataFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
@@ -73,7 +73,8 @@ def test_write_packed_parquet():
 
     nested2 = pd.DataFrame(
         data={"e": [0, 2, 4, 1, 4, 3, 1, 4, 1], "f": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
-        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],    )
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
 
     # Construct the NestedFrame
     nf = NestedFrame(base).add_nested(nested1, name="nested1").add_nested(nested2, name="nested2")
@@ -85,6 +86,7 @@ def test_write_packed_parquet():
     # Read from parquet
     nf2 = read_parquet(temp.name)
     assert_frame_equal(nf, nf2)
+
 
 def test_write_parquet_by_layer():
     """Tests writing a nested frame to multiple parquet files."""

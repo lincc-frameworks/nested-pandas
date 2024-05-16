@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from nested_pandas import NestedFrame
@@ -54,6 +53,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
         return base_nf
     else:
         raise TypeError("Input to n_layer is not an int or dict.")
+
 
 def generate_parquet_file(n_base, n_layer, path, file_per_layer=False, seed=None):
     """Generates a toy dataset and outputs it to one or more parquet files.
