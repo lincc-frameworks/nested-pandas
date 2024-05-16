@@ -51,5 +51,5 @@ Learn more about contributing to this repository in our :doc:`Contribution Guide
 
    Home page <self>
    Getting Started <gettingstarted>
-   Notebooks <notebooks>
+   Tutorials <tutorials>
    API Reference <autoapi/index>

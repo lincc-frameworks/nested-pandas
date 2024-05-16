@@ -345,7 +345,7 @@ class NestedFrame(pd.DataFrame):
         )
         return new_df
 
-    def reduce(self, func, *args, **kwargs) -> NestedFrame:
+    def reduce(self, func, *args, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
 
