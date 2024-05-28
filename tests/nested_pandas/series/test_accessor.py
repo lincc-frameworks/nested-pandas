@@ -70,6 +70,39 @@ def test_to_lists():
     assert_frame_equal(lists, desired)
 
 
+def test_to_lists_for_chunked_array():
+    """ ""Test that the .nest.to_lists() when underlying array is chunked"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            [np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])],
+            [np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])],
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 3)
+    assert chunked_array.length() == 6
+    series = pd.Series(chunked_array, dtype=NestedDtype(chunked_array.type), index=[0, 1, 2, 3, 4, 5])
+    assert series.array.num_chunks == 3
+
+    lists = series.nest.to_lists()
+
+    desired = pd.DataFrame(
+        data={
+            "a": pd.Series(
+                data=[np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])] * 3,
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
+                index=[0, 1, 2, 3, 4, 5],
+            ),
+            "b": pd.Series(
+                data=[np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])] * 3,
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
+                index=[0, 1, 2, 3, 4, 5],
+            ),
+        },
+    )
+    assert_frame_equal(lists, desired)
+
+
 def test_to_lists_with_fields():
     """Test that the .nest.to_lists(fields=...) method works."""
     struct_array = pa.StructArray.from_arrays(
@@ -152,6 +185,43 @@ def test_to_flat():
 
     for column in flat.columns:
         assert_array_equal(flat[column], desired[column])
+
+
+def test_to_flat_for_chunked_array():
+    """Test that the .nest.to_flat() when underlying array is pa.ChunkedArray."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            [np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])],
+            [np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])],
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 3)
+    assert chunked_array.length() == 6
+    series = pd.Series(chunked_array, dtype=NestedDtype(chunked_array.type), index=[0, 1, 2, 3, 4, 5])
+    assert series.array.num_chunks == 3
+
+    flat = series.nest.to_flat()
+
+    desired = pd.DataFrame(
+        data={
+            "a": pd.Series(
+                data=[1.0, 2.0, 3.0, -1.0, -2.0, -1.0] * 3,
+                name="a",
+                index=np.repeat([0, 1, 2, 3, 4, 5], 3),
+                dtype=pd.ArrowDtype(pa.float64()),
+            ),
+            "b": pd.Series(
+                data=[4.0, 5.0, 6.0, -3.0, -4.0, -5.0] * 3,
+                name="b",
+                index=np.repeat([0, 1, 2, 3, 4, 5], 3),
+                dtype=pd.ArrowDtype(pa.float64()),
+            ),
+        },
+        index=pd.Index(np.repeat([0, 1, 2, 3, 4, 5], 3)),
+    )
+
+    assert_frame_equal(flat, desired)
 
 
 def test_to_flat_with_fields():

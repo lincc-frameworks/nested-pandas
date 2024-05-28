@@ -1,6 +1,7 @@
 # Python 3.9 doesn't support "|" for types
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Generator, MutableMapping
 from typing import cast
 
@@ -53,14 +54,19 @@ class NestSeriesAccessor(MutableMapping):
         if len(fields) == 0:
             raise ValueError("Cannot convert a struct with no fields to lists")
 
-        struct_array = cast(pa.StructArray, pa.array(self._series))
+        list_chunks = defaultdict(list)
+        for chunk in self._series.array._pa_array.iterchunks():
+            struct_array = cast(pa.StructArray, chunk)
+            for field in fields:
+                list_array = cast(pa.ListArray, struct_array.field(field))
+                list_chunks[field].append(list_array)
 
         list_series = {}
-        for field in fields:
-            list_array = cast(pa.ListArray, struct_array.field(field))
+        for field, chunks in list_chunks.items():
+            chunked_array = pa.chunked_array(chunks)
             list_series[field] = pd.Series(
-                list_array,
-                dtype=pd.ArrowDtype(list_array.type),
+                chunked_array,
+                dtype=pd.ArrowDtype(chunked_array.type),
                 index=self._series.index,
                 name=field,
                 copy=False,
@@ -85,21 +91,25 @@ class NestSeriesAccessor(MutableMapping):
         if len(fields) == 0:
             raise ValueError("Cannot flatten a struct with no fields")
 
-        struct_array = cast(pa.StructArray, pa.array(self._series))
+        index = pd.Series(self.get_flat_index(), name=self._series.index.name)
+
+        flat_chunks = defaultdict(list)
+        for chunk in self._series.array._pa_array.iterchunks():
+            struct_array = cast(pa.StructArray, chunk)
+            for field in fields:
+                list_array = cast(pa.ListArray, struct_array.field(field))
+                flat_array = list_array.flatten()
+                flat_chunks[field].append(flat_array)
 
         flat_series = {}
-        index = None
-        for field in fields:
-            list_array = cast(pa.ListArray, struct_array.field(field))
-            flat_array = list_array.flatten()
-            if index is None:
-                index = self.get_flat_index()
+        for field, chunks in flat_chunks.items():
+            chunked_array = pa.chunked_array(chunks)
             flat_series[field] = pd.Series(
-                flat_array,
+                chunked_array,
                 index=pd.Series(index, name=self._series.index.name),
                 name=field,
                 copy=False,
-                dtype=pd.ArrowDtype(flat_array.type),
+                dtype=pd.ArrowDtype(chunked_array.type),
             )
 
         return pd.DataFrame(flat_series)
