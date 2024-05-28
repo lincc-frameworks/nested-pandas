@@ -1207,6 +1207,21 @@ def test_flat_length():
     assert ext_array.flat_length == 7
 
 
+def test_num_chunks():
+    """Tests .num_chunks property."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 7)
+    ext_array = NestedExtensionArray(chunked_array)
+
+    assert ext_array.num_chunks == 7
+
+
 def test_view_fields_with_single_field():
     """Tests ext_array.view("field")"""
     arrays = [

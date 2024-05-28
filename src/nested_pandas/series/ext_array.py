@@ -621,6 +621,11 @@ class NestedExtensionArray(ExtensionArray):
         """Length of the flat arrays"""
         return sum(chunk.field(0).value_lengths().sum().as_py() for chunk in self._pa_array.iterchunks())
 
+    @property
+    def num_chunks(self) -> int:
+        """Number of chunks in underlying pyarrow.ChunkedArray"""
+        return self._pa_array.num_chunks
+
     def view_fields(self, fields: str | list[str]) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Get a view of the series with only the specified fields
 
