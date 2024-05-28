@@ -35,7 +35,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, Callable, cast
 
 import numpy as np
@@ -676,8 +676,11 @@ class NestedExtensionArray(ExtensionArray):
 
         return self.__class__(pa_array, validate=False)
 
-    def set_flat_field(self, field: str, value: ArrayLike) -> None:
+    def set_flat_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from flat-array of values
+
+        Note that if this updates the dtype, it would not affect the dtype of
+        the pd.Series back-ended by this extension array.
 
         Parameters
         ----------
@@ -685,23 +688,49 @@ class NestedExtensionArray(ExtensionArray):
             The name of the field.
         value : ArrayLike
             The 'flat' array of values to be set.
+        keep_dtype : bool, default False
+            Whether to keep the original dtype of the field. If True,
+            now new field will be created, and the dtype of the existing
+            field will be kept. If False, the dtype of the field will be
+            inferred from the input value.
         """
         # TODO: optimize for the case when the input is a pa.ChunkedArray
+
+        if keep_dtype:
+            if field not in self.field_names:
+                raise ValueError(
+                    "If keep_dtype is True, the field must exist in the series. "
+                    f"Got: {field}, available: {self.field_names}"
+                )
+            # Get the current element type of list-array
+            pa_type = self._pa_array.chunk(0).field(field).type.value_type
+        else:
+            pa_type = None
 
         if np.ndim(value) == 0:
             value = np.repeat(value, self.flat_length)
 
-        pa_array = pa.array(value)
+        try:
+            pa_array = pa.array(value, from_pandas=True, type=pa_type)
+        except (ValueError, TypeError) as e:
+            raise TypeError(
+                f"New values must be convertible to the existing element pyarrow type, {pa_type}. "
+                "If you want to replace field with values of a new type, use series.nest.with_flat_field() "
+                "or NestedExtensionArray.set_flat_field(..., keep_dtype=False) instead."
+            ) from e
 
         if len(pa_array) != self.flat_length:
             raise ValueError("The input must be a struct_scalar or have the same length as the flat arrays")
 
         list_array = pa.ListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
 
-        return self.set_list_field(field, list_array)
+        return self.set_list_field(field, list_array, keep_dtype=keep_dtype)
 
-    def set_list_field(self, field: str, value: ArrayLike) -> None:
+    def set_list_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from list-array
+
+        Note that if this updates the dtype, it would not affect the dtype of
+        the pd.Series back-ended by this extension array.
 
         Parameters
         ----------
@@ -709,10 +738,32 @@ class NestedExtensionArray(ExtensionArray):
             The name of the field.
         value : ArrayLike
             The list-array of values to be set.
+        keep_dtype : bool, default False
+            Whether to keep the original dtype of the field. If True,
+            now new field will be created, and the dtype of the existing
+            field will be kept. If False, the dtype of the field will be
+            inferred from the input value.
         """
         # TODO: optimize for the case when the input is a pa.ChunkedArray
 
-        pa_array = pa.array(value)
+        if keep_dtype:
+            if field not in self.field_names:
+                raise ValueError(
+                    "If keep_dtype is True, the field must exist in the series. "
+                    f"Got: {field}, available: {self.field_names}"
+                )
+            pa_type = self._pa_array.chunk(0).field(field).type
+        else:
+            pa_type = None
+
+        try:
+            pa_array = pa.array(value, from_pandas=True, type=pa_type)
+        except (ValueError, TypeError) as e:
+            raise TypeError(
+                f"New values must be convertible to the existing list pyarrow type, {pa_type}. "
+                "If you want to replace field with values of a new type, use series.nest.with_list_field() "
+                "or NestedExtensionArray.set_list_field(..., keep_dtype=False) instead."
+            ) from e
 
         if not is_pa_type_a_list(pa_array.type):
             raise ValueError(f"Expected a list array, got {pa_array.type}")
@@ -724,38 +775,42 @@ class NestedExtensionArray(ExtensionArray):
         for sl, chunk in enumerate_chunks(self._pa_array):
             chunk = cast(pa.StructArray, chunk)
 
-            # Build a new struct array. We collect all existing fields and add the new one.
+            # Build a new struct array. We collect all existing fields and add/replace the new one.
             struct_dict = {}
             for pa_field in chunk.type:
                 struct_dict[pa_field.name] = chunk.field(pa_field.name)
-            struct_dict[field] = pa.array(pa_array[sl])
+            struct_dict[field] = pa_array[sl]
 
             struct_array = pa.StructArray.from_arrays(struct_dict.values(), struct_dict.keys())
             chunks.append(struct_array)
-        pa_array = pa.chunked_array(chunks)
+        chunked_array = pa.chunked_array(chunks)
 
-        self._replace_pa_array(pa_array, validate=True)
+        self._replace_pa_array(chunked_array, validate=True)
 
-    def pop_field(self, field: str):
-        """Delete a field from the struct array
+    def pop_fields(self, fields: Iterable[str]):
+        """Delete fields from the struct array
+
+        Note that at least one field must be left in the struct array.
 
         Parameters
         ----------
-        field : str
-            The name of the field to be deleted.
+        fields : iterable of str
+            The names of the fields to delete.
         """
-        if field not in self.field_names:
-            raise ValueError(f"Field '{field}' not found")
+        fields = frozenset(fields)
 
-        if len(self.field_names) == 1:
-            raise ValueError("Cannot delete the last field")
+        if not fields.issubset(self.field_names):
+            raise ValueError(f"Some fields are not found, given: {fields}, available: {self.field_names}")
+
+        if len(self.field_names) - len(fields) == 0:
+            raise ValueError("Cannot delete all fields")
 
         chunks = []
         for chunk in self._pa_array.iterchunks():
             chunk = cast(pa.StructArray, chunk)
             struct_dict = {}
             for pa_field in chunk.type:
-                if pa_field.name != field:
+                if pa_field.name not in fields:
                     struct_dict[pa_field.name] = chunk.field(pa_field.name)
             struct_array = pa.StructArray.from_arrays(struct_dict.values(), struct_dict.keys())
             chunks.append(struct_array)

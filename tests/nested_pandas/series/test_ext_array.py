@@ -1453,7 +1453,7 @@ def test_set_list_field_raises_for_wrong_length():
         ext_array.set_list_field("b", longer_array)
 
 
-def test_pop_field():
+def test_pop_fields():
     """Tests that we can pop a field from the extension array."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -1465,7 +1465,7 @@ def test_pop_field():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    ext_array.pop_field("c")
+    ext_array.pop_fields(["c"])
 
     desired_struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -1479,7 +1479,30 @@ def test_pop_field():
     assert_series_equal(pd.Series(ext_array), pd.Series(desired))
 
 
-def test_pop_field_raises_for_invalid_field():
+def test_pop_fields_multiple_fields():
+    """Tests that we can pop multiple fields from the extension array."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+            pa.array([np.array(["x", "y", "z"]), np.array(["x1", "x2", "x3", "x4"])]),
+        ],
+        names=["a", "b", "c"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    ext_array.pop_fields(["a", "c"])
+
+    desired_struct_array = pa.StructArray.from_arrays(
+        arrays=[pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])])],
+        names=["b"],
+    )
+    desired = NestedExtensionArray(desired_struct_array)
+
+    assert_series_equal(pd.Series(ext_array), pd.Series(desired))
+
+
+def test_pop_fields_raises_for_invalid_field():
     """Tests that we raise an error when trying to pop a field that does not exist."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -1491,7 +1514,22 @@ def test_pop_field_raises_for_invalid_field():
     ext_array = NestedExtensionArray(struct_array)
 
     with pytest.raises(ValueError):
-        ext_array.pop_field("c")
+        ext_array.pop_fields(["c"])
+
+
+def test_pop_fields_raises_for_some_invalid_fields():
+    """Tests that we raise an error when trying to pop some fields that do not exist."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    with pytest.raises(ValueError):
+        ext_array.pop_fields(["a", "c"])
 
 
 def test_delete_last_field_raises():
@@ -1506,14 +1544,11 @@ def test_delete_last_field_raises():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    ext_array.pop_field("a")
-    assert ext_array.field_names == ["b", "c"]
-
-    ext_array.pop_field("c")
+    ext_array.pop_fields(["c", "a"])
     assert ext_array.field_names == ["b"]
 
     with pytest.raises(ValueError):
-        ext_array.pop_field("b")
+        ext_array.pop_fields(["b"])
 
 
 def test_from_arrow_ext_array():

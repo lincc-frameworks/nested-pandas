@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Generator, MutableMapping
+from collections.abc import Generator, Mapping
 from typing import cast
 
 import numpy as np
@@ -18,7 +18,7 @@ __all__ = ["NestSeriesAccessor"]
 
 
 @register_series_accessor("nest")
-class NestSeriesAccessor(MutableMapping):
+class NestSeriesAccessor(Mapping):
     """Accessor for operations on Series of NestedDtype
 
     This accessor implements `MutableMapping` interface over the fields of the
@@ -124,8 +124,8 @@ class NestSeriesAccessor(MutableMapping):
         """Names of the nested columns"""
         return self._series.array.field_names
 
-    def set_flat_field(self, field: str, value: ArrayLike) -> None:
-        """Set the field from flat-array of values, in-place
+    def with_flat_field(self, field: str, value: ArrayLike) -> pd.Series:
+        """Set the field from flat-array of values and return a new series
 
         Parameters
         ----------
@@ -134,11 +134,18 @@ class NestSeriesAccessor(MutableMapping):
         value : ArrayLike
             Array of values to set. It must be a scalar or have the same length
              as the flat arrays, e.g. `self.flat_length`.
-        """
-        self._series.array.set_flat_field(field, value)
 
-    def set_list_field(self, field: str, value: ArrayLike) -> None:
-        """Set the field from list-array, in-place
+        Returns
+        -------
+        pd.Series
+            The new series with the field set.
+        """
+        new_array = self._series.array.copy()
+        new_array.set_flat_field(field, value)
+        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+
+    def with_list_field(self, field: str, value: ArrayLike) -> pd.Series:
+        """Set the field from list-array of values and return a new series
 
         Parameters
         ----------
@@ -147,27 +154,37 @@ class NestSeriesAccessor(MutableMapping):
         value : ArrayLike
             Array of values to set. It must be a list-array of the same length
              as the series, e.g. length of the series.
-        """
-        self._series.array.set_list_field(field, value)
-
-    # I intentionally don't call it `drop` or `drop_field` because `pd.DataFrame.drop` is not inplace
-    # by default, and I wouldn't like to surprise the user.
-    def pop_field(self, field: str) -> pd.Series:
-        """Delete the field from the struct and return it.
-
-        Parameters
-        ----------
-        field : str
-            Name of the field to delete.
 
         Returns
         -------
         pd.Series
-            The deleted field.
+            The new series with the field set.
         """
-        series = self[field]
-        self._series.array.pop_field(field)
-        return series
+        new_array = self._series.array.copy()
+        new_array.set_list_field(field, value)
+        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+
+    def without_field(self, field: str | list[str]) -> pd.Series:
+        """Remove the field(s) from the series and return a new series
+
+        Note, that at least one field must be left in the series.
+
+        Parameters
+        ----------
+        field : str or list[str]
+            Name of the field(s) to remove.
+
+        Returns
+        -------
+        pd.Series
+            The new series without the field(s).
+        """
+        if isinstance(field, str):
+            field = [field]
+
+        new_array = self._series.array.copy()
+        new_array.pop_fields(field)
+        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
 
     def query_flat(self, query: str) -> pd.Series:
         """Query the flat arrays with a boolean expression
@@ -255,6 +272,12 @@ class NestSeriesAccessor(MutableMapping):
         return self.get_flat_series(key)
 
     def __setitem__(self, key: str, value: ArrayLike) -> None:
+        """Replace the field values from flat-array of values
+
+        Currently, only replacement of the whole field is supported, the length
+        and dtype of the input value must match the field.
+        https://github.com/lincc-frameworks/nested-pandas/issues/87
+        """
         # TODO: we can be much-much smarter about the performance here
         # TODO: think better about underlying pa.ChunkArray in both self._series.array and value
 
@@ -268,7 +291,7 @@ class NestSeriesAccessor(MutableMapping):
 
         # Set single value for all rows
         if ndim == 0:
-            self.set_flat_field(key, value)
+            self._series.array.set_flat_field(key, value, keep_dtype=True)
             return
 
         if isinstance(value, pd.Series) and not self.get_flat_index().equals(value.index):
@@ -284,13 +307,22 @@ class NestSeriesAccessor(MutableMapping):
                 f"{len(self._series)}."
             )
 
-        self.set_flat_field(key, pa_array)
-
-    def __delitem__(self, key: str) -> None:
-        self.pop_field(key)
+        self._series.array.set_flat_field(key, pa_array, keep_dtype=True)
 
     def __iter__(self) -> Generator[str, None, None]:
-        yield from iter(self._series.array.field_names)
+        return iter(self._series.array.field_names)
 
     def __len__(self) -> int:
         return len(self._series.array.field_names)
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, type(self)):
+            return False
+        return self._series.equals(other._series)
+
+    def clear(self) -> None:
+        """Mandatory MutableMapping method, always fails with NotImplementedError
+
+        The reason is that we cannot delete all nested fields from the nested series.
+        """
+        raise NotImplementedError("Cannot delete fields from nested series")

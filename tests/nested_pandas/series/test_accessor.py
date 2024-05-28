@@ -4,7 +4,7 @@ import pyarrow as pa
 import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
-from nested_pandas.series.packer import pack_flat
+from nested_pandas.series.packer import pack_flat, pack_seq
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
 
@@ -310,10 +310,10 @@ def test_set_flat_field():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    series.nest.set_flat_field("a", np.array(["a", "b", "c", "d", "e", "f"]))
+    new_series = series.nest.with_flat_field("a", np.array(["a", "b", "c", "d", "e", "f"]))
 
     assert_series_equal(
-        series.nest["a"],
+        new_series.nest["a"],
         pd.Series(
             data=["a", "b", "c", "d", "e", "f"],
             index=[0, 0, 0, 1, 1, 1],
@@ -334,10 +334,10 @@ def test_set_list_field():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    series.nest.set_list_field("c", [["a", "b", "c"], ["d", "e", "f"]])
+    new_series = series.nest.with_list_field("c", [["a", "b", "c"], ["d", "e", "f"]])
 
     assert_series_equal(
-        series.nest["c"],
+        new_series.nest["c"],
         pd.Series(
             data=["a", "b", "c", "d", "e", "f"],
             index=[0, 0, 0, 1, 1, 1],
@@ -347,8 +347,8 @@ def test_set_list_field():
     )
 
 
-def test_pop_field():
-    """Test that the .nest.pop_field() method works."""
+def test_pop_raises():
+    """Test that .nest has no .pop() method."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -358,18 +358,8 @@ def test_pop_field():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    a = series.nest.pop_field("a")
-
-    assert_array_equal(series.nest.fields, ["b"])
-    assert_series_equal(
-        a,
-        pd.Series(
-            [1.0, 2.0, 3.0, 1.0, 2.0, 1.0],
-            dtype=pd.ArrowDtype(pa.float64()),
-            index=[0, 0, 0, 1, 1, 1],
-            name="a",
-        ),
-    )
+    with pytest.raises(AttributeError):
+        _ = series.nest.pop("a")
 
 
 def test_query_flat_1():
@@ -459,6 +449,20 @@ def test_get_list_series():
     )
 
 
+def test_get():
+    """Test .nest.get() which is implemented by the base class"""
+    series = pack_seq(
+        [
+            pd.DataFrame({"a": [1, 2, 3], "b": [1.0, 5.0, 6.0]}),
+            pd.DataFrame({"a": [1, 2], "b": [None, 0.0]}),
+            None,
+        ]
+    )
+    assert_series_equal(series.nest.get("a"), series.nest.to_flat()["a"])
+    assert_series_equal(series.nest.get("b"), series.nest.to_flat()["b"])
+    assert series.nest.get("c", "default_value") == "default_value"
+
+
 def test___getitem___single_field():
     """Test that the .nest["field"] works for a single field."""
     struct_array = pa.StructArray.from_arrays(
@@ -531,15 +535,15 @@ def test___setitem__():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    series.nest["a"] = np.array(["a", "b", "c", "d", "e", "f"])
+    series.nest["a"] = np.arange(6, 0, -1)
 
     assert_series_equal(
         series.nest["a"],
         pd.Series(
-            data=["a", "b", "c", "d", "e", "f"],
+            data=[6, 5, 4, 3, 2, 1],
             index=[0, 0, 0, 1, 1, 1],
             name="a",
-            dtype=pd.ArrowDtype(pa.string()),
+            dtype=pd.ArrowDtype(pa.float64()),
         ),
     )
 
@@ -556,23 +560,23 @@ def test___setitem___with_series_with_index():
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
     flat_series = pd.Series(
-        data=["a", "b", "c", "d", "e", "f"],
+        data=np.arange(6, 0, -1),
         index=[0, 0, 0, 1, 1, 1],
         name="a",
-        dtype=pd.ArrowDtype(pa.string()),
+        dtype=pd.ArrowDtype(pa.float32()),
     )
 
     series.nest["a"] = flat_series
 
     assert_series_equal(
         series.nest["a"],
-        flat_series,
+        flat_series.astype(pd.ArrowDtype(pa.float64())),
     )
     assert_series_equal(
         series.nest.get_list_series("a"),
         pd.Series(
-            data=[np.array(["a", "b", "c"]), np.array(["d", "e", "f"])],
-            dtype=pd.ArrowDtype(pa.list_(pa.string())),
+            data=[np.array([6, 5, 4]), np.array([3, 2, 1])],
+            dtype=pd.ArrowDtype(pa.list_(pa.float64())),
             index=[0, 1],
             name="a",
         ),
@@ -580,7 +584,7 @@ def test___setitem___with_series_with_index():
 
 
 def test___setitem___empty_series():
-    """Test that the series.nest["field"] = [] for empty series."""
+    """Test that series.nest["field"] = [] does nothing for empty series."""
     empty_series = pd.Series([], dtype=NestedDtype.from_fields({"a": pa.float64()}))
     empty_series.nest["a"] = []
     assert len(empty_series) == 0
@@ -597,16 +601,32 @@ def test___setitem___with_single_value():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0])
 
-    series.nest["a"] = 1.0
+    series.nest["a"] = -1.0
+
     assert_series_equal(
         series.nest["a"],
         pd.Series(
-            data=[1.0, 1.0, 1.0],
+            data=[-1.0, -1.0, -1.0],
             index=[0, 0, 0],
             name="a",
             dtype=pd.ArrowDtype(pa.float64()),
         ),
     )
+
+
+def test___setitem___raises_for_wrong_dtype():
+    """Test that the .nest["field"] = ... raises for a wrong dtype."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    with pytest.raises(TypeError):
+        series.nest["a"] = np.array(["a", "b", "c", "d", "e", "f"])
 
 
 def test___setitem___raises_for_wrong_length():
@@ -646,8 +666,15 @@ def test___setitem___raises_for_wrong_index():
         series.nest["a"] = flat_series
 
 
-def test___delitem__():
-    """Test that the `del .nest["field"]` works."""
+def test___setitem___raises_for_new_field():
+    """Test that series.nest["field"] = ... raises for a new field."""
+    series = pack_seq([{"a": [1, 2, 3]}, {"a": [4, None]}])
+    with pytest.raises(ValueError):
+        series.nest["b"] = series.nest["a"] - 1
+
+
+def test___delitem___raises():
+    """Test that the `del .nest["field"]` is not implemented."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -657,9 +684,8 @@ def test___delitem__():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    del series.nest["a"]
-
-    assert_array_equal(series.nest.fields, ["b"])
+    with pytest.raises(AttributeError):
+        del series.nest["a"]
 
 
 def test___iter__():
@@ -714,3 +740,90 @@ def test_to_flat_dropna():
         ),
         check_dtype=False,  # filtered's Series are pd.ArrowDtype
     )
+
+
+def test___contains__():
+    """Test that the `"field" in .nest` works.
+
+    We haven't implemented it, but base class does
+    """
+    series = pack_seq([pd.DataFrame({"a": [1, 2, 3]})])
+    assert "a" in series.nest
+    assert "x" not in series.nest
+
+
+def test___eq__():
+    """Test that one.nest == other.nest works."""
+
+    series1 = pack_seq([pd.DataFrame({"a": [1, 2, 3]})])
+    series2 = pack_seq([pd.DataFrame({"b": [1, 2, 3]})])
+    series3 = pack_seq([pd.DataFrame({"a": [1, 2, 3, 4]})])
+    series4 = pack_seq([pd.DataFrame({"a": [1, 2, 3], "b": [3, 2, 1]})])
+
+    assert series1.nest == series1.nest
+
+    assert series2.nest == series2.nest
+    assert series1.nest != series2.nest
+
+    assert series3.nest == series3.nest
+    assert series1.nest != series3.nest
+
+    assert series4.nest == series4.nest
+    assert series1.nest != series4.nest
+
+
+def test_clear_raises():
+    """Test that .nest.clear() raises - we cannot handle nested series with no fields"""
+    series = pack_seq([pd.DataFrame({"a": [1, 2, 3], "b": [3, 2, 1]}), None])
+    with pytest.raises(NotImplementedError):
+        series.nest.clear()
+
+
+def test_popitem_raises():
+    """Test .nest.popitem() raises"""
+    series = pack_seq(
+        [pd.DataFrame({"a": [1, 2, 3], "b": [3, 2, 1]}), pd.DataFrame({"a": [1, 2], "b": [2.0, None]}), None]
+    )
+
+    with pytest.raises(AttributeError):
+        _ = series.nest.popitem()
+
+
+def test_setdefault_raises():
+    """Test .nest.setdefault() is not implemented"""
+    series = pack_seq([{"a": [1, 2, 3]}, {"a": [4, None]}])
+    with pytest.raises(AttributeError):
+        series.nest.setdefault("b", series.nest["a"] * 2.0)
+
+
+def test_update_raises():
+    """test series.nest.update(other.nest) is not implemented"""
+    series1 = pack_seq([{"a": [1, 2, 3], "b": [4, 5, 6]}, {"a": [4, None], "b": [7, 8]}])
+    series2 = pack_seq(
+        [
+            {"b": ["x", "y", "z"], "c": [-2.0, -3.0, -4.0]},
+            {"b": ["!", "?"], "c": [-5.0, -6.0]},
+        ]
+    )
+    with pytest.raises(AttributeError):
+        series1.nest.update(series2.nest)
+
+
+def test_items():
+    """Test series.nest.items() implemented by the base class"""
+    series = pack_seq([{"a": [1, 2, 3], "b": [3, 2, 1]}, {"a": [4, None], "b": [7, 8]}])
+    for key, value in series.nest.items():
+        assert_series_equal(value, series.nest[key])
+
+
+def test_keys():
+    """Test series.nest.keys() implemented by the base class"""
+    series = pack_seq([{"a": [1, 2, 3], "b": [3, 2, 1]}, {"a": [4, None], "b": [7, 8]}])
+    assert_array_equal(list(series.nest.keys()), ["a", "b"])
+
+
+def test_values():
+    """Test series.nest.values() implemented by the base class"""
+    series = pack_seq([{"a": [1, 2, 3], "b": [3, 2, 1]}, {"a": [4, None], "b": [7, 8]}])
+    for value in series.nest.values():
+        assert_series_equal(value, series.nest[value.name])
