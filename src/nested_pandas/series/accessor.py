@@ -91,21 +91,25 @@ class NestSeriesAccessor(MutableMapping):
         if len(fields) == 0:
             raise ValueError("Cannot flatten a struct with no fields")
 
-        struct_array = cast(pa.StructArray, pa.array(self._series))
+        index = pd.Series(self.get_flat_index(), name=self._series.index.name)
+
+        flat_chunks = defaultdict(list)
+        for chunk in self._series.array._pa_array.iterchunks():
+            struct_array = cast(pa.StructArray, chunk)
+            for field in fields:
+                list_array = cast(pa.ListArray, struct_array.field(field))
+                flat_array = list_array.flatten()
+                flat_chunks[field].append(flat_array)
 
         flat_series = {}
-        index = None
-        for field in fields:
-            list_array = cast(pa.ListArray, struct_array.field(field))
-            flat_array = list_array.flatten()
-            if index is None:
-                index = self.get_flat_index()
+        for field, chunks in flat_chunks.items():
+            chunked_array = pa.chunked_array(chunks)
             flat_series[field] = pd.Series(
-                flat_array,
+                chunked_array,
                 index=pd.Series(index, name=self._series.index.name),
                 name=field,
                 copy=False,
-                dtype=pd.ArrowDtype(flat_array.type),
+                dtype=pd.ArrowDtype(chunked_array.type),
             )
 
         return pd.DataFrame(flat_series)

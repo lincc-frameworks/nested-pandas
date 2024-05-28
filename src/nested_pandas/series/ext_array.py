@@ -598,7 +598,7 @@ class NestedExtensionArray(ExtensionArray):
         self._dtype = NestedDtype(pa_array.chunk(0).type)
 
     @property
-    def list_offsets(self) -> pa.ChunkedArray:
+    def list_offsets(self) -> pa.Array:
         """The list offsets of the field arrays.
 
         It is a chunk array of list offsets of the first field array.
@@ -609,7 +609,25 @@ class NestedExtensionArray(ExtensionArray):
         pa.ChunkedArray
             The list offsets of the field arrays.
         """
-        return pa.chunked_array([chunk.field(0).offsets for chunk in self._pa_array.iterchunks()])
+        # Quick and cheap path for a single chunk
+        if self._pa_array.num_chunks == 1:
+            struct_array = cast(pa.StructArray, self._pa_array.chunk(0))
+            return cast(pa.ListArray, struct_array.field(0)).offsets
+
+        chunks = []
+        # The offset of the current chunk in the flat array.
+        # It is 0 for the first chunk, and the last offset of the previous chunk for the next chunks,
+        # as a pa.Scalar.
+        chunk_offset: pa.Scalar | int = 0
+        for chunk in self._pa_array.iterchunks():
+            list_array = cast(pa.ListArray, chunk.field(0))
+            if chunk_offset == 0:
+                offsets = list_array.offsets
+            else:
+                offsets = pa.compute.add(list_array.offsets[1:], chunk_offset)
+            chunks.append(offsets)
+            chunk_offset = offsets[-1]
+        return pa.concat_arrays(chunks)
 
     @property
     def field_names(self) -> list[str]:
@@ -678,8 +696,7 @@ class NestedExtensionArray(ExtensionArray):
         if len(pa_array) != self.flat_length:
             raise ValueError("The input must be a struct_scalar or have the same length as the flat arrays")
 
-        offsets = self.list_offsets.combine_chunks()
-        list_array = pa.ListArray.from_arrays(values=pa_array, offsets=offsets)
+        list_array = pa.ListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
 
         return self.set_list_field(field, list_array)
 

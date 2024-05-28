@@ -588,8 +588,8 @@ def test_series_built_raises(data):
         _array = NestedExtensionArray(pa_array)
 
 
-def test_list_offsets():
-    """Test that the list offsets are correct."""
+def test_list_offsets_single_chunk():
+    """Test that the .list_offset property is correct for a single chunk."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint8())),
@@ -600,6 +600,22 @@ def test_list_offsets():
     ext_array = NestedExtensionArray(struct_array)
 
     desired = pa.chunked_array([pa.array([0, 3, 6])])
+    assert_array_equal(ext_array.list_offsets, desired)
+
+
+def test_list_offsets_multiple_chunks():
+    """Test that the .list_offset property is correct for multiple chunks."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint8())),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    chunked_arrray = pa.chunked_array([struct_array, struct_array[:1], struct_array])
+    ext_array = NestedExtensionArray(chunked_arrray)
+
+    desired = chunked_arrray.combine_chunks().field("a").offsets
     assert_array_equal(ext_array.list_offsets, desired)
 
 
