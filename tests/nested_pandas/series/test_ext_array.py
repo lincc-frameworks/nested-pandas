@@ -204,7 +204,7 @@ def test_from_sequence_with_arrow_array_and_dtype():
         type=pa_type,
     )
 
-    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type)._pa_array
+    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type).chunked_array
     desired = pa.chunked_array([pa_array.cast(new_pa_type)])
     # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
     assert actual == desired
@@ -525,7 +525,7 @@ def test___setitem___series_of_dfs():
     )
     desired = NestedExtensionArray(desired_struct_array)
 
-    assert ext_array._pa_array == desired._pa_array
+    assert ext_array.chunked_array == desired.chunked_array
     assert ext_array.equals(desired)
 
 
@@ -586,6 +586,21 @@ def test_series_built_raises(data):
     pa_array = pa.array(data)
     with pytest.raises(ValueError):
         _array = NestedExtensionArray(pa_array)
+
+
+def test_chunked_array():
+    """Test that the .chunked_array property is correct."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    # pyarrow returns a single bool for ==
+    assert ext_array.chunked_array == pa.chunked_array(struct_array)
 
 
 def test_list_offsets_single_chunk():
