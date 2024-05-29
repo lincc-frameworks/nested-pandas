@@ -204,7 +204,7 @@ def test_from_sequence_with_arrow_array_and_dtype():
         type=pa_type,
     )
 
-    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type)._pa_array
+    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type)._chunked_array
     desired = pa.chunked_array([pa_array.cast(new_pa_type)])
     # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
     assert actual == desired
@@ -525,7 +525,7 @@ def test___setitem___series_of_dfs():
     )
     desired = NestedExtensionArray(desired_struct_array)
 
-    assert ext_array._pa_array == desired._pa_array
+    assert ext_array._chunked_array == desired._chunked_array
     assert ext_array.equals(desired)
 
 

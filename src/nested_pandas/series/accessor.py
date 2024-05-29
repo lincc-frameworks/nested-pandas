@@ -55,7 +55,7 @@ class NestSeriesAccessor(Mapping):
             raise ValueError("Cannot convert a struct with no fields to lists")
 
         list_chunks = defaultdict(list)
-        for chunk in self._series.array._pa_array.iterchunks():
+        for chunk in self._series.array._chunked_array.iterchunks():
             struct_array = cast(pa.StructArray, chunk)
             for field in fields:
                 list_array = cast(pa.ListArray, struct_array.field(field))
@@ -94,7 +94,7 @@ class NestSeriesAccessor(Mapping):
         index = pd.Series(self.get_flat_index(), name=self._series.index.name)
 
         flat_chunks = defaultdict(list)
-        for chunk in self._series.array._pa_array.iterchunks():
+        for chunk in self._series.array._chunked_array.iterchunks():
             struct_array = cast(pa.StructArray, chunk)
             for field in fields:
                 list_array = cast(pa.ListArray, struct_array.field(field))
