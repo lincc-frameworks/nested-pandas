@@ -621,12 +621,11 @@ class NestedExtensionArray(ExtensionArray):
 
         chunks = []
         # The offset of the current chunk in the flat array.
-        # It is 0 for the first chunk, and the last offset of the previous chunk for the next chunks,
-        # as a pa.Scalar.
-        chunk_offset: pa.Scalar | int = 0
+        # Offset arrays use int32 type, so we cast to it
+        chunk_offset = pa.scalar(0, type=pa.int32())
         for chunk in self._chunked_array.iterchunks():
             list_array = cast(pa.ListArray, chunk.field(0))
-            if chunk_offset == 0:
+            if chunk_offset.equals(pa.scalar(0, type=pa.int32())):
                 offsets = list_array.offsets
             else:
                 offsets = pa.compute.add(list_array.offsets[1:], chunk_offset)
