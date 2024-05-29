@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pytest
 from nested_pandas import NestedFrame
 from pandas.testing import assert_frame_equal
@@ -128,6 +129,19 @@ def test_add_nested_with_series_and_mismatched_index():
 
     assert "nested" in base.columns
     assert pd.isna(base.loc[1]["nested"])
+
+
+def test_add_nested_for_empty_df():
+    """Test that .add_nested() works for empty frame and empty input"""
+    base = NestedFrame(data={"a": [], "b": []}, index=[])
+    nested = pd.DataFrame(data={"c": []}, index=[])
+    new_base = base.add_nested(nested, "nested")
+
+    # Check original frame is unchanged
+    assert_frame_equal(base, NestedFrame(data={"a": [], "b": []}, index=[]))
+
+    assert "nested" in new_base.columns
+    assert_frame_equal(new_base.nested.nest.to_flat(), nested.astype(pd.ArrowDtype(pa.float64())))
 
 
 def test_query():
