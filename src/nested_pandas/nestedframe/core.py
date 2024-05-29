@@ -99,7 +99,9 @@ class NestedFrame(pd.DataFrame):
         # Add sources to objects
         packed = packer.pack(obj, name=name, dtype=dtype)
         label = packed.name
-        return self.assign(**{f"{label}": packed})
+        new_df = self.copy()
+        new_df[label] = packed
+        return new_df
 
     def _split_query(self, expr) -> dict:
         """Splits a pandas query into multiple subqueries for nested and base layers"""
