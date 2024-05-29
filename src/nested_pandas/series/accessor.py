@@ -124,6 +124,26 @@ class NestSeriesAccessor(Mapping):
         """Names of the nested columns"""
         return self._series.array.field_names
 
+    def with_field(self, field: str, value: ArrayLike) -> pd.Series:
+        """Set the field from flat-array of values and return a new series
+
+        It is an alias for `.nest.with_flat_field`.
+
+        Parameters
+        ----------
+        field : str
+            Name of the field to set. If not present, it will be added.
+        value : ArrayLike
+            Array of values to set. It must be a scalar or have the same length
+             as the flat arrays, e.g. `self.flat_length`.
+
+        Returns
+        -------
+        pd.Series
+            The new series with the field set.
+        """
+        return self.with_flat_field(field, value)
+
     def with_flat_field(self, field: str, value: ArrayLike) -> pd.Series:
         """Set the field from flat-array of values and return a new series
 
