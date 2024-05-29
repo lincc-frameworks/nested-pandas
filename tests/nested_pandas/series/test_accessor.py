@@ -299,7 +299,7 @@ def test_flat_length():
     assert series.nest.flat_length == 6
 
 
-def test_set_flat_field():
+def test_with_flat_field():
     """Test that the .nest.set_flat_field() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -323,7 +323,23 @@ def test_set_flat_field():
     )
 
 
-def test_set_list_field():
+def test_with_field():
+    """Test that .nest.with_field is just an alias to .nest.with_flat_field."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+    assert_series_equal(
+        series.nest.with_field("a", np.array(["a", "b", "c", "d", "e", "f"])),
+        series.nest.with_flat_field("a", np.array(["a", "b", "c", "d", "e", "f"])),
+    )
+
+
+def test_with_list_field():
     """Test that the .nest.set_list_field() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
@@ -347,19 +363,85 @@ def test_set_list_field():
     )
 
 
-def test_pop_raises():
-    """Test that .nest has no .pop() method."""
+def test_without_field_single_field():
+    """Test .nest.without_field("field")"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+            pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),
+            pa.array([np.array([6, 4, 2]), np.array([1, 2, 3])]),
         ],
         names=["a", "b"],
     )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
 
-    with pytest.raises(AttributeError):
-        _ = series.nest.pop("a")
+    new_series = series.nest.without_field("a")
+
+    desired_struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([6, 4, 2]), np.array([1, 2, 3])]),
+        ],
+        names=["b"],
+    )
+    desired = pd.Series(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
+
+    assert_series_equal(new_series, desired)
+
+
+def test_without_field_multiple_fields():
+    """Test .nest.without_field(["field1", "field2"])"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),
+            pa.array([np.array([6, 4, 2]), np.array([1, 2, 3])]),
+            pa.array([["a", "b", "c"], ["d", "e", "f"]]),
+        ],
+        names=["a", "b", "c"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
+
+    new_series = series.nest.without_field(["a", "b"])
+
+    desired_struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([["a", "b", "c"], ["d", "e", "f"]]),
+        ],
+        names=["c"],
+    )
+    desired = pd.Series(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
+
+    assert_series_equal(new_series, desired)
+
+
+def test_without_field_raises_for_missing_field():
+    """Test .nest.without_field("field") raises for missing field."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),
+            pa.array([np.array([6, 4, 2]), np.array([1, 2, 3])]),
+            pa.array([["a", "b", "c"], ["d", "e", "f"]]),
+        ],
+        names=["a", "b", "c"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
+
+    with pytest.raises(ValueError):
+        _ = series.nest.without_field("d")
+
+
+def test_without_field_raises_for_missing_fields():
+    """Test .nest.without_field(["field1", "field2"]) raises for missing fields."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),
+            pa.array([np.array([6, 4, 2]), np.array([1, 2, 3])]),
+            pa.array([["a", "b", "c"], ["d", "e", "f"]]),
+        ],
+        names=["a", "b", "c"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
+
+    with pytest.raises(ValueError):
+        _ = series.nest.without_field(["a", "d"])
 
 
 def test_query_flat_1():
@@ -770,6 +852,13 @@ def test___eq__():
 
     assert series4.nest == series4.nest
     assert series1.nest != series4.nest
+
+
+def test___eq___false_for_different_types():
+    """Test that one.nest == other.nest is False for different types."""
+    seq = [{"a": [1, 2, 3]}, {"a": [4, None]}]
+    series = pack_seq(seq)
+    assert series.nest != pd.Series(seq, dtype=pd.ArrowDtype(pa.struct([("a", pa.list_(pa.int64()))])))
 
 
 def test_clear_raises():

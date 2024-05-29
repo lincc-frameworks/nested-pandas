@@ -1370,6 +1370,42 @@ def test_set_flat_field_replace_field_array():
     assert_series_equal(pd.Series(ext_array), pd.Series(desired))
 
 
+def test_set_flat_field_keep_dtype_raises_for_wrong_dtype():
+    """Tests that set_flat_field(keep_dtype=True) raises for a wrong input dtype."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    with pytest.raises(TypeError):
+        ext_array.set_flat_field("b", ["x", "y", "z", "w", "v", "u", "t"], keep_dtype=True)
+
+    # Do not raise when keep_dtype=False
+    ext_array.set_flat_field("b", ["x", "y", "z", "w", "v", "u", "t"], keep_dtype=False)
+
+
+def test_set_flat_field_keep_dtype_raises_for_new_field():
+    """Tests that set_flat_field(keep_dtype=True) raises for a new field."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    with pytest.raises(ValueError):
+        ext_array.set_flat_field("c", [True, False, True, False, True, False, True], keep_dtype=True)
+
+    # Do not raise when keep_dtype=False
+    ext_array.set_flat_field("c", [True, False, True, False, True, False, True], keep_dtype=False)
+
+
 def test_set_list_field_new_field():
     """Tests setting a new field with a new "list" array"""
     struct_array = pa.StructArray.from_arrays(
@@ -1451,6 +1487,42 @@ def test_set_list_field_raises_for_wrong_length():
 
     with pytest.raises(ValueError):
         ext_array.set_list_field("b", longer_array)
+
+
+def test_set_list_field_keep_dtype_raises_for_wrong_dtype():
+    """Tests that set_list_field(keep_dtype=True) raises for a wrong input dtype."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    with pytest.raises(TypeError):
+        ext_array.set_list_field("b", [["x", "y", "z"]] * 2, keep_dtype=True)
+
+    # Do not raise when keep_dtype=False
+    ext_array.set_list_field("b", [["x", "y", "z"]] * 2, keep_dtype=False)
+
+
+def test_set_list_field_keep_dtype_raises_for_new_field():
+    """Tests that set_list_field(keep_dtype=True) raises for a new field."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    with pytest.raises(ValueError):
+        ext_array.set_list_field("c", [["x", "y", "z"]], keep_dtype=True)
+
+    # Do not raise when keep_dtype=False
+    ext_array.set_list_field("c", [["x", "y", "z"]], keep_dtype=False)
 
 
 def test_pop_fields():
