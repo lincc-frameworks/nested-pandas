@@ -402,7 +402,9 @@ def test_view_sorted_series_as_list_array_raises_when_not_sorted():
 )
 def test_calculate_sorted_index_offsets(index, offsets):
     """Test calculate_sorted_index_offsets()."""
-    assert_array_equal(packer.calculate_sorted_index_offsets(index), offsets)
+    actual = packer.calculate_sorted_index_offsets(index)
+    assert actual.dtype == np.int32
+    assert_array_equal(actual, offsets)
 
 
 def test_calculate_sorted_index_offsets_raises_when_not_sorted():

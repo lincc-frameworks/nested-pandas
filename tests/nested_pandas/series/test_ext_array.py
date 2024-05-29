@@ -614,8 +614,9 @@ def test_list_offsets_single_chunk():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    desired = pa.chunked_array([pa.array([0, 3, 6])])
-    assert_array_equal(ext_array.list_offsets, desired)
+    desired = pa.array([0, 3, 6], type=pa.int32())
+    # pyarrow returns a single bool for ==
+    assert ext_array.list_offsets == desired
 
 
 def test_list_offsets_multiple_chunks():
@@ -631,7 +632,8 @@ def test_list_offsets_multiple_chunks():
     ext_array = NestedExtensionArray(chunked_arrray)
 
     desired = chunked_arrray.combine_chunks().field("a").offsets
-    assert_array_equal(ext_array.list_offsets, desired)
+    # pyarrow returns a single bool for ==
+    assert ext_array.list_offsets == desired
 
 
 def test___getitem___with_integer():
