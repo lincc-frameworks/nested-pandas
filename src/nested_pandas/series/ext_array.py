@@ -558,6 +558,11 @@ class NestedExtensionArray(ExtensionArray):
         """PyArrow data type of the extension array"""
         return self._dtype.pyarrow_dtype
 
+    @property
+    def chunked_array(self) -> pa.ChunkedArray:
+        """The underlying PyArrow ChunkedArray"""
+        return self._chunked_array
+
     @staticmethod
     def _validate(array: pa.ChunkedArray) -> None:
         """Raises ValueError if the input array is not a struct array with all fields being
