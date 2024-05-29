@@ -8,6 +8,17 @@ from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 
+def offsets_reused(nested_series):
+    """Check if the offset buffers are reused for all columns of the nested series"""
+    lists_df = nested_series.nest.to_lists()
+    first_offset_buffers = None
+    for column in lists_df.columns:
+        offset_buffers = pa.array(lists_df[column]).offsets.buffers()
+        if first_offset_buffers is None:
+            first_offset_buffers = offset_buffers
+        assert offset_buffers == first_offset_buffers
+
+
 def test_pack_with_flat_df():
     """Test pack(pd.DataFrame)."""
     df = pd.DataFrame(
@@ -28,6 +39,7 @@ def test_pack_with_flat_df():
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
+    offsets_reused(series)
     assert_series_equal(series, desired)
 
 
@@ -51,6 +63,7 @@ def test_pack_with_flat_df_and_index():
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
+    offsets_reused(series)
     assert_series_equal(series, desired)
 
 
@@ -85,6 +98,7 @@ def test_pack_with_series_of_dfs():
         name="nested",
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
     )
+    offsets_reused(series)
     assert_series_equal(series, desired)
 
 
@@ -109,7 +123,7 @@ def test_pack_flat():
         index=[1, 2, 3, 4],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
     )
-
+    offsets_reused(actual)
     assert_series_equal(actual, desired)
 
 
@@ -134,7 +148,7 @@ def test_pack_sorted_df_into_struct():
         index=[1, 2, 3, 4],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
     )
-
+    offsets_reused(actual)
     assert_series_equal(actual, desired)
 
 
@@ -172,6 +186,7 @@ def test_pack_lists():
         dtype=pd.ArrowDtype(pa.list_(pa.int64())),
     )
     series = packer.pack_lists(packed_df)
+    offsets_reused(series)
 
     for field_name in packed_df.columns:
         assert_series_equal(series.nest.get_list_series(field_name), packed_df[field_name])
@@ -221,6 +236,7 @@ def test_pack_seq_with_dfs_and_index():
         index=[100, 101, 102, 103],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
     )
+    offsets_reused(series)
     assert_series_equal(series, desired)
 
 
@@ -249,6 +265,7 @@ def test_pack_seq_with_different_elements_and_index():
         index=[100, 101, 102, 103],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
     )
+    offsets_reused(series)
     assert_series_equal(series, desired)
 
 
@@ -290,6 +307,7 @@ def test_pack_seq_with_series_of_dfs():
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
+    offsets_reused(series)
     assert_series_equal(series, desired)
 
 
