@@ -413,35 +413,15 @@ class NestedFrame(pd.DataFrame):
         if len(requested_columns) < len(args):
             extra_args = args[len(requested_columns) :]
 
-        # find targeted layers
-        layers = np.unique([col[0] for col in requested_columns])
-
-        # build a flat dataframe with array columns to apply to the function
-        apply_df = NestedFrame()
-        for layer in layers:
+        iterators = []
+        for layer, col in requested_columns:
             if layer == "base":
-                columns = [col[1] for col in requested_columns if col[0] == layer]
-                apply_df = apply_df.join(self[columns], how="outer")
+                iterators.append(self[col])
             else:
-                # TODO: It should be faster to pass these columns to to_lists, but its 20x slower
-                # columns = [col[1] for col in requested_columns if col[0] == layer]
-                apply_df = apply_df.join(self[layer].nest.to_lists(), how="outer")
+                iterators.append(self[layer].array.iter_field_lists(col))
 
-        # Translates the requested columns into the scalars or arrays we pass to func.
-        def translate_cols(frame, layer, col):
-            if layer == "base":
-                # We pass the "base" column as a scalar
-                return frame[col]
-            return np.asarray(frame[col])
-
-        # send arrays along to the apply call
-        result = apply_df.apply(
-            lambda x: func(
-                *[translate_cols(x, layer, col) for layer, col in requested_columns], *extra_args, **kwargs
-            ),
-            axis=1,  # to apply func on each row of our nested frame)
-        )
-        return result
+        results = [func(*cols, *extra_args, **kwargs) for cols in zip(*iterators)]
+        return NestedFrame(results, index=self.index)
 
     def to_parquet(self, path, by_layer=False, **kwargs) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
