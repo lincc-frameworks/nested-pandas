@@ -297,4 +297,7 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
     offset_but_last = np.nonzero(~index.duplicated(keep="first"))[0]
     offset = np.append(offset_but_last, len(index))
 
+    # Arrow uses int32 for offsets
+    offset = offset.astype(np.int32)
+
     return offset
