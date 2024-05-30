@@ -1255,6 +1255,22 @@ def test_num_chunks():
     assert ext_array.num_chunks == 7
 
 
+def test_iter_field_lists():
+    """Test .iter_field_lists() yields the correct field lists"""
+    a = [[1, 2, 3], [1, 2, 3, 4]]
+    b = [np.array(["a", "b", "c"]), np.array(["x", "y", "z", "w"])]
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[a, b],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    for actual, desired in zip(ext_array.iter_field_lists("a"), a):
+        assert_array_equal(actual, desired)
+    for actual, desired in zip(ext_array.iter_field_lists("b"), b):
+        assert_array_equal(actual, desired)
+
+
 def test_view_fields_with_single_field():
     """Tests ext_array.view("field")"""
     arrays = [

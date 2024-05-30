@@ -35,7 +35,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Iterator, Sequence
 from typing import Any, Callable, cast
 
 import numpy as np
@@ -648,8 +648,27 @@ class NestedExtensionArray(ExtensionArray):
         """Number of chunks in underlying pyarrow.ChunkedArray"""
         return self._chunked_array.num_chunks
 
+    def iter_field_lists(self, field: str) -> Generator[np.ndarray, None, None]:
+        """Iterate over single field nested lists, as numpy arrays
+
+        Parameters
+        ----------
+        field : str
+            The name of the field to iterate over.
+
+        Yields
+        ------
+        np.ndarray
+            The numpy array view over a list scalar.
+        """
+        for chunk in self._chunked_array.iterchunks():
+            struct_array: pa.StructArray = cast(pa.StructArray, chunk)
+            list_array: pa.ListArray = cast(pa.ListArray, struct_array.field(field))
+            for list_scalar in list_array:
+                yield np.asarray(list_scalar.values)
+
     def view_fields(self, fields: str | list[str]) -> Self:  # type: ignore[name-defined] # noqa: F821
-        """Get a view of the series with only the specified fields
+        """Get a view of the extension array with only the specified fields
 
         Parameters
         ----------
@@ -659,7 +678,7 @@ class NestedExtensionArray(ExtensionArray):
         Returns
         -------
         NestedExtensionArray
-            The view of the series with only the specified fields.
+            The view of the array with only the specified fields.
         """
         if isinstance(fields, str):
             fields = [fields]
