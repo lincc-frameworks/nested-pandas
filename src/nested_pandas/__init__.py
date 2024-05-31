@@ -1,4 +1,4 @@
-from ._version import __version__ # noqa
+from ._version import __version__  # noqa
 from .nestedframe import NestedFrame
 from .nestedframe.io import read_parquet
 
