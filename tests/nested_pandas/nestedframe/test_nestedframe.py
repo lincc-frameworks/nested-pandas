@@ -362,3 +362,55 @@ def test_reduce():
     assert result.index.name == "idx"
     for i in range(len(result)):
         assert result["offset_avg"].values[i] == expected_offset_avg[i]
+
+
+def test_reduce_duplicated_cols():
+    """Tests nf.reduce() to correctly handle duplicated column names."""
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    to_pack2 = pd.DataFrame(
+        data={
+            "time2": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                3,
+                1,
+                2,
+                4,
+            ],  # TODO: fix duplicate name in join once to_list subset bug fixed
+            "e": [2, 9, 4, 1, 23, 3, 1, 4, 1],
+            "f": [5, 4, 7, 5, 3, 25, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    # Add two nested layers to pack into our dataframe
+    nf = nf.add_nested(to_pack, "packed").add_nested(to_pack2, "packed2")
+
+    def cols_allclose(col1, col2):
+        return pd.Series([np.allclose(col1, col2)], index=["allclose"])
+
+    result = nf.reduce(cols_allclose, "packed.time", "packed2.f")
+    assert_frame_equal(
+        result, pd.DataFrame({"allclose": [False, False, False]}, index=pd.Index([0, 1, 2], name="idx"))
+    )
+
+    result = nf.reduce(cols_allclose, "packed.c", "packed.c")
+    assert_frame_equal(
+        result, pd.DataFrame({"allclose": [True, True, True]}, index=pd.Index([0, 1, 2], name="idx"))
+    )
