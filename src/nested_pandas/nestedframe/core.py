@@ -201,7 +201,6 @@ class NestedFrame(pd.DataFrame):
         """resolves the target layer for a given set of dropna kwargs"""
 
         nested_cols = self.nested_columns
-        columns = self.columns
 
         # first check the subset kwarg input
         subset_target = []
@@ -210,13 +209,15 @@ class NestedFrame(pd.DataFrame):
                 subset = [subset]
 
             for col in subset:
-                col = col.split(".")[0]
-                if col in nested_cols:
-                    subset_target.append(col)
-                elif col in columns:
+                # Without a ".", always assume base layer
+                if "." not in col:
                     subset_target.append("base")
                 else:
-                    raise ValueError(f"Column name {col} not found in any base or nested columns")
+                    layer, col = col.split(".")
+                    if layer in nested_cols:
+                        subset_target.append(layer)
+                    else:
+                        raise ValueError(f"layer '{layer}' not found in the base columns")
 
             # Check for 1 target
             subset_target = np.unique(subset_target)
