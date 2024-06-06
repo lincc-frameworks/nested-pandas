@@ -3,6 +3,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 from nested_pandas import NestedFrame
+from nested_pandas.datasets import generate_data
 from pandas.testing import assert_frame_equal
 
 
@@ -201,6 +202,15 @@ def test_dropna():
     dn_hierarchical = base.dropna(on_nested="nested", subset="nested.c")
     assert len(dn_hierarchical) == 3
     assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
+
+
+def test_dropna_layer_as_base_column():
+    """Test that a nested column still works as a top level column for dropna"""
+    nf = generate_data(10, 100, seed=1).query("nested.t>19.75")
+    nf = nf.dropna(subset=["nested"])
+
+    # make sure rows have been dropped as expected
+    assert len(nf) == 6
 
 
 def test_dropna_inplace_base():
