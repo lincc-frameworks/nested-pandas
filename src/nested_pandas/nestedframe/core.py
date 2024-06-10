@@ -384,13 +384,9 @@ class NestedFrame(pd.DataFrame):
 
         Example User Function:
 
-        >>> import pandas as pd
-
         >>> def my_sum(col1, col2):
         >>>    '''reduce will return a NestedFrame with two columns'''
         >>>    return {"sum_col1": sum(col1), "sum_col2": sum(col2)}
-
-        ```
 
         """
         # Parse through the initial args to determine the columns to apply the function to
