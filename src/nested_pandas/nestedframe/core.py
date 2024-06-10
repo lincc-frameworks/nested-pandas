@@ -383,12 +383,12 @@ class NestedFrame(pd.DataFrame):
         key is an output column of the dataframe returned by `reduce`.
 
         Example User Function:
-        ```
-        import pandas as pd
 
-        def my_sum(col1, col2):
-            '''reduce will return a NestedFrame with two columns'''
-            return {"sum_col1": sum(col1), "sum_col2": sum(col2)}
+        >>> import pandas as pd
+
+        >>> def my_sum(col1, col2):
+        >>>    '''reduce will return a NestedFrame with two columns'''
+        >>>    return {"sum_col1": sum(col1), "sum_col2": sum(col2)}
 
         ```
 
