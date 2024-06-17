@@ -174,10 +174,10 @@ def test_query():
 def test_dropna():
     """Test that dropna works on all layers"""
 
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.NaN, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.nan, 6]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
@@ -216,10 +216,10 @@ def test_dropna_layer_as_base_column():
 def test_dropna_inplace_base():
     """Test in-place behavior of dropna"""
 
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [np.NaN, 4, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [np.nan, 4, 6]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
@@ -237,10 +237,10 @@ def test_dropna_inplace_base():
 def test_dropna_inplace_nested():
     """Test in-place behavior of dropna"""
 
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [np.NaN, 4, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [np.nan, 4, 6]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
@@ -258,10 +258,10 @@ def test_dropna_inplace_nested():
 def test_dropna_errors():
     """Test that the various dropna exceptions trigger"""
 
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.NaN, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.nan, 6]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 

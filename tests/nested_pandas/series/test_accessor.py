@@ -805,7 +805,7 @@ def test_to_flat_dropna():
     """
 
     flat = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
     nested = pack_flat(flat, name="nested")

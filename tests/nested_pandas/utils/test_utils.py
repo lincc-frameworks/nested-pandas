@@ -10,10 +10,10 @@ def test_count_nested(join):
     """Test the functionality of count nested"""
 
     # Initialize test data
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.NaN, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.nan, 6]}, index=[0, 1, 2])
     nested = pd.DataFrame(
         data={
-            "c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1],
+            "c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1],
             "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
             "label": ["a", "a", "b", "b", "a", "a", "b", "a", "b"],
         },
