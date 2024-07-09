@@ -27,8 +27,14 @@ def test_count_nested(join):
 
     # Test count by
     label_counts = count_nested(base, "nested", by="label", join=join)
+
     assert all(label_counts["n_nested_a"].values == [2, 2, 1])
     assert all(label_counts["n_nested_b"].values == [1, 1, 2])
+
+    # Make sure the ordering is alphabetical
+    # https://github.com/lincc-frameworks/nested-pandas/issues/109
+    assert label_counts.columns[-1] == "n_nested_b"
+    assert label_counts.columns[-2] == "n_nested_a"
 
     # Test join behavior
     if join:
