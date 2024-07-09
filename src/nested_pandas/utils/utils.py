@@ -34,8 +34,9 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
         )
     else:
         # this may be able to be sped up using tolists() as well
-        counts = df[nested].apply(lambda x: x[by].value_counts())
+        counts = df[nested].apply(lambda x: x[by].value_counts(sort=False))
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
+        counts = counts.reindex(sorted(counts.columns), axis=1)
     if join:
         return df.join(counts)
     # else just return the counts NestedFrame
