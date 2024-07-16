@@ -134,7 +134,9 @@ class NestedFrame(pd.DataFrame):
         Examples
         --------
 
-        >>> nf = NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4], "c":[1,2,3,4,5], "d":[2,4,6,8,10]}, index=[0,0,0,1,1])
+        >>> nf = NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4],
+        ...                   "c":[1,2,3,4,5], "d":[2,4,6,8,10]},
+        ...                   index=[0,0,0,1,1])
 
         >>> NestedFrame.from_flat(nf, base_columns=["a","b"])
         """
