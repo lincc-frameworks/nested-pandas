@@ -169,6 +169,17 @@ def test_from_flat(index):
         assert len(out_nf) == 5
 
 
+def test_recover_from_flat():
+    """test that going to_flat and then from_flat recovers the same df"""
+    nf = generate_data(5, 10, seed=1)
+
+    flat = nf["nested"].nest.to_flat()
+
+    nf2 = NestedFrame.from_flat(nf[["a", "b"]].join(flat), base_columns=["a", "b"], name="nested")
+
+    assert nf2.equals(nf)
+
+
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
 
