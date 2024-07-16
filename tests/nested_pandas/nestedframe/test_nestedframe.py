@@ -145,6 +145,30 @@ def test_add_nested_for_empty_df():
     assert_frame_equal(new_base.nested.nest.to_flat(), nested.astype(pd.ArrowDtype(pa.float64())))
 
 
+@pytest.mark.parametrize("index", [None, "a", "c"])
+def test_from_flat(index):
+    """Test the NestedFrame.from_flat functionality"""
+    nf = NestedFrame(
+        {"a": [1, 1, 1, 2, 2], "b": [2, 2, 2, 4, 4], "c": [1, 2, 3, 4, 5], "d": [2, 4, 6, 8, 10]},
+        index=[0, 0, 0, 1, 1],
+    )
+
+    out_nf = NestedFrame.from_flat(nf, base_columns=["a", "b"], index=index, name="new_nested")
+
+    if index is None:
+        assert list(out_nf.columns) == ["a", "b", "new_nested"]
+        assert list(out_nf.new_nested.nest.fields) == ["c", "d"]
+        assert len(out_nf) == 2
+    elif index == "a":
+        assert list(out_nf.columns) == ["b", "new_nested"]
+        assert list(out_nf.new_nested.nest.fields) == ["c", "d"]
+        assert len(out_nf) == 2
+    elif index == "c":  # not what a user likely wants, but should still work
+        assert list(out_nf.columns) == ["a", "b", "new_nested"]
+        assert list(out_nf.new_nested.nest.fields) == ["d"]
+        assert len(out_nf) == 5
+
+
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
 
