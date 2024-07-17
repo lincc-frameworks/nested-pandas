@@ -103,6 +103,62 @@ class NestedFrame(pd.DataFrame):
         new_df[label] = packed
         return new_df
 
+    @classmethod
+    def from_flat(cls, df, base_columns, nested_columns=None, index=None, name="nested"):
+        """Creates a NestedFrame with base and nested columns from a flat
+        dataframe.
+
+        Parameters
+        ----------
+        df: pd.DataFrame or NestedFrame
+            A flat dataframe.
+        base_columns: list-like
+            The columns that should be used as base (flat) columns in the
+            output dataframe.
+        nested_columns: list-like, or None
+            The columns that should be packed into a nested column. All columns
+            in the list will attempt to be packed into a single nested column
+            with the name provided in `nested_name`. If None, is defined as all
+            columns not in `base_columns`.
+        index: str, or None
+            The name of a column to use as the new index. Typically, the index
+            should have a unique value per row for base columns, and should
+            repeat for nested columns. For example, a dataframe with two
+            columns; a=[1,1,1,2,2,2] and b=[5,10,15,20,25,30] would want an
+            index like [0,0,0,1,1,1] if a is chosen as a base column. If not
+            provided the current index will be used.
+        name:
+            The name of the output column the `nested_columns` are packed into.
+
+        Returns
+        -------
+        NestedFrame
+            A NestedFrame with the specified nesting structure.
+
+        Examples
+        --------
+
+        >>> nf = NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4],
+        ...                   "c":[1,2,3,4,5], "d":[2,4,6,8,10]},
+        ...                   index=[0,0,0,1,1])
+
+        >>> NestedFrame.from_flat(nf, base_columns=["a","b"])
+        """
+
+        # Resolve new index
+        if index is not None:
+            # if a base column is chosen remove it
+            if index in base_columns:
+                base_columns = [col for col in base_columns if col != index]
+            df = df.set_index(index)
+
+        # drop duplicates on index
+        out_df = df[base_columns][~df.index.duplicated(keep="first")]
+
+        # add nested
+        nested_columns = [col for col in df.columns if col not in base_columns]
+        return out_df.add_nested(df[nested_columns], name=name)
+
     def _split_query(self, expr) -> dict:
         """Splits a pandas query into multiple subqueries for nested and base layers"""
         # Ensure query has needed spacing for upcoming split
