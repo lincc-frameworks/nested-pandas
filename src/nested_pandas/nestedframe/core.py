@@ -121,8 +121,12 @@ class NestedFrame(pd.DataFrame):
             with the name provided in `nested_name`. If None, is defined as all
             columns not in `base_columns`.
         index: str, or None
-            The name of a column to use as the new index. If not provided the
-            current index will be used.
+            The name of a column to use as the new index. Typically, the index
+            should have a unique value per row for base columns, and should
+            repeat for nested columns. For example, a dataframe with two
+            columns; a=[1,1,1,2,2,2] and b=[5,10,15,20,25,30] would want an
+            index like [0,0,0,1,1,1] if a is chosen as a base column. If not
+            provided the current index will be used.
         name:
             The name of the output column the `nested_columns` are packed into.
 
