@@ -160,7 +160,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
     assert set(inner_res.index) == set(base.index).intersection(set(nested.index))
     for idx in inner_res.index:
         # None of our nested values should be None
-        inner_res.loc[idx]["nested"] is not None
+        assert inner_res.loc[idx]["nested"] is not None
         # Check the values for each column in our "base" layer
         for col in base.columns:
             assert col in inner_res.columns
