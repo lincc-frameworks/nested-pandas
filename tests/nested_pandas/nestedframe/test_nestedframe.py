@@ -89,13 +89,82 @@ def test_add_nested_with_flat_df_and_mismatched_index():
 
     nested = pd.DataFrame(
         data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
-        index=[0, 0, 0, 1, 1, 1, 1, 1, 1],  # no data for index value of "2"
+        index=[0, 0, 0, 1, 1, 1, 1, 4, 4],  # no data for base index value of "2" and introduces new index value "4"
     )
 
-    base = base.add_nested(nested, "nested")
+    # Add the nested frame in a "left" fashion, where the index of the "left"
+    # frame (our base layer) is preserved
+    left_res = base.add_nested(nested, "nested", how="left")
 
-    assert "nested" in base.columns
-    assert pd.isna(base.loc[2]["nested"])
+    assert "nested" in left_res.columns
+    # Check that the index of the base layer is being used
+    assert (left_res.index == base.index).all()
+    for idx in left_res.index:
+        # Check that the nested column is aligned correctly to the base layer
+        if idx in nested.index:
+            assert left_res.loc[idx]["nested"] is not None
+        else: # idx only in base.index
+            assert left_res.loc[idx]["nested"] is None
+
+    # Test that the default behavior is the same as how="left" by comparing the pandas dataframes
+    default_res = base.add_nested(nested, "nested")
+    assert_frame_equal(left_res, default_res)
+
+    # Test adding the nested frame in a "right" fashion, where the index of the "right"
+    # frame (our nested layer) is preserved
+    right_res = base.add_nested(nested, "nested", how="right")
+    assert len(right_res) == 3
+    # Check that the index of the nested layer is being used. Note that separate
+    # from a traditional join this will not be the same as our nested layer index
+    # and is just dropping values from the base layer that don't have a match in 
+    # the nested layer.  
+    assert (right_res.index == nested.index.unique()).all()
+    assert "nested" in right_res.columns
+    # For each index check that the base layer is aligned correctly to the nested layer
+    for idx in right_res.index:
+        # Check that the nested column is aligned correctly to the base layer. Here
+        # it should never be None
+        assert right_res.loc[idx]["nested"] is not None
+        # Check the values for each column in our "base" layer
+        for col in base.columns:
+            assert col in right_res.columns
+            if idx not in base.index:
+                # We expect a NaN value in the base layer due to the "right" join
+                assert pd.isna(right_res.loc[idx][col])
+            else:
+                assert not pd.isna(right_res.loc[idx][col])
+
+    # Test the "outer" behavior
+    outer_res = base.add_nested(nested, "nested", how="outer")
+    # We expect the new index to be the union of the base and nested indices
+    assert set(outer_res.index) == set(base.index).union(set(nested.index))
+    for idx in outer_res.index:
+        # Check that the nested column is aligned correctly to the base layer
+        if idx in nested.index:
+            assert outer_res.loc[idx]["nested"] is not None
+        else: # idx only in base.index
+            assert outer_res.loc[idx]["nested"] is None
+        # Check the values for each column in our "base" layer
+        for col in base.columns:
+            assert col in outer_res.columns
+            if idx not in base.index:
+                # We expect a NaN value in the base layer due to the "outer" join
+                assert pd.isna(outer_res.loc[idx][col])
+            else:
+                assert not pd.isna(outer_res.loc[idx][col])
+
+    # Test the "inner" behavior
+    inner_res = base.add_nested(nested, "nested", how="inner")
+    # We expect the new index to be the set intersection of the base and nested indices
+    assert set(inner_res.index) == set(base.index).intersection(set(nested.index))
+    for idx in inner_res.index:
+        # None of our nested values should be None
+        inner_res.loc[idx]["nested"] is not None
+        # Check the values for each column in our "base" layer
+        for col in base.columns:
+            assert col in inner_res.columns
+            assert not pd.isna(inner_res.loc[idx][col])
+            
 
 
 def test_add_nested_with_series():
