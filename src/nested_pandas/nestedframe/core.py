@@ -66,7 +66,12 @@ class NestedFrame(pd.DataFrame):
         return colname in self.columns or self._is_known_hierarchical_column(colname)
 
     def add_nested(
-        self, obj, name: str, *, how: str = "left", dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None
+        self,
+        obj,
+        name: str,
+        *,
+        how: str = "left",
+        dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs input object to a nested column and adds it to the NestedFrame
 
@@ -90,11 +95,11 @@ class NestedFrame(pd.DataFrame):
             How to handle the operation of the two objects:
 
             - left: use calling frame's index.
-            - right: use the calling frame's index and order but drop values 
+            - right: use the calling frame's index and order but drop values
               not in the other frame's index.
             - outer: form union of calling frame's index with other frame's
               index, and sort it lexicographically.
-            - inner: form intersection of calling frame's index with other 
+            - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or

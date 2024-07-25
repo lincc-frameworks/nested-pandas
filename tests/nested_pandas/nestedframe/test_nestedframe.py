@@ -89,7 +89,8 @@ def test_add_nested_with_flat_df_and_mismatched_index():
 
     nested = pd.DataFrame(
         data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
-        index=[0, 0, 0, 1, 1, 1, 1, 4, 4],  # no data for base index value of "2" and introduces new index value "4"
+        # no data for base index value of "2" and introduces new index value "4"
+        index=[0, 0, 0, 1, 1, 1, 1, 4, 4],
     )
 
     # Add the nested frame in a "left" fashion, where the index of the "left"
@@ -103,7 +104,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
         # Check that the nested column is aligned correctly to the base layer
         if idx in nested.index:
             assert left_res.loc[idx]["nested"] is not None
-        else: # idx only in base.index
+        else:  # idx only in base.index
             assert left_res.loc[idx]["nested"] is None
 
     # Test that the default behavior is the same as how="left" by comparing the pandas dataframes
@@ -116,8 +117,8 @@ def test_add_nested_with_flat_df_and_mismatched_index():
     assert len(right_res) == 3
     # Check that the index of the nested layer is being used. Note that separate
     # from a traditional join this will not be the same as our nested layer index
-    # and is just dropping values from the base layer that don't have a match in 
-    # the nested layer.  
+    # and is just dropping values from the base layer that don't have a match in
+    # the nested layer.
     assert (right_res.index == nested.index.unique()).all()
     assert "nested" in right_res.columns
     # For each index check that the base layer is aligned correctly to the nested layer
@@ -142,7 +143,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
         # Check that the nested column is aligned correctly to the base layer
         if idx in nested.index:
             assert outer_res.loc[idx]["nested"] is not None
-        else: # idx only in base.index
+        else:  # idx only in base.index
             assert outer_res.loc[idx]["nested"] is None
         # Check the values for each column in our "base" layer
         for col in base.columns:
@@ -164,7 +165,6 @@ def test_add_nested_with_flat_df_and_mismatched_index():
         for col in base.columns:
             assert col in inner_res.columns
             assert not pd.isna(inner_res.loc[idx][col])
-            
 
 
 def test_add_nested_with_series():
