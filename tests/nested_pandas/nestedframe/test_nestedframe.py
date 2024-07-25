@@ -96,7 +96,6 @@ def test_add_nested_with_flat_df_and_mismatched_index():
     # Add the nested frame in a "left" fashion, where the index of the "left"
     # frame (our base layer) is preserved
     left_res = base.add_nested(nested, "nested", how="left")
-
     assert "nested" in left_res.columns
     # Check that the index of the base layer is being used
     assert (left_res.index == base.index).all()
@@ -114,13 +113,12 @@ def test_add_nested_with_flat_df_and_mismatched_index():
     # Test adding the nested frame in a "right" fashion, where the index of the "right"
     # frame (our nested layer) is preserved
     right_res = base.add_nested(nested, "nested", how="right")
-    assert len(right_res) == 3
+    assert "nested" in right_res.columns
     # Check that the index of the nested layer is being used. Note that separate
     # from a traditional join this will not be the same as our nested layer index
     # and is just dropping values from the base layer that don't have a match in
     # the nested layer.
     assert (right_res.index == nested.index.unique()).all()
-    assert "nested" in right_res.columns
     # For each index check that the base layer is aligned correctly to the nested layer
     for idx in right_res.index:
         # Check that the nested column is aligned correctly to the base layer. Here
@@ -137,6 +135,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
 
     # Test the "outer" behavior
     outer_res = base.add_nested(nested, "nested", how="outer")
+    assert "nested" in outer_res.columns
     # We expect the new index to be the union of the base and nested indices
     assert set(outer_res.index) == set(base.index).union(set(nested.index))
     for idx in outer_res.index:
@@ -156,6 +155,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
 
     # Test the "inner" behavior
     inner_res = base.add_nested(nested, "nested", how="inner")
+    assert "nested" in inner_res.columns
     # We expect the new index to be the set intersection of the base and nested indices
     assert set(inner_res.index) == set(base.index).intersection(set(nested.index))
     for idx in inner_res.index:
