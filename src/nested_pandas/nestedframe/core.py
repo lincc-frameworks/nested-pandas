@@ -66,7 +66,12 @@ class NestedFrame(pd.DataFrame):
         return colname in self.columns or self._is_known_hierarchical_column(colname)
 
     def add_nested(
-        self, obj, name: str, *, dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None
+        self,
+        obj,
+        name: str,
+        *,
+        how: str = "left",
+        dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs input object to a nested column and adds it to the NestedFrame
 
@@ -86,6 +91,16 @@ class NestedFrame(pd.DataFrame):
             missing values.
         name : str
             The name of the nested column to be added to the NestedFrame.
+        how : {'left', 'right', 'outer', 'inner'}, default: 'left'
+            How to handle the operation of the two objects:
+
+            - left: use calling frame's index.
+            - right: use the calling frame's index and order but drop values
+              not in the other frame's index.
+            - outer: form union of calling frame's index with other frame's
+              index, and sort it lexicographically.
+            - inner: form intersection of calling frame's index with other
+              frame's index, preserving the order of the calling index.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -98,10 +113,8 @@ class NestedFrame(pd.DataFrame):
         """
         # Add sources to objects
         packed = packer.pack(obj, name=name, dtype=dtype)
-        label = packed.name
         new_df = self.copy()
-        new_df[label] = packed
-        return new_df
+        return new_df.join(packed, how=how)
 
     @classmethod
     def from_flat(cls, df, base_columns, nested_columns=None, index=None, name="nested"):
