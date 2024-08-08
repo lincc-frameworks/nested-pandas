@@ -5,3 +5,4 @@ Tutorials
 
     Loading Data into Nested-Pandas <tutorials/data_loading_notebook>
     Lower-level interfaces <tutorials/low_level.ipynb>
+    Using Nested-Pandas with Astronomical Spectra <tutorials/nested_spectra.ipynb>
