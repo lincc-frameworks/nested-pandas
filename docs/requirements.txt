@@ -10,3 +10,4 @@ sphinx-copybutton
 sphinx-book-theme
 astroquery
 astropy
+matplotlib
