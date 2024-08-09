@@ -1,3 +1,4 @@
+import nested_pandas as npd
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -485,6 +486,17 @@ def test_query_flat_empty_rows():
     desired = pd.Series([], dtype=series.dtype)
 
     assert_series_equal(filtered, desired)
+
+
+def test_query_flat_with_empty_result():
+    """Make sure the index is properly set for empty result cases"""
+    base = npd.NestedFrame({"a": []}, index=pd.Index([], dtype=np.float64))
+    nested = npd.NestedFrame({"b": []}, index=pd.Index([], dtype=np.float64))
+
+    ndf = base.add_nested(nested, "nested")
+
+    res = ndf.nested.nest.query_flat("b > 2")
+    assert res.index.dtype == np.float64
 
 
 @pytest.mark.parametrize(
