@@ -223,8 +223,8 @@ class NestSeriesAccessor(Mapping):
             The filtered series.
         """
         flat = self.to_flat().query(query)
-        if len(flat) == 0:
-            return pd.Series([], dtype=self._series.dtype)
+        #if len(flat) == 0:
+        #    return pd.Series([], dtype=self._series.dtype)
         return pack_sorted_df_into_struct(flat)
 
     def get_flat_index(self) -> pd.Index:
