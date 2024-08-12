@@ -65,6 +65,77 @@ def test_is_known_hierarchical_column():
     assert not base._is_known_hierarchical_column("base.a")
 
 
+def test_get_nested_column():
+    """Test that __getitem__ can retrieve a nested column"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    base_c = base["nested.c"]
+
+    # check basic properties
+    assert isinstance(base_c, pd.Series)
+    assert np.array_equal(np.array([0, 2, 4, 1, 4, 3, 1, 4, 1]), base_c.values.to_numpy())
+
+
+def test_set_or_replace_nested_col():
+    """Test that __setitem__ can set or replace a column in a existing nested structure"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    c = [0, 2, 4, 1, 4, 3, 1, 4, 1]
+    nested = pd.DataFrame(
+        data={"c": c, "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    # test direct replacement
+    base["nested.c"] = base["nested.c"] + 1
+    assert np.array_equal(np.array(c) + 1, base["nested.c"].values.to_numpy())
+
+    # test += syntax
+    base["nested.c"] += 1
+    assert np.array_equal(
+        np.array(c) + 2,  # 2 now, chained from above
+        base["nested.c"].values.to_numpy(),
+    )
+
+    # test new column assignment
+    base["nested.e"] = base["nested.d"] * 2
+
+    assert "e" in base.nested.nest.fields
+    assert np.array_equal(base["nested.d"].values.to_numpy() * 2, base["nested.e"].values.to_numpy())
+
+
+def test_set_new_nested_col():
+    """Test that __setitem__ can create a new nested structure"""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    c = [0, 2, 4, 1, 4, 3, 1, 4, 1]
+    nested = pd.DataFrame(
+        data={"c": c, "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    base = base.add_nested(nested, "nested")
+
+    # assign column cd in new_nested from c+d in nested
+    base["new_nested.cd"] = base["nested.c"] + base["nested.d"]
+
+    assert "new_nested" in base.nested_columns
+    assert "cd" in base["new_nested"].nest.fields
+
+    assert np.array_equal(
+        base["new_nested.cd"].values.to_numpy(),
+        base["nested.c"].values.to_numpy() + base["nested.d"].values.to_numpy(),
+    )
+
+
 def test_add_nested_with_flat_df():
     """Test that add_nested correctly adds a nested column to the base df"""
 

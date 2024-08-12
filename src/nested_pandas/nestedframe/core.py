@@ -100,7 +100,7 @@ class NestedFrame(pd.DataFrame):
         elif "." in key:
             new_nested, col = key.split(".")
             if isinstance(value, pd.Series):
-                print("here")
+                value.name = col
                 value = value.to_frame()
             packed = packer.pack(value)
             return super().__setitem__(new_nested, packed)
