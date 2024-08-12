@@ -65,6 +65,48 @@ class NestedFrame(pd.DataFrame):
         """Determine whether a string is a known column name"""
         return colname in self.columns or self._is_known_hierarchical_column(colname)
 
+    def __getitem__(self, item):
+        """Adds custom __getitem__ behavior for nested columns"""
+
+        # If a nested column name is passed, return a flat series for that column
+        # flat series is chosen over list series for utility
+        # e.g. native ability to do something like ndf["nested.a"] + 3
+        if isinstance(item, str) and self._is_known_hierarchical_column(item):
+            nested, col = item.split(".")
+            return self[nested].nest.get_flat_series(col)
+        # Otherwise, do __getitem__ as normal
+        else:
+            return super().__getitem__(item)
+
+    def __setitem__(self, key, value):
+        """Adds custom __setitem__ behavior for nested columns"""
+
+        # Replacing or adding columns to a nested structure
+        # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
+        # Or ndf["nested.base_t"] = ndf["nested.t"] - 5
+        # Performance note: This requires building a new nested structure
+        # TODO: Support assignment of a new column to an existing nested col from a list series
+        if self._is_known_hierarchical_column(key) or (
+            "." in key and key.split(".")[0] in self.nested_columns
+        ):
+            nested, col = key.split(".")
+            new_flat = self[nested].nest.to_flat()
+            new_flat[col] = value
+            packed = packer.pack(new_flat)
+            return super().__setitem__(nested, packed)
+
+        # Adding a new nested structure from a column
+        # Allows statements like ndf["new_nested.t"] = ndf["nested.t"] - 5
+        elif "." in key:
+            new_nested, col = key.split(".")
+            if isinstance(value, pd.Series):
+                print("here")
+                value = value.to_frame()
+            packed = packer.pack(value)
+            return super().__setitem__(new_nested, packed)
+
+        return super().__setitem__(key, value)
+
     def add_nested(
         self,
         obj,
