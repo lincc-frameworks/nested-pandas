@@ -214,6 +214,69 @@ class NestedFrame(pd.DataFrame):
         nested_columns = [col for col in df.columns if col not in base_columns]
         return out_df.add_nested(df[nested_columns], name=name)
 
+    @classmethod
+    def from_lists(cls, df, base_columns=None, list_columns=None, name="nested"):
+        """Creates a NestedFrame with base and nested columns from a flat
+        dataframe.
+
+        Parameters
+        ----------
+        df: pd.DataFrame or NestedFrame
+            A dataframe with list columns.
+        base_columns: list-like, or None
+            Any columns that have non-list values in the input df. These will
+            simply be kept as identical columns in the result
+        list_columns: list-like, or None
+            The list-value columns that should be packed into a nested column.
+            All columns in the list will attempt to be packed into a single
+            nested column with the name provided in `nested_name`. If None, is
+            defined as all columns not in `base_columns`.
+        name:
+            The name of the output column the `nested_columns` are packed into.
+
+        Returns
+        -------
+        NestedFrame
+            A NestedFrame with the specified nesting structure.
+
+         Examples
+        --------
+
+        >>> nf = NestedFrame({"c":[1,2,3], "d":[2,4,6],
+        ...                   "e":[[1,2,3], [4,5,6], [7,8,9]]},
+        ...                  index=[0,1,2])
+
+
+        >>> NestedFrame.from_lists(nf, base_columns=["c","d"])
+        """
+
+        # Resolve base and list columns
+        if base_columns is None:
+            if list_columns is None:
+                # with no inputs, assume all columns are list-valued
+                list_columns = df.columns
+            else:
+                # if list_columns are defined, assume everything else is base
+                base_columns = [col for col in df.columns if col not in list_columns]
+        else:
+            if list_columns is None:
+                # with defined base_columns, assume everything else is list
+                list_columns = [col for col in df.columns if col not in base_columns]
+
+        if len(list_columns) == 0:
+            raise ValueError("No columns were assigned as list columns.")
+
+        # Pack list columns into a nested column
+        packed_df = packer.pack_lists(df[list_columns])
+        packed_df.name = name
+
+        # join the nested column to the base_column df
+        if base_columns is not None:
+            return df[base_columns].join(packed_df)
+        # or just return the packed_df as a nestedframe if no base cols
+        else:
+            return packed_df.to_frame()
+
     def _split_query(self, expr) -> dict:
         """Splits a pandas query into multiple subqueries for nested and base layers"""
         # Ensure query has needed spacing for upcoming split
