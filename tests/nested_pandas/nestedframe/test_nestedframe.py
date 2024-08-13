@@ -352,7 +352,7 @@ def test_from_lists():
     assert list(res.columns) == ["nested"]
     assert list(res.nested_columns) == ["nested"]
 
-    res = NestedFrame.from_lists(nf, base_columns=None, list_columns=["e"])
+    res = NestedFrame.from_lists(nf[["e"]], base_columns=None, list_columns=["e"])
     assert list(res.columns) == ["nested"]
     assert list(res.nested_columns) == ["nested"]
 
