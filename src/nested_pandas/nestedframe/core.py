@@ -275,7 +275,7 @@ class NestedFrame(pd.DataFrame):
             return df[base_columns].join(packed_df)
         # or just return the packed_df as a nestedframe if no base cols
         else:
-            return packed_df.to_frame()
+            return NestedFrame(packed_df.to_frame())
 
     def _split_query(self, expr) -> dict:
         """Splits a pandas query into multiple subqueries for nested and base layers"""
