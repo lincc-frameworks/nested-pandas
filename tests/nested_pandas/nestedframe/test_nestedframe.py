@@ -352,6 +352,10 @@ def test_from_lists():
     assert list(res.columns) == ["nested"]
     assert list(res.nested_columns) == ["nested"]
 
+    res = NestedFrame.from_lists(nf, base_columns=None, list_columns=["e"])
+    assert list(res.columns) == ["nested"]
+    assert list(res.nested_columns) == ["nested"]
+
 
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
