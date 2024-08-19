@@ -319,11 +319,14 @@ def test_recover_from_flat():
 
     assert nf2.equals(nf)
 
+
 def test_from_flat_omitting_columns():
     """test that from_flat successfully produces subsets"""
-    flat = NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4], "c":[1,2,3,4,5], 
-                     "d":[2,4,6,8,10]}, index=[0,0,0,1,1])
-    
+    flat = NestedFrame(
+        {"a": [1, 1, 1, 2, 2], "b": [2, 2, 2, 4, 4], "c": [1, 2, 3, 4, 5], "d": [2, 4, 6, 8, 10]},
+        index=[0, 0, 0, 1, 1],
+    )
+
     # omit a base column
     nf = NestedFrame.from_flat(flat, base_columns=["b"], nested_columns=["c", "d"])
     assert list(nf.columns) == ["b", "nested"]
@@ -333,6 +336,7 @@ def test_from_flat_omitting_columns():
     nf = NestedFrame.from_flat(flat, base_columns=["a", "b"], nested_columns=["c"])
     assert list(nf.columns) == ["a", "b", "nested"]
     assert list(nf.nested.nest.fields) == ["c"]
+
 
 def test_from_lists():
     """Test NestedFrame.from_lists behavior"""
