@@ -320,6 +320,59 @@ def test_recover_from_flat():
     assert nf2.equals(nf)
 
 
+def test_from_lists():
+    """Test NestedFrame.from_lists behavior"""
+    nf = NestedFrame(
+        {"c": [1, 2, 3], "d": [2, 4, 6], "e": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}, index=[0, 1, 2]
+    )
+
+    # Test a few combinations
+    res = NestedFrame.from_lists(nf, base_columns=["c", "d"], name="nested_e")
+    assert list(res.columns) == ["c", "d", "nested_e"]
+    assert list(res.nested_columns) == ["nested_e"]
+
+    res = NestedFrame.from_lists(nf, base_columns=["c", "d"], list_columns=["e"])
+    assert list(res.columns) == ["c", "d", "nested"]
+    assert list(res.nested_columns) == ["nested"]
+
+    res = NestedFrame.from_lists(nf, list_columns=["e"])
+    assert list(res.columns) == ["c", "d", "nested"]
+    assert list(res.nested_columns) == ["nested"]
+
+    # Check for the no list columns error
+    with pytest.raises(ValueError):
+        res = NestedFrame.from_lists(nf, base_columns=["c", "d", "e"])
+
+    # Multiple list columns (of uneven length)
+    nf2 = NestedFrame(
+        {
+            "c": [1, 2, 3],
+            "d": [2, 4, 6],
+            "e": [[1, 2, 3], [4, 5, 6, 7], [8, 9]],
+            "f": [[10, 20, 30], [40, 50, 60, 70], [80, 90]],
+        },
+        index=[0, 1, 2],
+    )
+
+    res = NestedFrame.from_lists(nf2, list_columns=["e", "f"])
+    assert list(res.columns) == ["c", "d", "nested"]
+    assert list(res.nested_columns) == ["nested"]
+    assert list(res.nested.nest.fields) == ["e", "f"]
+
+    # Check for subsetting
+    res = NestedFrame.from_lists(nf, base_columns=["c"], list_columns=["e"])
+    assert list(res.columns) == ["c", "nested"]
+    assert list(res.nested_columns) == ["nested"]
+
+    res = NestedFrame.from_lists(nf, base_columns=[], list_columns=["e"])
+    assert list(res.columns) == ["nested"]
+    assert list(res.nested_columns) == ["nested"]
+
+    res = NestedFrame.from_lists(nf[["e"]], base_columns=None, list_columns=None)
+    assert list(res.columns) == ["nested"]
+    assert list(res.nested_columns) == ["nested"]
+
+
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
 
