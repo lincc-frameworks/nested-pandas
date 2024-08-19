@@ -343,6 +343,22 @@ def test_from_lists():
     with pytest.raises(ValueError):
         res = NestedFrame.from_lists(nf, base_columns=["c", "d", "e"])
 
+    # Multiple list columns (of uneven length)
+    nf2 = NestedFrame(
+        {
+            "c": [1, 2, 3],
+            "d": [2, 4, 6],
+            "e": [[1, 2, 3], [4, 5, 6, 7], [8, 9]],
+            "f": [[10, 20, 30], [40, 50, 60, 70], [80, 90]],
+        },
+        index=[0, 1, 2],
+    )
+
+    res = NestedFrame.from_lists(nf2, list_columns=["e", "f"])
+    assert list(res.columns) == ["c", "d", "nested"]
+    assert list(res.nested_columns) == ["nested"]
+    assert list(res.nested.nest.fields) == ["e", "f"]
+
     # Check for subsetting
     res = NestedFrame.from_lists(nf, base_columns=["c"], list_columns=["e"])
     assert list(res.columns) == ["c", "nested"]
