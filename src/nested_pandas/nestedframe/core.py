@@ -211,7 +211,8 @@ class NestedFrame(pd.DataFrame):
         out_df = df[base_columns][~df.index.duplicated(keep="first")]
 
         # add nested
-        nested_columns = [col for col in df.columns if col not in base_columns]
+        if nested_columns is None:
+            nested_columns = [col for col in df.columns if col not in base_columns]
         return out_df.add_nested(df[nested_columns], name=name)
 
     @classmethod
