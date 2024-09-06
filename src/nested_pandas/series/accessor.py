@@ -251,14 +251,18 @@ class NestSeriesAccessor(Mapping):
             The flat-array field.
         """
 
-        # TODO: we should make proper missed values handling here
+        flat_chunks = []
+        for nested_chunk in self._series.array._chunked_array.iterchunks():
+            struct_array = cast(pa.StructArray, nested_chunk)
+            list_array = cast(pa.ListArray, struct_array.field(field))
+            flat_array = list_array.flatten()
+            flat_chunks.append(flat_array)
 
-        struct_array = cast(pa.StructArray, pa.array(self._series))
-        list_array = cast(pa.ListArray, struct_array.field(field))
-        flat_array = list_array.flatten()
+        flat_chunked_array = pa.chunked_array(flat_chunks)
+
         return pd.Series(
-            flat_array,
-            dtype=pd.ArrowDtype(flat_array.type),
+            flat_chunked_array,
+            dtype=pd.ArrowDtype(flat_chunked_array.type),
             index=self.get_flat_index(),
             name=field,
             copy=False,
@@ -277,11 +281,16 @@ class NestSeriesAccessor(Mapping):
         pd.Series
             The list-array field.
         """
-        struct_array = cast(pa.StructArray, pa.array(self._series))
-        list_array = struct_array.field(field)
+
+        list_chunks = []
+        for nested_chunk in self._series.array._chunked_array.iterchunks():
+            struct_array = cast(pa.StructArray, nested_chunk)
+            list_array = struct_array.field(field)
+            list_chunks.append(list_array)
+        list_chunked_array = pa.chunked_array(list_chunks)
         return pd.Series(
-            list_array,
-            dtype=pd.ArrowDtype(list_array.type),
+            list_chunked_array,
+            dtype=pd.ArrowDtype(list_chunked_array.type),
             index=self._series.index,
             name=field,
             copy=False,
