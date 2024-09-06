@@ -543,6 +543,32 @@ def test_get_list_series():
     )
 
 
+def test_get_list_series_multiple_chunks():
+    """Test that .nest.get_list_series() works when underlying array is chunked"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            [np.array([1, 2, 3]), np.array([4, 5, 6])],
+            [np.array([6, 4, 2]), np.array([1, 2, 3])],
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 3)
+    series = pd.Series(chunked_array, dtype=NestedDtype(chunked_array.type), index=[5, 7, 9, 11, 13, 15])
+    assert series.array.num_chunks == 3
+
+    lists = series.nest.get_list_series("a")
+
+    assert_series_equal(
+        lists,
+        pd.Series(
+            data=[np.array([1, 2, 3]), np.array([4, 5, 6])] * 3,
+            dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+            index=[5, 7, 9, 11, 13, 15],
+            name="a",
+        ),
+    )
+
+
 def test_get():
     """Test .nest.get() which is implemented by the base class"""
     series = pack_seq(
@@ -584,6 +610,33 @@ def test___getitem___single_field():
             dtype=pd.ArrowDtype(pa.float64()),
             index=[0, 0, 0, 1, 1, 1],
             name="b",
+        ),
+    )
+
+
+def test___getitem___single_field_multiple_chunks():
+    """Reproduces issue 142
+
+    https://github.com/lincc-frameworks/nested-pandas/issues/142
+    """
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            [np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])],
+            [np.array([4.0, 5.0, 6.0]), np.array([3.0, 4.0, 5.0])],
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 3)
+    series = pd.Series(chunked_array, dtype=NestedDtype(chunked_array.type), index=[0, 1, 2, 3, 4, 5])
+    assert series.array.num_chunks == 3
+
+    assert_series_equal(
+        series.nest["a"],
+        pd.Series(
+            np.array([1.0, 2.0, 3.0, 1.0, 2.0, 1.0] * 3),
+            dtype=pd.ArrowDtype(pa.float64()),
+            index=[0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5],
+            name="a",
         ),
     )
 
