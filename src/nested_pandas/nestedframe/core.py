@@ -210,6 +210,10 @@ class NestedFrame(pd.DataFrame):
         # drop duplicates on index
         out_df = df[base_columns][~df.index.duplicated(keep="first")]
 
+        # Convert df to NestedFrame if needed
+        if not isinstance(out_df, NestedFrame):
+            out_df = NestedFrame(out_df)
+
         # add nested
         if nested_columns is None:
             nested_columns = [col for col in df.columns if col not in base_columns]
