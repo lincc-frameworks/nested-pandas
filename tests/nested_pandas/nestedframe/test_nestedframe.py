@@ -136,6 +136,17 @@ def test_set_new_nested_col():
     )
 
 
+def test_get_dot_names():
+    """Test the ability to still work with column names with '.' characters outside of nesting"""
+    nf = NestedFrame.from_flat(
+        NestedFrame({"a": [1, 2, 3, 4], ".b.": [1, 1, 3, 3], "R.A.": [3, None, 6, 5]}, index=[1, 1, 2, 2]),
+        base_columns=[".b."],
+    )
+
+    assert len(nf[".b."]) == 2
+    assert len(nf["nested.R.A."]) == 4
+
+
 def test_add_nested_with_flat_df():
     """Test that add_nested correctly adds a nested column to the base df"""
 
