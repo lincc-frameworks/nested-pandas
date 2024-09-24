@@ -82,14 +82,6 @@ class NestedFrame(pd.DataFrame):
                 nested = item.split(".")[0]
                 col = ".".join(item.split(".")[1:])
                 return self[nested].nest.get_flat_series(col)
-
-        # If a nested column name is passed, return a flat series for that column
-        # flat series is chosen over list series for utility
-        # e.g. native ability to do something like ndf["nested.a"] + 3
-        # elif isinstance(item, str) and self._is_known_hierarchical_column(item):
-        #    nested, col = item.split(".")
-        #    return self[nested].nest.get_flat_series(col)
-        # Otherwise, do __getitem__ as normal
         else:
             return super().__getitem__(item)
 
