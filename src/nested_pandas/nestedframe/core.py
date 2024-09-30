@@ -38,7 +38,7 @@ class NestedFrame(pd.DataFrame):
         """returns a dictionary of columns for each base/nested dataframe"""
         all_columns = {"base": self.columns}
         for column in self.columns:
-            if isinstance(self[column].dtype, NestedDtype):
+            if isinstance(self.dtypes[column], NestedDtype):
                 nest_cols = self[column].nest.fields
                 all_columns[column] = nest_cols
         return all_columns
@@ -48,16 +48,18 @@ class NestedFrame(pd.DataFrame):
         """retrieves the base column names for all nested dataframes"""
         nest_cols = []
         for column in self.columns:
-            if isinstance(self[column].dtype, NestedDtype):
+            if isinstance(self.dtypes[column], NestedDtype):
                 nest_cols.append(column)
         return nest_cols
 
     def _is_known_hierarchical_column(self, colname) -> bool:
         """Determine whether a string is a known hierarchical column name"""
         if "." in colname:
-            left, right = colname.split(".")
-            if left in self.nested_columns:
-                return right in self.all_columns[left]
+            base_name = colname.split(".")[0]
+            if base_name in self.nested_columns:
+                # TODO: only handles one level of nesting for now
+                nested_name = ".".join(colname.split(".")[1:])
+                return nested_name in self.all_columns[base_name]
             return False
         return False
 
@@ -68,13 +70,18 @@ class NestedFrame(pd.DataFrame):
     def __getitem__(self, item):
         """Adds custom __getitem__ behavior for nested columns"""
 
-        # If a nested column name is passed, return a flat series for that column
-        # flat series is chosen over list series for utility
-        # e.g. native ability to do something like ndf["nested.a"] + 3
-        if isinstance(item, str) and self._is_known_hierarchical_column(item):
-            nested, col = item.split(".")
-            return self[nested].nest.get_flat_series(col)
-        # Otherwise, do __getitem__ as normal
+        if isinstance(item, str):
+            # Pre-empt the nested check if the item is a base column
+            if item in self.columns:
+                return super().__getitem__(item)
+            # If a nested column name is passed, return a flat series for that column
+            # flat series is chosen over list series for utility
+            # e.g. native ability to do something like ndf["nested.a"] + 3
+            elif self._is_known_hierarchical_column(item):
+                # TODO: only handles one level of nesting for now
+                nested = item.split(".")[0]
+                col = ".".join(item.split(".")[1:])
+                return self[nested].nest.get_flat_series(col)
         else:
             return super().__getitem__(item)
 
