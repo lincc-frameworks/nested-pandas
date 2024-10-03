@@ -52,6 +52,18 @@ class NestedFrame(pd.DataFrame):
                 nest_cols.append(column)
         return nest_cols
 
+    def _repr_html_(self) -> str | None:
+        """Override html representation"""
+
+        def my_style(df: NestedFrame, columns):
+            """Style generator for nested columns"""
+            style = {column: f"&ltcolumns={df[column].nest.fields}&gt" for column in columns}
+            return df.style.format(style)
+
+        max_rows = pd.get_option("display.max_rows")
+        repr = super().pipe(my_style, self.nested_columns).to_html(max_rows=max_rows)
+        return repr
+
     def _is_known_hierarchical_column(self, colname) -> bool:
         """Determine whether a string is a known hierarchical column name"""
         if "." in colname:
