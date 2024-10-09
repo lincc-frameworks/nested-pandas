@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath("../src/"))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "nested-pandas"
-copyright = "2023, LINCC Frameworks"
+copyright = "2024, LINCC Frameworks"
 author = "LINCC Frameworks"
 release = version("nested-pandas")
 # for example take major/minor
