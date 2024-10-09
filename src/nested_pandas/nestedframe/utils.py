@@ -37,4 +37,4 @@ def check_expr_nesting(expr: str) -> set[NestingType]:
     to mix base and nested columns, which will need to be handled specially.
     """
     expr_tree = ast.parse(expr, mode="eval").body
-    return set(_expr_nesting_type(expr_tree))
+    return _expr_nesting_type(expr_tree)

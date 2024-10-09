@@ -35,6 +35,32 @@ class NestedSeries(pd.Series):
     __pandas_priority__ = 3500
 
 
+class NestResolver:
+    """
+    Used by NestedFrame.eval to resolve the names of nested columns when
+    encountered in expressions, interpreting __getattr__ in terms of a
+    specific nest context.
+    """
+
+    def __init__(self, nest_name: str, outer: NestedFrame):
+        self._nest_name = nest_name
+        # Save the outer frame with an eye toward repacking.
+        self._outer = outer
+        # Flattened only once for every access of this particular nest
+        # within the expression.
+        self._flat_nest = outer[nest_name].nest.to_flat()
+
+    def __getattr__(self, item_name: str):
+        if item_name in self._flat_nest:
+            result = NestedSeries(self._flat_nest[item_name])
+            # Assigning these properties directly in order to avoid any complication
+            # or interference with the inherited pd.Series constructor.
+            result.nest_name = self._nest_name
+            result.flat_nest = self._flat_nest
+            return result
+        raise AttributeError(f"No attribute {item_name}")
+
+
 class NestedFrame(pd.DataFrame):
     """A Pandas Dataframe extension with support for nested structure.
 
@@ -490,25 +516,6 @@ class NestedFrame(pd.DataFrame):
             return result
 
     def _get_nested_column_resolvers(self):
-        class NestResolver:
-            def __init__(self, nest_name: str, outer):
-                self._nest_name = nest_name
-                # Save the outer frame with an eye toward repacking.
-                self._outer = outer
-                # Flattened only once for every access of this particular nest
-                # within the expression.
-                self._flat_nest = outer[nest_name].nest.to_flat()
-
-            def __getattr__(self, item_name: str):
-                if item_name in self._flat_nest:
-                    result = NestedSeries(self._flat_nest[item_name])
-                    # Assigning these properties directly in order to avoid any complication
-                    # or interference with the inherited pd.Series constructor.
-                    result.nest_name = self._nest_name
-                    result.flat_nest = self._flat_nest
-                    return result
-                raise AttributeError(f"No attribute {item_name}")
-
         return {name: NestResolver(name, self) for name in self.nested_columns}
 
     def _resolve_dropna_target(self, on_nested, subset):
