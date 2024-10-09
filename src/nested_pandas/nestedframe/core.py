@@ -475,18 +475,13 @@ class NestedFrame(pd.DataFrame):
         # which means that a nested attribute was referenced.  Apply this result
         # to the nest and repack.  Otherwise, apply it to this instance as usual,
         # since it operated on the base attributes.
-        try:
-            if isinstance(result, NestedSeries):
-                nest_name, flat_nest = result.nest_name, result.flat_nest
-                new_flat_nest = flat_nest.loc[result]
-                result = self.copy()
-                result[nest_name] = pack_sorted_df_into_struct(new_flat_nest)
-            else:
-                result = self.loc[result]
-        except ValueError:
-            # when res is multi-dimensional loc raises, but this is sometimes a
-            # valid query
-            result = self[result]
+        if isinstance(result, NestedSeries):
+            nest_name, flat_nest = result.nest_name, result.flat_nest
+            new_flat_nest = flat_nest.loc[result]
+            result = self.copy()
+            result[nest_name] = pack_sorted_df_into_struct(new_flat_nest)
+        else:
+            result = self.loc[result]
 
         if inplace:
             self._update_inplace(result)
