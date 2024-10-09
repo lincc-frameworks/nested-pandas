@@ -4,6 +4,7 @@ import pyarrow as pa
 import pytest
 from nested_pandas import NestedFrame
 from nested_pandas.datasets import generate_data
+from nested_pandas.nestedframe.core import NestedSeries
 from pandas.testing import assert_frame_equal
 
 
@@ -12,6 +13,25 @@ def test_nestedframe_construction():
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
     assert isinstance(base, NestedFrame)
+
+
+def test_nestedseries_construction():
+    """Test NestedSeries construction"""
+    series = NestedSeries([1, 2, 3], index=[0, 2, 4])
+
+    assert isinstance(series, NestedSeries)
+    assert series[4] == 3
+
+    # Exercise the constructor used during promoting operations
+    combine_left = NestedSeries([1, 2, 3], index=[0, 2, 4]) + pd.Series([1, 2, 3], index=[0, 2, 4])
+    assert isinstance(combine_left, NestedSeries)
+    combine_right = pd.Series([1, 2, 3], index=[0, 2, 4]) + NestedSeries([1, 2, 3], index=[0, 2, 4])
+    assert isinstance(combine_right, NestedSeries)
+
+    # Exercising the expanddim constructor
+    frame = series.to_frame()
+    assert isinstance(frame, NestedFrame)
+    assert (frame[0] == [1, 2, 3]).all()
 
 
 def test_all_columns():
@@ -435,6 +455,31 @@ def test_query():
     nest_queried = base.query("(nested.c > 1) and (nested.d>2)")
     assert len(nest_queried.nested.nest.to_flat()) == 4
 
+    # Check edge conditions
+    with pytest.raises(ValueError):
+        # Expression must be a string
+        base.query(3 + 4)
+
+    # Verify that inplace queries will change the shape of the instance.
+    base.query("(a % 2) == 1", inplace=True)
+    assert base.shape == (2, 3)
+    # A chunk of the nested rows will be gone, too.
+    assert base["nested.c"].shape == (6,)
+    assert base["nested.d"].shape == (6,)
+
+    # Now query into the nest, throwing away most rows.  First, check that
+    # without inplace=True, the original is not affected.
+    assert base.query("nested.c + nested.d > 9")["nested.c"].shape == (2,)
+    assert base.query("nested.c + nested.d > 9")["nested.d"].shape == (2,)
+    # and verify the original:
+    assert base["nested.c"].shape == (6,)
+    assert base["nested.d"].shape == (6,)
+
+    # Then, with inplace=True, 'base' should be changed in-place.
+    base.query("nested.c + nested.d > 9", inplace=True)
+    assert base["nested.c"].shape == (2,)
+    assert base["nested.d"].shape == (2,)
+
 
 def test_dropna():
     """Test that dropna works on all layers"""
@@ -689,3 +734,44 @@ def test_reduce_duplicated_cols():
     assert_frame_equal(
         result, pd.DataFrame({"allclose": [True, True, True]}, index=pd.Index([0, 1, 2], name="idx"))
     )
+
+
+def test_scientific_notation():
+    """
+    Test that NestedFrame.query handles constants that are written in scientific notation.
+    """
+    # https://github.com/lincc-frameworks/nested-pandas/issues/59
+    base = NestedFrame({"a": [1, 1e-2, 3]}, index=[0, 1, 2])
+    selected = base.query("a > 1e-1")
+    assert list(selected.index) == [0, 2]
+
+
+def test_eval():
+    """
+    Test basic behavior of NestedFrame.eval, and that it can handle nested references
+    the same as the nest accessor.
+    """
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    nf = nf.add_nested(to_pack, "packed")
+    p5 = nf.eval("packed.d > 5")
+    assert isinstance(p5, NestedSeries)
+    assert p5.any()
+    assert not p5.all()
+    assert list(p5.loc[p5].index) == [0, 2]
+
+    r1 = nf.eval("packed.c + packed.d")
+    r2 = nf["packed"].nest["c"] + nf["packed"].nest["d"]
+    assert (r1 == r2).all()
