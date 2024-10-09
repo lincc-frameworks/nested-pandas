@@ -15,6 +15,25 @@ def test_nestedframe_construction():
     assert isinstance(base, NestedFrame)
 
 
+def test_nestedseries_construction():
+    """Test NestedSeries construction"""
+    series = NestedSeries([1, 2, 3], index=[0, 2, 4])
+
+    assert isinstance(series, NestedSeries)
+    assert series[4] == 3
+
+    # Exercise the constructor used during promoting operations
+    combine_left = NestedSeries([1, 2, 3], index=[0, 2, 4]) + pd.Series([1, 2, 3], index=[0, 2, 4])
+    assert isinstance(combine_left, NestedSeries)
+    combine_right = pd.Series([1, 2, 3], index=[0, 2, 4]) + NestedSeries([1, 2, 3], index=[0, 2, 4])
+    assert isinstance(combine_right, NestedSeries)
+
+    # Exercising the expanddim constructor
+    frame = series.to_frame()
+    assert isinstance(frame, NestedFrame)
+    assert (frame[0] == [1, 2, 3]).all()
+
+
 def test_all_columns():
     """Test the all_columns function"""
 
@@ -435,6 +454,31 @@ def test_query():
 
     nest_queried = base.query("(nested.c > 1) and (nested.d>2)")
     assert len(nest_queried.nested.nest.to_flat()) == 4
+
+    # Check edge conditions
+    with pytest.raises(ValueError):
+        # Expression must be a string
+        base.query(3 + 4)
+
+    # Verify that inplace queries will change the shape of the instance.
+    base.query("(a % 2) == 1", inplace=True)
+    assert base.shape == (2, 3)
+    # A chunk of the nested rows will be gone, too.
+    assert base["nested.c"].shape == (6,)
+    assert base["nested.d"].shape == (6,)
+
+    # Now query into the nest, throwing away most rows.  First, check that
+    # without inplace=True, the original is not affected.
+    assert base.query("nested.c + nested.d > 9")["nested.c"].shape == (2,)
+    assert base.query("nested.c + nested.d > 9")["nested.d"].shape == (2,)
+    # and verify the original:
+    assert base["nested.c"].shape == (6,)
+    assert base["nested.d"].shape == (6,)
+
+    # Then, with inplace=True, 'base' should be changed in-place.
+    base.query("nested.c + nested.d > 9", inplace=True)
+    assert base["nested.c"].shape == (2,)
+    assert base["nested.d"].shape == (2,)
 
 
 def test_dropna():

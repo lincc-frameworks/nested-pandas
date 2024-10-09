@@ -30,7 +30,7 @@ class NestedSeries(pd.Series):
 
     @property
     def _constructor_expanddim(self) -> Self:  # type: ignore[name-defined] # noqa: F821
-        return NestedSeries
+        return NestedFrame
 
     __pandas_priority__ = 3500
 
