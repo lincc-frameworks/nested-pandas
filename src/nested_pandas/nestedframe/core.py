@@ -13,7 +13,26 @@ from pandas.api.extensions import no_default
 from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
 
-from .utils import _ensure_spacing
+from ..series.packer import pack_sorted_df_into_struct
+from .utils import NestingType, check_expr_nesting
+
+
+class NestedSeries(pd.Series):
+    """
+    Series that were unpacked from a nest.
+    """
+
+    _metadata = ["nest_name", "flat_nest"]
+
+    @property
+    def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return NestedSeries
+
+    @property
+    def _constructor_expanddim(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return NestedSeries
+
+    __pandas_priority__ = 3500
 
 
 class NestedFrame(pd.DataFrame):
@@ -22,8 +41,7 @@ class NestedFrame(pd.DataFrame):
     See https://pandas.pydata.org/docs/development/extending.html#subclassing-pandas-data-structures
     """
 
-    # normal properties
-    _metadata = ["added_property"]
+    __pandas_priority__ = 4500
 
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -71,7 +89,7 @@ class NestedFrame(pd.DataFrame):
         """Adds custom __getitem__ behavior for nested columns"""
 
         if isinstance(item, str):
-            # Pre-empt the nested check if the item is a base column
+            # Preempt the nested check if the item is a base column
             if item in self.columns:
                 return super().__getitem__(item)
             # If a nested column name is passed, return a flat series for that column
@@ -289,38 +307,110 @@ class NestedFrame(pd.DataFrame):
         else:
             return NestedFrame(packed_df.to_frame())
 
-    def _split_query(self, expr) -> dict:
-        """Splits a pandas query into multiple subqueries for nested and base layers"""
-        # Ensure query has needed spacing for upcoming split
-        expr = _ensure_spacing(expr)
-        nest_exprs = {col: [] for col in self.nested_columns + ["base"]}  # type: dict
-        split_expr = expr.split(" ")
+    def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
+        """
 
-        i = 0
-        current_focus = "base"
-        while i < len(split_expr):
-            expr_slice = split_expr[i].strip("()")
-            # Check if it's a nested column
-            if self._is_known_hierarchical_column(expr_slice):
-                nested, colname = split_expr[i].split(".")
-                current_focus = nested.strip("()")
-                # account for parentheses
-                j = 0
-                while j < len(nested):
-                    if nested[j] == "(":
-                        nest_exprs[current_focus].append("(")
-                    j += 1
-                nest_exprs[current_focus].append(colname)
-            # or if it's a top-level column
-            elif expr_slice in self.columns:
-                current_focus = "base"
-                nest_exprs[current_focus].append(split_expr[i])
-            else:
-                nest_exprs[current_focus].append(split_expr[i])
-            i += 1
-        return {expr: " ".join(nest_exprs[expr]) for expr in nest_exprs if len(nest_exprs[expr]) > 0}
+        Evaluate a string describing operations on DataFrame columns.
 
-    def query(self, expr) -> Self:  # type: ignore[name-defined] # noqa: F821
+        Operates on columns only, not specific rows or elements.  This allows
+        `eval` to run arbitrary code, which can make you vulnerable to code
+        injection if you pass user input to this function.
+
+        Works the same way as `pd.DataFrame.eval`, except that this method
+        will also automatically unpack nested columns into NestedSeries,
+        and the resulting expression will have the dimensions of the unpacked
+        series.
+
+        Parameters
+        ----------
+        expr : str
+            The expression string to evaluate.
+        inplace : bool, default False
+            If the expression contains an assignment, whether to perform the
+            operation inplace and mutate the existing DataFrame. Otherwise,
+            a new DataFrame is returned.
+        **kwargs
+            See the documentation for :func:`eval` for complete details
+            on the keyword arguments accepted by
+            :meth:`~pandas.DataFrame.query`.
+
+        Returns
+        -------
+        ndarray, scalar, pandas object, or None
+            The result of the evaluation or None if ``inplace=True``.
+
+        See Also
+        --------
+        DataFrame.query : Evaluates a boolean expression to query the columns
+            of a frame.
+        DataFrame.assign : Can evaluate an expression or function to create new
+            values for a column.
+        eval : Evaluate a Python expression as a string using various
+            backends.
+
+        Notes
+        -----
+        For more details see the API documentation for :func:`~eval`.
+        For detailed examples see :ref:`enhancing performance with eval
+        <enhancingperf.eval>`.
+
+        Examples
+        --------
+        >>> df = pd.DataFrame({'A': range(1, 6), 'B': range(10, 0, -2)})
+        >>> df
+           A   B
+        0  1  10
+        1  2   8
+        2  3   6
+        3  4   4
+        4  5   2
+        >>> df.eval('A + B')
+        0    11
+        1    10
+        2     9
+        3     8
+        4     7
+        dtype: int64
+
+        Assignment is allowed though by default the original DataFrame is not
+        modified.
+
+        >>> df.eval('C = A + B')
+           A   B   C
+        0  1  10  11
+        1  2   8  10
+        2  3   6   9
+        3  4   4   8
+        4  5   2   7
+        >>> df
+           A   B
+        0  1  10
+        1  2   8
+        2  3   6
+        3  4   4
+        4  5   2
+
+        Multiple columns can be assigned to using multi-line expressions:
+
+        >>> df.eval(
+        ...     '''
+        ... C = A + B
+        ... D = A - B
+        ... '''
+        ... )
+           A   B   C  D
+        0  1  10  11 -9
+        1  2   8  10 -6
+        2  3   6   9 -3
+        3  4   4   8  0
+        4  5   2   7  3
+        """
+        nested_resolvers = self._get_nested_column_resolvers()
+        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (nested_resolvers,)
+        kwargs["inplace"] = inplace
+        return super().eval(expr, **kwargs)
+
+    def query(self, expr: str, *, inplace: bool = False, **kwargs) -> NestedFrame | None:
         """
         Query the columns of a NestedFrame with a boolean expression. Specified
         queries can target nested columns in addition to the typical column set
@@ -348,6 +438,12 @@ class NestedFrame(pd.DataFrame):
             For example, if one of your columns is called ``a a`` and you want
             to sum it with ``b``, your query should be ```a a` + b``.
 
+        inplace : bool
+            Whether to modify the DataFrame rather than creating a new one.
+        **kwargs
+            See the documentation for :func:`eval` for complete details
+            on the keyword arguments accepted by :meth:`DataFrame.query`.
+
         Returns
         -------
         DataFrame
@@ -363,25 +459,62 @@ class NestedFrame(pd.DataFrame):
 
         >>> df.query("mynested.a > 2")
         """
-
-        # Rebuild queries for each specified nested/base layer
-        exprs_to_use = self._split_query(expr)
-
-        # For now (simplicity), limit query to only operating on one layer
-        if len(exprs_to_use.keys()) != 1:
+        if not isinstance(expr, str):
+            msg = f"expr must be a string to be evaluated, {type(expr)} given"
+            raise ValueError(msg)
+        kwargs["level"] = kwargs.pop("level", 0) + 1
+        kwargs["target"] = None
+        # At present, the query expression must be either entirely within the
+        # nested namespace or the base namespace.  Mixed structures are not
+        # supported, so preflight the expression.
+        nesting_types = check_expr_nesting(expr)
+        if NestingType.NESTED in nesting_types and NestingType.BASE in nesting_types:
             raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
-
-        # Send queries to layers
-        # We'll only execute 1 per the Error above, but the loop will be useful
-        # for when/if we allow multi-layer queries
-        result = self.copy()
-        for expr in exprs_to_use:
-            if expr == "base":
-                result = super().query(exprs_to_use["base"], inplace=False)
+        result = self.eval(expr, **kwargs)
+        # If the result is a NestedSeries, then the evaluation has caused unpacking,
+        # which means that a nested attribute was referenced.  Apply this result
+        # to the nest and repack.  Otherwise, apply it to this instance as usual,
+        # since it operated on the base attributes.
+        try:
+            if isinstance(result, NestedSeries):
+                nest_name, flat_nest = result.nest_name, result.flat_nest
+                new_flat_nest = flat_nest.loc[result]
+                result = self.copy()
+                result[nest_name] = pack_sorted_df_into_struct(new_flat_nest)
             else:
-                # TODO: does not work with queries that empty the dataframe
-                result[expr] = result[expr].nest.query_flat(exprs_to_use[expr])
-        return result
+                result = self.loc[result]
+        except ValueError:
+            # when res is multi-dimensional loc raises, but this is sometimes a
+            # valid query
+            result = self[result]
+
+        if inplace:
+            self._update_inplace(result)
+            return None
+        else:
+            return result
+
+    def _get_nested_column_resolvers(self):
+        class NestResolver:
+            def __init__(self, nest_name: str, outer):
+                self._nest_name = nest_name
+                # Save the outer frame with an eye toward repacking.
+                self._outer = outer
+                # Flattened only once for every access of this particular nest
+                # within the expression.
+                self._flat_nest = outer[nest_name].nest.to_flat()
+
+            def __getattr__(self, item_name: str):
+                if item_name in self._flat_nest:
+                    result = NestedSeries(self._flat_nest[item_name])
+                    # Assigning these properties directly in order to avoid any complication
+                    # or interference with the inherited pd.Series constructor.
+                    result.nest_name = self._nest_name
+                    result.flat_nest = self._flat_nest
+                    return result
+                raise AttributeError(f"No attribute {item_name}")
+
+        return {name: NestResolver(name, self) for name in self.nested_columns}
 
     def _resolve_dropna_target(self, on_nested, subset):
         """resolves the target layer for a given set of dropna kwargs"""

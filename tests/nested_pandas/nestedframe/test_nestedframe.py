@@ -4,6 +4,7 @@ import pyarrow as pa
 import pytest
 from nested_pandas import NestedFrame
 from nested_pandas.datasets import generate_data
+from nested_pandas.nestedframe.core import NestedSeries
 from pandas.testing import assert_frame_equal
 
 
@@ -689,3 +690,44 @@ def test_reduce_duplicated_cols():
     assert_frame_equal(
         result, pd.DataFrame({"allclose": [True, True, True]}, index=pd.Index([0, 1, 2], name="idx"))
     )
+
+
+def test_scientific_notation():
+    """
+    Test that NestedFrame.query handles constants that are written in scientific notation.
+    """
+    # https://github.com/lincc-frameworks/nested-pandas/issues/59
+    base = NestedFrame({"a": [1, 1e-2, 3]}, index=[0, 1, 2])
+    selected = base.query("a > 1e-1")
+    assert list(selected.index) == [0, 2]
+
+
+def test_eval():
+    """
+    Test basic behavior of NestedFrame.eval, and that it can handle nested references
+    the same as the nest accessor.
+    """
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+
+    nf = nf.add_nested(to_pack, "packed")
+    p5 = nf.eval("packed.d > 5")
+    assert isinstance(p5, NestedSeries)
+    assert p5.any()
+    assert not p5.all()
+    assert list(p5.loc[p5].index) == [0, 2]
+
+    r1 = nf.eval("packed.c + packed.d")
+    r2 = nf["packed"].nest["c"] + nf["packed"].nest["d"]
+    assert (r1 == r2).all()
