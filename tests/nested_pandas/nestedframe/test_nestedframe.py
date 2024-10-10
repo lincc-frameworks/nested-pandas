@@ -4,7 +4,7 @@ import pyarrow as pa
 import pytest
 from nested_pandas import NestedFrame
 from nested_pandas.datasets import generate_data
-from nested_pandas.nestedframe.core import NestedSeries
+from nested_pandas.nestedframe.core import _SeriesFromNest
 from pandas.testing import assert_frame_equal
 
 
@@ -17,16 +17,16 @@ def test_nestedframe_construction():
 
 def test_nestedseries_construction():
     """Test NestedSeries construction"""
-    series = NestedSeries([1, 2, 3], index=[0, 2, 4])
+    series = _SeriesFromNest([1, 2, 3], index=[0, 2, 4])
 
-    assert isinstance(series, NestedSeries)
+    assert isinstance(series, _SeriesFromNest)
     assert series[4] == 3
 
     # Exercise the constructor used during promoting operations
-    combine_left = NestedSeries([1, 2, 3], index=[0, 2, 4]) + pd.Series([1, 2, 3], index=[0, 2, 4])
-    assert isinstance(combine_left, NestedSeries)
-    combine_right = pd.Series([1, 2, 3], index=[0, 2, 4]) + NestedSeries([1, 2, 3], index=[0, 2, 4])
-    assert isinstance(combine_right, NestedSeries)
+    combine_left = _SeriesFromNest([1, 2, 3], index=[0, 2, 4]) + pd.Series([1, 2, 3], index=[0, 2, 4])
+    assert isinstance(combine_left, _SeriesFromNest)
+    combine_right = pd.Series([1, 2, 3], index=[0, 2, 4]) + _SeriesFromNest([1, 2, 3], index=[0, 2, 4])
+    assert isinstance(combine_right, _SeriesFromNest)
 
     # Exercising the expanddim constructor
     frame = series.to_frame()
@@ -767,7 +767,7 @@ def test_eval():
 
     nf = nf.add_nested(to_pack, "packed")
     p5 = nf.eval("packed.d > 5")
-    assert isinstance(p5, NestedSeries)
+    assert isinstance(p5, _SeriesFromNest)
     assert p5.any()
     assert not p5.all()
     assert list(p5.loc[p5].index) == [0, 2]
