@@ -17,7 +17,7 @@ from ..series.packer import pack_sorted_df_into_struct
 from .utils import NestingType, check_expr_nesting
 
 
-class NestedSeries(pd.Series):
+class _SeriesFromNest(pd.Series):
     """
     Series that were unpacked from a nest.
     """
@@ -26,7 +26,7 @@ class NestedSeries(pd.Series):
 
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
-        return NestedSeries
+        return _SeriesFromNest
 
     @property
     def _constructor_expanddim(self) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -52,7 +52,7 @@ class NestResolver:
 
     def __getattr__(self, item_name: str):
         if item_name in self._flat_nest:
-            result = NestedSeries(self._flat_nest[item_name])
+            result = _SeriesFromNest(self._flat_nest[item_name])
             # Assigning these properties directly in order to avoid any complication
             # or interference with the inherited pd.Series constructor.
             result.nest_name = self._nest_name
@@ -501,7 +501,7 @@ class NestedFrame(pd.DataFrame):
         # which means that a nested attribute was referenced.  Apply this result
         # to the nest and repack.  Otherwise, apply it to this instance as usual,
         # since it operated on the base attributes.
-        if isinstance(result, NestedSeries):
+        if isinstance(result, _SeriesFromNest):
             nest_name, flat_nest = result.nest_name, result.flat_nest
             new_flat_nest = flat_nest.loc[result]
             result = self.copy()
