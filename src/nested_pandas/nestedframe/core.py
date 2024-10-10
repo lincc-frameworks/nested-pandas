@@ -148,7 +148,7 @@ class NestedFrame(pd.DataFrame):
 
         # Adding a new nested structure from a column
         # Allows statements like ndf["new_nested.t"] = ndf["nested.t"] - 5
-        elif "." in key:
+        if "." in key:
             new_nested, col = key.split(".")
             if isinstance(value, pd.Series):
                 value.name = col
@@ -497,7 +497,7 @@ class NestedFrame(pd.DataFrame):
         if NestingType.NESTED in nesting_types and NestingType.BASE in nesting_types:
             raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
         result = self.eval(expr, **kwargs)
-        # If the result is a NestedSeries, then the evaluation has caused unpacking,
+        # If the result is a _SeriesFromNest, then the evaluation has caused unpacking,
         # which means that a nested attribute was referenced.  Apply this result
         # to the nest and repack.  Otherwise, apply it to this instance as usual,
         # since it operated on the base attributes.
