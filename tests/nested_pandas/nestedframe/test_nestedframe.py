@@ -774,4 +774,48 @@ def test_eval():
 
     r1 = nf.eval("packed.c + packed.d")
     r2 = nf["packed"].nest["c"] + nf["packed"].nest["d"]
+    r3 = nf["packed.c"] + nf["packed.d"]
     assert (r1 == r2).all()
+    assert (r2 == r3).all()
+
+
+def test_eval_funcs():
+    """
+    Test the ability to use expected methods and functions within eval(),
+    on nested columns.
+    """
+    # Verifies https://github.com/lincc-frameworks/nested-pandas/issues/146
+    nf = NestedFrame.from_flat(NestedFrame({"a": [1, 2], "b": [3, None]}, index=[1, 1]), base_columns=[])
+    assert nf["nested.b"].shape == (2,)
+    assert nf.query("nested.b.isna()")["nested.b"].shape == (1,)
+
+    assert nf["nested.a"].max() == nf.eval("nested.a.max()") == 2
+    assert nf["nested.a"].min() == nf.eval("nested.a.min()") == 1
+
+
+def test_mixed_eval_funcs():
+    """
+    Test operations across base and nested.  Whether these evaluations
+    work is data-dependent, since the dimensions of the base and
+    nested columns are not guaranteed to be compatible, but when they
+    are, it should work as expected.
+    """
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+    # Reduction
+    nf = nf.add_nested(to_pack, "packed")
+    assert (nf.eval("a + packed.c.median()") == pd.Series([4, 5, 6])).all()
+
+    # Across the nest: each base column element applies to each of its indexes
+    assert (nf.eval("a + packed.c") == nf["a"] + nf["packed.c"]).all()
