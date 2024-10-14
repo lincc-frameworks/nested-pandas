@@ -819,3 +819,75 @@ def test_mixed_eval_funcs():
 
     # Across the nest: each base column element applies to each of its indexes
     assert (nf.eval("a + packed.c") == nf["a"] + nf["packed.c"]).all()
+
+
+def test_eval_assignment():
+    """
+    Test eval strings that perform assignment, within base columns, nested columns,
+    and across base and nested.
+    """
+    nf = NestedFrame(
+        data={"a": [1, 2, 3], "b": [2, 4, 6]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+    to_pack = pd.DataFrame(
+        data={
+            "time": [1, 2, 3, 1, 2, 4, 2, 1, 4],
+            "c": [0, 2, 4, 10, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+    nf = nf.add_nested(to_pack, "packed")
+    # Assigning to new base columns from old base columns
+    nf_b = nf.eval("c = a + 1")
+    assert len(nf_b.columns) == len(nf.columns) + 1
+    assert (nf_b["c"] == nf["a"] + 1).all()
+
+    # Assigning to new nested columns from old nested columns
+    nf_nc = nf.eval("packed.e = packed.c + 1")
+    assert len(nf_nc.packed.nest.fields) == len(nf["packed"].nest.fields) + 1
+    assert (nf_nc["packed.e"] == nf["packed.c"] + 1).all()
+
+    # Verify that overwriting a nested column works
+    nf_nc_2 = nf_nc.eval("packed.e = packed.c * 2")
+    assert len(nf_nc_2.packed.nest.fields) == len(nf_nc["packed"].nest.fields)
+    assert (nf_nc_2["packed.e"] == nf["packed.c"] * 2).all()
+
+    # Assigning to new nested columns from a combo of base and nested
+    nf_nx = nf.eval("packed.f = a + packed.c")
+    assert len(nf_nx.packed.nest.fields) == len(nf["packed"].nest.fields) + 1
+    assert (nf_nx["packed.f"] == nf["a"] + nf["packed.c"]).all()
+    assert (nf_nx["packed.f"] == pd.Series([1, 3, 5, 12, 6, 5, 4, 7, 4], index=to_pack.index)).all()
+
+    # Assigning to new base columns from nested columns.  This can't be done because
+    # it would attempt to create base column values that were "between indexes", or as
+    # Pandas puts, duplicate index labels.
+    with pytest.raises(ValueError):
+        nf.eval("g = packed.c * 2")
+
+    # Create new nests via eval()
+    nf_n2 = nf.eval("p2.c2 = packed.c * 2")
+    assert len(nf_n2.p2.nest.fields) == 1
+    assert (nf_n2["p2.c2"] == nf["packed.c"] * 2).all()
+    assert (nf_n2["p2.c2"] == pd.Series([0, 4, 8, 20, 8, 6, 2, 8, 2], index=to_pack.index)).all()
+    assert len(nf_n2.columns) == len(nf.columns) + 1  # new packed column
+    assert len(nf_n2.p2.nest.fields) == 1
+
+    # Assigning to new columns across two different nests
+    nf_n3 = nf_n2.eval("p2.d = p2.c2 + packed.d * 2 + b")
+    assert len(nf_n3.p2.nest.fields) == 2
+    assert (nf_n3["p2.d"] == nf_n2["p2.c2"] + nf["packed.d"] * 2 + nf["b"]).all()
+
+    # Now test multiline and inplace=True
+    nf.eval(
+        """
+        c = a + b
+        p2.e = packed.d * 2 + c
+        p2.f = p2.e + b
+        """,
+        inplace=True,
+    )
+    assert len(nf.p2.nest.fields) == 2
+    assert (nf["p2.e"] == nf["packed.d"] * 2 + nf.c).all()
+    assert (nf["p2.f"] == nf["p2.e"] + nf.b).all()
