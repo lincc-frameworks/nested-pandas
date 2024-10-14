@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import ast
 import os
 
 import numpy as np
@@ -9,12 +10,41 @@ import pyarrow as pa
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
+from pandas.core.computation.expr import PARSERS, PandasExprVisitor
 
 from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
 
 from ..series.packer import pack_sorted_df_into_struct
 from .utils import NestingType, check_expr_nesting
+
+
+class NestedPandasExprVisitor(PandasExprVisitor):
+    """
+    Custom expression visitor for NestedFrame evaluations, which may assign to
+    nested columns.
+    """
+
+    def visit_Assign(self, node, **kwargs):  # noqa: N802
+        """
+        Visit an assignment node, which may assign to a nested column.
+        """
+        if not isinstance(node.targets[0], ast.Attribute):
+            # If the target is not an attribute, then it's a simple assignment as usual
+            return super().visit_Assign(node)
+        target = node.targets[0]
+        if not isinstance(target.value, ast.Name):
+            raise ValueError("Assignments to nested columns must be of the form `nested.col = ...`")
+        # target.value.id will be the name of the nest, target.attr is the column name.
+        # Describing the proper target for the assigner is enough for both overwrite and
+        # creation of new columns.  The assigner will be a string like "nested.col".
+        # This works both for the creation of new nest members and new nests.
+        self.assigner = f"{target.value.id}.{target.attr}"
+        # Continue visiting.
+        return self.visit(node.value, **kwargs)
+
+
+PARSERS["nested-pandas"] = NestedPandasExprVisitor
 
 
 class _SeriesFromNest(pd.Series):
@@ -380,6 +410,7 @@ class NestedFrame(pd.DataFrame):
         nested_resolvers = self._get_nested_column_resolvers()
         kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (nested_resolvers,)
         kwargs["inplace"] = inplace
+        kwargs["parser"] = "nested-pandas"
         return super().eval(expr, **kwargs)
 
     def query(self, expr: str, *, inplace: bool = False, **kwargs) -> NestedFrame | None:
