@@ -69,11 +69,52 @@ class _SeriesFromNest(pd.Series):
     __pandas_priority__ = 3500
 
 
-class NestResolver:
+class NestResolver(dict):
     """
-    Used by NestedFrame.eval to resolve the names of nested columns when
+    Used by NestedFrame.eval to resolve the names of nests at the top level.
+    While the resolver is normally a dictionary, with values that are fixed
+    upon entering evaluation, this object needs to be dynamic so that it can
+    support multi-line expressions, where new nests may be created during
+    evaluation.
+    """
+
+    def __init__(self, outer: NestedFrame):
+        self._outer = outer
+        super().__init__()
+
+    def __contains__(self, item):
+        if not isinstance(item, str):
+            return False
+        top_nest = item if "." not in item else item.split(".")[0].strip()
+        return top_nest in self._outer.nested_columns
+
+    def __len__(self):
+        return len(self._outer.nested_columns)
+
+    def __getitem__(self, item):
+        if not isinstance(item, str):
+            raise KeyError(f"Unknown nest {item}")
+        top_nest = item if "." not in item else item.split(".")[0].strip()
+        if not super().__contains__(top_nest):
+            if top_nest not in self._outer.nested_columns:
+                raise KeyError(f"Unknown nest {top_nest}")
+            super().__setitem__(top_nest, NestedFieldResolver(top_nest, self._outer))
+        return super().__getitem__(top_nest)
+
+    def __setitem__(self, key, value):
+        # Called to update the resolver with intermediate values.
+        # The important point is to intercept the call so that the evaluator
+        # does not create any new resolvers on the fly.  Storing the value
+        # is not important, since that will have been done already in
+        # the NestedFrame.
+        pass
+
+
+class NestedFieldResolver:
+    """
+    Used by NestedFrame.eval to resolve the names of fields in nested columns when
     encountered in expressions, interpreting __getattr__ in terms of a
-    specific nest context.
+    specific nest.
     """
 
     def __init__(self, nest_name: str, outer: NestedFrame):
@@ -407,8 +448,7 @@ class NestedFrame(pd.DataFrame):
         --------
         https://pandas.pydata.org/docs/reference/api/pandas.eval.html
         """
-        nested_resolvers = self._get_nested_column_resolvers()
-        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (nested_resolvers,)
+        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (NestResolver(self),)
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
         return super().eval(expr, **kwargs)
@@ -491,9 +531,6 @@ class NestedFrame(pd.DataFrame):
             return None
         else:
             return result
-
-    def _get_nested_column_resolvers(self):
-        return {name: NestResolver(name, self) for name in self.nested_columns}
 
     def _resolve_dropna_target(self, on_nested, subset):
         """resolves the target layer for a given set of dropna kwargs"""
