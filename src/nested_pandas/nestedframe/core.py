@@ -69,7 +69,7 @@ class _SeriesFromNest(pd.Series):
     __pandas_priority__ = 3500
 
 
-class NestResolver(dict):
+class _NestResolver(dict):
     """
     Used by NestedFrame.eval to resolve the names of nests at the top level.
     While the resolver is normally a dictionary, with values that are fixed
@@ -83,22 +83,15 @@ class NestResolver(dict):
         super().__init__()
 
     def __contains__(self, item):
-        if not isinstance(item, str):
-            return False
         top_nest = item if "." not in item else item.split(".")[0].strip()
         return top_nest in self._outer.nested_columns
 
-    def __len__(self):
-        return len(self._outer.nested_columns)
-
     def __getitem__(self, item):
-        if not isinstance(item, str):
-            raise KeyError(f"Unknown nest {item}")
         top_nest = item if "." not in item else item.split(".")[0].strip()
         if not super().__contains__(top_nest):
             if top_nest not in self._outer.nested_columns:
                 raise KeyError(f"Unknown nest {top_nest}")
-            super().__setitem__(top_nest, NestedFieldResolver(top_nest, self._outer))
+            super().__setitem__(top_nest, _NestedFieldResolver(top_nest, self._outer))
         return super().__getitem__(top_nest)
 
     def __setitem__(self, key, value):
@@ -110,7 +103,7 @@ class NestResolver(dict):
         pass
 
 
-class NestedFieldResolver:
+class _NestedFieldResolver:
     """
     Used by NestedFrame.eval to resolve the names of fields in nested columns when
     encountered in expressions, interpreting __getattr__ in terms of a
@@ -448,7 +441,7 @@ class NestedFrame(pd.DataFrame):
         --------
         https://pandas.pydata.org/docs/reference/api/pandas.eval.html
         """
-        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (NestResolver(self),)
+        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
         return super().eval(expr, **kwargs)

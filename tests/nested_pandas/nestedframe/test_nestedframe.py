@@ -860,6 +860,10 @@ def test_eval_assignment():
     assert (nf_nx["packed.f"] == nf["a"] + nf["packed.c"]).all()
     assert (nf_nx["packed.f"] == pd.Series([1, 3, 5, 12, 6, 5, 4, 7, 4], index=to_pack.index)).all()
 
+    # Only supporting one level of nesting at present.
+    with pytest.raises(ValueError):
+        nf.eval("packed.c.inner = packed.c * 2 + packed.d")
+
     # Assigning to new base columns from nested columns.  This can't be done because
     # it would attempt to create base column values that were "between indexes", or as
     # Pandas puts, duplicate index labels.
