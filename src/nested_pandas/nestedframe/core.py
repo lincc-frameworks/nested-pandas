@@ -16,7 +16,7 @@ from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
 
 from ..series.packer import pack_sorted_df_into_struct
-from .utils import NestingType, check_expr_nesting
+from .utils import check_expr_nesting
 
 
 class NestedPandasExprVisitor(PandasExprVisitor):
@@ -506,11 +506,11 @@ class NestedFrame(pd.DataFrame):
             raise ValueError(msg)
         kwargs["level"] = kwargs.pop("level", 0) + 1
         kwargs["target"] = None
-        # At present, the query expression must be either entirely within the
-        # nested namespace or the base namespace.  Mixed structures are not
+        # At present, the query expression must be either entirely within a
+        # single nest, or have nothing but base columns.  Mixed structures are not
         # supported, so preflight the expression.
-        nesting_types = check_expr_nesting(expr)
-        if NestingType.NESTED in nesting_types and NestingType.BASE in nesting_types:
+        nest_names = check_expr_nesting(expr)
+        if len(nest_names) > 1:
             raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
         result = self.eval(expr, **kwargs)
         # If the result is a _SeriesFromNest, then the evaluation has caused unpacking,

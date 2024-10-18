@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from nested_pandas import NestedFrame
-from nested_pandas.nestedframe.utils import NestingType, check_expr_nesting
+from nested_pandas.nestedframe.utils import check_expr_nesting
 from nested_pandas.utils import count_nested
 
 
@@ -52,21 +52,16 @@ def test_check_expr_nesting():
     used to ensure that an expression-based query does not try to combine base and nested
     sub-expressions.
     """
-    assert check_expr_nesting("a > 2 & nested.c > 1") == {NestingType.NESTED, NestingType.BASE}
-    assert check_expr_nesting("(nested.c > 1) and (nested.d>2)") == {NestingType.NESTED}
-    assert check_expr_nesting("-1.52e-5 < abc < 35.2e2") == {NestingType.BASE}
-    assert check_expr_nesting("(n.a > 1) and ((b + c) > (d - 1e-8)) or n.q > c") == {
-        NestingType.NESTED,
-        NestingType.BASE,
-    }
+    assert check_expr_nesting("a > 2 & nested.c > 1") == {"", "nested"}
+    assert check_expr_nesting("(nested.c > 1) and (nested.d>2)") == {"nested"}
+    assert check_expr_nesting("-1.52e-5 < abc < 35.2e2") == {""}
+    assert check_expr_nesting("(n.a > 1) and ((b + c) > (d - 1e-8)) or n.q > c") == {"n", ""}
 
-    # NOTE: this correctly captures the desired behavior here, but suggests that the two nests
-    # are interoperable, which is too strong a claim.
-    assert check_expr_nesting("a.b > 2 & c.d < 5") == {NestingType.NESTED}
+    assert check_expr_nesting("a.b > 2 & c.d < 5") == {"a", "c"}
 
-    assert check_expr_nesting("a>3") == {NestingType.BASE}
-    assert check_expr_nesting("a > 3") == {NestingType.BASE}
-    assert check_expr_nesting("test.a>5&b==2") == {NestingType.NESTED, NestingType.BASE}
-    assert check_expr_nesting("test.a > 5 & b == 2") == {NestingType.NESTED, NestingType.BASE}
-    assert check_expr_nesting("(a.b > 3)&(a.c == 'f')") == {NestingType.NESTED}
-    assert check_expr_nesting("(a.b > 3) & (a.c == 'f')") == {NestingType.NESTED}
+    assert check_expr_nesting("a>3") == {""}
+    assert check_expr_nesting("a > 3") == {""}
+    assert check_expr_nesting("test.a>5&b==2") == {"test", ""}
+    assert check_expr_nesting("test.a > 5 & b == 2") == {"test", ""}
+    assert check_expr_nesting("(a.b > 3)&(a.c == 'f')") == {"a"}
+    assert check_expr_nesting("(a.b > 3) & (a.c == 'f')") == {"a"}
