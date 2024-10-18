@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import ast
-from collections import defaultdict
 from enum import Enum
 
 
@@ -73,7 +72,7 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[N
     "n1.a > 2 and n2.b > 3" should be split into ["n1.a > 2", "n2.b > 3"].
     """
     if not isinstance(node, ast.expr):
-        return defaultdict(list)
+        return {}
     if isinstance(node, ast.Name):
         return {NestingType.BASE: parents}
     if isinstance(node, ast.Attribute):
