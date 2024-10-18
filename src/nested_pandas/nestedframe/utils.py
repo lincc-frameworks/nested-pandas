@@ -30,7 +30,7 @@ def _expr_nesting_type(node: ast.expr | None) -> set[NestingType]:
     return result
 
 
-def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[NestingType, list]:
+def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[str, list]:
     """
     Given an expression which contains references to both base and nested columns,
     return a list of the sub-expressions that should be evaluated independently.
@@ -74,15 +74,15 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[N
     if not isinstance(node, ast.expr):
         return {}
     if isinstance(node, ast.Name):
-        return {NestingType.BASE: parents}
-    if isinstance(node, ast.Attribute):
-        return {NestingType.NESTED: parents}
+        return {"": parents}
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        return {node.value.id: parents}
     sources = (
         [getattr(node, "left", None), getattr(node, "right", None)]
         + getattr(node, "values", [])
         + getattr(node, "comparators", [])
     )
-    result: dict[NestingType, list] = {}
+    result: dict[str, list] = {}
     for s in sources:
         child = _actionable_splits(parents, s)
         for k, v in child.items():
@@ -92,8 +92,14 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[N
     if len(result) == 1:
         # Let the record of each parent node drift up the tree,
         # and merge the subtrees into a single node, since by definition,
-        # this node is homogeneous over all of its children.
+        # this node is homogeneous over all of its children, and can
+        # be evaluated in a single step.
         result = {k: [node] for k in result}
+    else:
+        # At this point, we need to split the expression.  The idea here is that
+        # we want a succession of efficient queries, each of which will produce
+        # a subset of either the base or the nested columns.
+        pass
     return result
 
 
