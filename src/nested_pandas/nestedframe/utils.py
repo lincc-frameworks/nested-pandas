@@ -37,7 +37,12 @@ def _subexprs_by_nest(parents: list[ast.expr], node: ast.expr | None) -> dict[st
             result.setdefault(k, []).append(v)
     # After a complete traversal across sources, check for any necessary splits.
     # If it's homogenous, move the split-node up the tree.
-    if len(result) == 1:
+    #
+    # "mixed" is a special case that shouldn't affect this calculation one
+    # way or the other.
+    subexpr_types = set(result.keys())
+    subexpr_types.discard("mixed")
+    if len(subexpr_types) == 1:
         # Let the record of each parent node drift up the tree,
         # and merge the subtrees into a single node, since by definition,
         # this node is homogeneous over all of its children, and can
