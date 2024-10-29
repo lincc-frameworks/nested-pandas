@@ -884,14 +884,20 @@ def test_eval_assignment():
     assert (nf_n3["p2.d"] == nf_n2["p2.c2"] + nf["packed.d"] * 2 + nf["b"]).all()
 
     # Now test multiline and inplace=True
+    # Verify the resolution of GH#159, where a nested column created in
+    # an existing nest during a multi-line eval was not being recognized
+    # in a subsequent line.
     nf.eval(
         """
         c = a + b
-        p2.e = packed.d * 2 + c
+        packed.e = packed.d * 2
+        p2.e = packed.e + c
         p2.f = p2.e + b
         """,
         inplace=True,
     )
-    assert len(nf.p2.nest.fields) == 2
+    assert set(nf.nested_columns) == {"packed", "p2"}
+    assert set(nf.packed.nest.fields) == {"c", "d", "e", "time"}
+    assert set(nf.p2.nest.fields) == {"e", "f"}
     assert (nf["p2.e"] == nf["packed.d"] * 2 + nf.c).all()
     assert (nf["p2.f"] == nf["p2.e"] + nf.b).all()
