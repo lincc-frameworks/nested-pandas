@@ -94,13 +94,19 @@ class _NestResolver(dict):
             super().__setitem__(top_nest, _NestedFieldResolver(top_nest, self._outer))
         return super().__getitem__(top_nest)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, item, _):
         # Called to update the resolver with intermediate values.
         # The important point is to intercept the call so that the evaluator
-        # does not create any new resolvers on the fly.  Storing the value
-        # is not important, since that will have been done already in
-        # the NestedFrame.
-        pass
+        # does not create any new resolvers on the fly.  We do NOT want to
+        # store the given value, since the resolver does lazy-loading.
+        # What we DO want to do, however, is to invalidate the cache for
+        # any field resolver for a given nest that is receiving an assignment.
+        # Since the resolvers are created as-needed in __getitem__, all we need
+        # to do is delete them from the local cache when this pattern is detected.
+        if "." in item:
+            top_nest = item.split(".")[0].strip()
+            if top_nest in self._outer.nested_columns and super().__contains__(top_nest):
+                del self[top_nest]  # force re-creation in __setitem__
 
 
 class _NestedFieldResolver:
