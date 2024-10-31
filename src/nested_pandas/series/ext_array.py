@@ -204,7 +204,7 @@ class NestedExtensionArray(ExtensionArray):
             # Copy will happen later in replace_with_mask() anyway
             value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
-            # Our replace_with_mask implementation doesm't work with scalars
+            # Our replace_with_mask implementation doesn't work with scalars
             value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
 
         if argsort is not None:
@@ -387,7 +387,7 @@ class NestedExtensionArray(ExtensionArray):
         This implementation returns a shallow copy of the extension array,
         because the underlying PyArrow array is immutable.
         """
-        return type(self)(self._chunked_array)
+        return type(self)(self._chunked_array, validate=False)
 
     def _formatter(self, boxed: bool = False) -> Callable[[Any], str | None]:
         # TODO: make formatted strings more pretty
