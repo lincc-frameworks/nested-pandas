@@ -16,7 +16,7 @@ from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
 
 from ..series.packer import pack_sorted_df_into_struct
-from .utils import check_expr_nesting
+from .utils import extract_nest_names
 
 
 class NestedPandasExprVisitor(PandasExprVisitor):
@@ -509,7 +509,7 @@ class NestedFrame(pd.DataFrame):
         # At present, the query expression must be either entirely within a
         # single nest, or have nothing but base columns.  Mixed structures are not
         # supported, so preflight the expression.
-        nest_names = check_expr_nesting(expr)
+        nest_names = extract_nest_names(expr)
         if len(nest_names) > 1:
             raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
         result = self.eval(expr, **kwargs)
