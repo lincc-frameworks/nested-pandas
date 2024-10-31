@@ -2,14 +2,6 @@
 from __future__ import annotations
 
 import ast
-from enum import Enum
-
-
-class NestingType(Enum):
-    """Types of sub-expressions possible in a NestedFrame string expression."""
-
-    BASE = "base"
-    NESTED = "nested"
 
 
 def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[str, list]:
@@ -48,11 +40,10 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[s
         # this node is homogeneous over all of its children, and can
         # be evaluated in a single step.
         result = {k: [node] for k in result}
-    else:
-        # At this point, we need to split the expression.  The idea here is that
-        # we want a succession of efficient queries, each of which will produce
-        # a subset of either the base or the nested columns.
-        pass
+    # If the result is either empty or has more than one key, leave the result
+    # alone.  Each key represents a different nest (with a blank string for the base),
+    # and the value is the highest point in the expression tree where the expression
+    # was still within a single nest.
     return result
 
 
