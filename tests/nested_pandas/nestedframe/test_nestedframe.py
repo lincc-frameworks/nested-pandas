@@ -447,6 +447,11 @@ def test_query():
     # Check for the multi-layer error
     with pytest.raises(ValueError):
         base.query("a > 2 & nested.c > 1")
+    # Create another nest in order to further test the multi-layer error
+    base_2 = base.eval("nest2.c = nested.c + 1")
+    assert len(base_2.nested_columns) == 2
+    with pytest.raises(ValueError):
+        base_2.query("nested.c > 1 & nest2.c > 2")
 
     # Test nested queries
     nest_queried = base.query("nested.c > 1")
