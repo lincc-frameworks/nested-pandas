@@ -4,17 +4,20 @@ from __future__ import annotations
 import ast
 
 
-def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[str, list]:
+def _subexprs_by_nest(parents: list[ast.expr], node: ast.expr | None) -> dict[str, list]:
     """
-    Given an expression which contains references to both base and nested columns,
-    return a dictionary of the sub-expressions that should be evaluated independently.
-    The key of the dictionary is the name of the nested column, and will be a blank
-    string in the case of base columns.  The value is a list of the parent nodes
-    that lead to sub-expressions that can be evaluated successfully.
+    Given an expression which contains references to both base and nested
+    columns, return a dictionary of the sub-expressions that should be
+    evaluated independently, keyed by nesting context.
 
-    While this is not in use today for automatically splitting expressions, it can
-    be used to detect whether an expression is suitably structured for evaluation:
-    the returned dictionary should have a single key.
+    The key of the dictionary is the name of the nested column, and will
+    be a blank string in the case of base columns.  The value is a list
+    of the parent nodes that lead to sub-expressions that can be evaluated
+    successfully.
+
+    While this is not in use today for automatically splitting expressions,
+    it can be used to detect whether an expression is suitably structured
+    for evaluation: the returned dictionary should have a single key.
     """
     if not isinstance(node, ast.expr):
         return {}
@@ -28,8 +31,8 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[s
         + getattr(node, "comparators", [])
     )
     result: dict[str, list] = {}
-    for s in sources:
-        child = _actionable_splits(parents, s)
+    for source in sources:
+        child = _subexprs_by_nest(parents, source)
         for k, v in child.items():
             result.setdefault(k, []).append(v)
     # After a complete traversal across sources, check for any necessary splits.
@@ -47,12 +50,12 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[s
     return result
 
 
-def check_expr_nesting(expr: str) -> set[str]:
+def extract_nest_names(expr: str) -> set[str]:
     """
     Given a string expression, parse it and visit the resulting AST, surfacing
     the nesting types.  The purpose is to identify expressions that attempt
     to mix base and nested columns, or columns from two different nests.
     """
     expr_tree = ast.parse(expr, mode="eval").body
-    separable = _actionable_splits([], expr_tree)
+    separable = _subexprs_by_nest([], expr_tree)
     return set(separable.keys())
