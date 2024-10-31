@@ -39,7 +39,7 @@ def _actionable_splits(parents: list[ast.expr], node: ast.expr | None) -> dict[s
     for s in sources:
         child = _actionable_splits(parents, s)
         for k, v in child.items():
-            result[k] = result.get(k, []) + v
+            result.setdefault(k, []).append(v)
     # After a complete traversal across sources, check for any necessary splits.
     # If it's homogenous, move the split-node up the tree.
     if len(result) == 1:
@@ -64,4 +64,4 @@ def check_expr_nesting(expr: str) -> set[str]:
     """
     expr_tree = ast.parse(expr, mode="eval").body
     separable = _actionable_splits([], expr_tree)
-    return set(list(separable.keys()))
+    return set(separable.keys())
