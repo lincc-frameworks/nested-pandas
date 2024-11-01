@@ -242,6 +242,7 @@ class NestedFrame(pd.DataFrame):
         name: str,
         *,
         how: str = "left",
+        on: None | str | list[str] = None,
         dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs input object to a nested column and adds it to the NestedFrame
@@ -272,6 +273,8 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
+        on : str, list of str, default: None
+            Columns to join on.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -283,7 +286,7 @@ class NestedFrame(pd.DataFrame):
             A new NestedFrame with the added nested column.
         """
         # Add sources to objects
-        packed = packer.pack(obj, name=name, dtype=dtype)
+        packed = packer.pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()
         return new_df.join(packed, how=how)
 
