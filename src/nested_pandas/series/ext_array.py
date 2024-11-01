@@ -648,6 +648,12 @@ class NestedExtensionArray(ExtensionArray):
         """Number of chunks in underlying pyarrow.ChunkedArray"""
         return self._chunked_array.num_chunks
 
+    @property
+    def list_index(self) -> np.ndarray:
+        """Keys mapping values to lists"""
+        list_index = np.arange(len(self))
+        return np.repeat(list_index, np.diff(self.list_offsets))
+
     def iter_field_lists(self, field: str) -> Generator[np.ndarray, None, None]:
         """Iterate over single field nested lists, as numpy arrays
 

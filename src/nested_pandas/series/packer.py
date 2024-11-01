@@ -27,7 +27,7 @@ def pack(
     name: str | None = None,
     *,
     index=None,
-    on: None | str | list[str] | np.ndarray = None,
+    on: None | str | list[str] = None,
     dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
 ) -> pd.Series:
     """Pack a "flat" dataframe or a sequence of dataframes into a "nested" series.
@@ -41,8 +41,8 @@ def pack(
     index : convertable to pd.Index, optional
         Index of the output series. If obj is a pd.DataFrame, it is always nested by the original index,
         and this value is used to override the index after the nesting.
-    on: str or list of str or np.ndarray, optional
-        Column name(s) to join on, or a grouping key array. If None, the index is used.
+    on: str or list of str, optional
+        Column name(s) to join on. If None, the index is used.
     dtype : dtype or None
         NestedDtype of the output series, or other type to derive from. If None,
         the dtype is inferred from the first non-missing dataframe.
@@ -60,9 +60,7 @@ def pack(
     return pack_seq(obj, name=name, index=index, dtype=dtype)
 
 
-def pack_flat(
-    df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] | np.ndarray = None
-) -> pd.Series:
+def pack_flat(df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] = None) -> pd.Series:
     """Make a structure of lists representation of a "flat" dataframe.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -78,8 +76,8 @@ def pack_flat(
         Input dataframe, with repeated indexes.
     name : str, optional
         Name of the pd.Series.
-    on : str or list of str or np.ndarray, optional
-        Column name(s) to join on, or a grouping key array. If None, the index is used.
+    on : str or list of str, optional
+        Column name(s) to join on. If None, the df's index is used.
 
     Returns
     -------
@@ -93,15 +91,10 @@ def pack_flat(
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
 
-    if on is None:
-        df_reindexed = df
-    elif isinstance(on, np.ndarray):
-        df_reindexed = df.reindex(index=on)
-    else:
-        df_reindexed = df.set_index(on)
-
+    if on is not None:
+        df = df.set_index(on)
     # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
-    sorted_flat = df_reindexed.sort_index(kind="stable")
+    sorted_flat = df.sort_index(kind="stable")
     return pack_sorted_df_into_struct(sorted_flat, name=name)
 
 

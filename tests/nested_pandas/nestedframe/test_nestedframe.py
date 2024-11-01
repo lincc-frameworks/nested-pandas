@@ -317,8 +317,8 @@ def test_add_nested_for_empty_df():
 
 
 @pytest.mark.parametrize("pandas", [False, True])
-@pytest.mark.parametrize("index", [None, "a", "c"])
-def test_from_flat(index, pandas):
+@pytest.mark.parametrize("on", [None, "a", "c"])
+def test_from_flat(on, pandas):
     """Test the NestedFrame.from_flat functionality"""
 
     if pandas:
@@ -332,17 +332,17 @@ def test_from_flat(index, pandas):
             index=[0, 0, 0, 1, 1],
         )
 
-    out_nf = NestedFrame.from_flat(nf, base_columns=["a", "b"], index=index, name="new_nested")
+    out_nf = NestedFrame.from_flat(nf, base_columns=["a", "b"], on=on, name="new_nested")
 
-    if index is None:
+    if on is None:
         assert list(out_nf.columns) == ["a", "b", "new_nested"]
         assert list(out_nf.new_nested.nest.fields) == ["c", "d"]
         assert len(out_nf) == 2
-    elif index == "a":
+    elif on == "a":
         assert list(out_nf.columns) == ["b", "new_nested"]
         assert list(out_nf.new_nested.nest.fields) == ["c", "d"]
         assert len(out_nf) == 2
-    elif index == "c":  # not what a user likely wants, but should still work
+    elif on == "c":  # not what a user likely wants, but should still work
         assert list(out_nf.columns) == ["a", "b", "new_nested"]
         assert list(out_nf.new_nested.nest.fields) == ["d"]
         assert len(out_nf) == 5
