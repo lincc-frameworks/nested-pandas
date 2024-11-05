@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from pandas.testing import assert_frame_equal
+
 from nested_pandas import NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
-from pandas.testing import assert_frame_equal
 
 
 def test_nestedframe_construction():
@@ -184,13 +185,40 @@ def test_add_nested_with_flat_df():
     assert_frame_equal(base.nested.nest.to_flat(), nested, check_dtype=False)
 
 
+def test_add_nested_with_flat_df_on():
+    """Test that add_nested correctly adds a nested column to the base df with on argument"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], }, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"new_index": [0, 0, 1, 1, 2, 2, 2, 2, 2,],
+        "c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested", on="new_index")
+
+    assert "nested" in base.columns
+
+    # We expected that when the nested frame is packed in with 'on'='new_index' that the
+    # resulting flat frame is indexed by the new_index values.
+    expected_flat = nested.set_index("new_index")
+    expected_flat.index.name = None # The index name is not preserved in the flat frame
+
+    assert_frame_equal(base.nested.nest.to_flat(), expected_flat, check_dtype=False)
+
 def test_add_nested_with_flat_df_and_mismatched_index():
     """Test add_nested when index values of base are missing matches in nested"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={
+            "c": [0, 2, 4, 1, 4, 3, 1, 4, 1],
+            "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
+            # A column we can have as an alternative joining index with 'on'
+            "new_index": [1, 1, 1, 1, 2, 2, 5, 5, 5],
+        },
         # no data for base index value of "2" and introduces new index value "4"
         index=[0, 0, 0, 1, 1, 1, 1, 4, 4],
     )
@@ -211,6 +239,23 @@ def test_add_nested_with_flat_df_and_mismatched_index():
     # Test that the default behavior is the same as how="left" by comparing the pandas dataframes
     default_res = base.add_nested(nested, "nested")
     assert_frame_equal(left_res, default_res)
+
+    # Test still adding the nested frame in a "left" fashion but on the "new_index" column
+    left_res_on = base.add_nested(nested, "nested", how="left", on="new_index")
+    assert "nested" in left_res_on.columns
+    # Check that the index of the base layer is still being used
+    assert (left_res_on.index == base.index).all()
+    # Assert that the new_index column we joined on was dropped from the nested layer
+    assert "new_index" not in left_res_on["nested"].nest.to_flat().columns
+    for idx in left_res_on.index:
+        # Check that the nested column is aligned correctly to the base layer
+        if idx in nested["new_index"].values:
+            assert left_res_on.loc[idx]["nested"] is not None
+            # Check that it is present in new the index we constructed for the nested layer
+            assert idx in left_res_on["nested"].nest.to_flat().index
+        else:
+            assert left_res_on.loc[idx]["nested"] is None
+            assert idx not in left_res_on["nested"].nest.to_flat().index
 
     # Test adding the nested frame in a "right" fashion, where the index of the "right"
     # frame (our nested layer) is preserved
@@ -235,6 +280,36 @@ def test_add_nested_with_flat_df_and_mismatched_index():
             else:
                 assert not pd.isna(right_res.loc[idx][col])
 
+    # Test still adding the nested frame in a "right" fashion but on the "new_index" column
+    right_res_on = base.add_nested(nested, "nested", how="right", on="new_index")
+    assert "nested" in right_res_on.columns
+    # Check that the index of the nested layer is being used. Note that separate
+    # from a traditional join this will not be the same as our nested layer index
+    # and is just dropping values from the base layer that don't have a match in
+    # the nested layer.
+    assert (right_res_on.index.values == np.unique(nested.new_index.values)).all()
+
+    # Check that the new_index column we joined on was dropped from the nested layer
+    assert "new_index" not in right_res_on["nested"].nest.to_flat().columns
+    # Check that the flattend nested layer has the same index as the original column we joined on
+    all(right_res_on.nested.nest.to_flat().index.values == nested.new_index.values)
+
+    # For each index check that the base layer is aligned correctly to the nested layer
+    for idx in right_res_on.index:
+        # Check that the nested column is aligned correctly to the base layer. Here
+        # it should never be None
+        assert right_res_on.loc[idx]["nested"] is not None
+        # Check the values for each column in our "base" layer
+        for col in base.columns:
+            assert col in right_res_on.columns
+            if idx not in base.index:
+                assert idx in nested["new_index"].values
+                # We expect a NaN value in the base layer due to the "right" join
+                assert pd.isna(right_res_on.loc[idx][col])
+            else:
+                # We expect a NaN value in the base layer due to the "right" join
+                assert not pd.isna(right_res_on.loc[idx][col])
+
     # Test the "outer" behavior
     outer_res = base.add_nested(nested, "nested", how="outer")
     assert "nested" in outer_res.columns
@@ -255,6 +330,36 @@ def test_add_nested_with_flat_df_and_mismatched_index():
             else:
                 assert not pd.isna(outer_res.loc[idx][col])
 
+    # Test still adding the nested frame in an "outer" fashion but with on the "new_index" column
+    outer_res_on = base.add_nested(nested, "nested", how="outer", on="new_index")
+    assert "nested" in outer_res_on.columns
+    # We expect the new index to be the union of the base and nested column we used
+    # for the 'on' argument
+    assert set(outer_res_on.index) == set(base.index).union(set(nested.new_index))
+
+    # Check that the new_index column we joined on was dropped from the nested layer
+    assert "new_index" not in right_res_on["nested"].nest.to_flat().columns
+    # Check that the flattend nested layer has the same index as the original column we joined on
+    # Note that it does not have index values only present in the base layer since those empty rows
+    # are dropped when we flatten the nested frame.
+    all(right_res_on.nested.nest.to_flat().index.values == nested.new_index.values)
+
+    for idx in outer_res_on.index:
+        # Check that the nested column is aligned correctly to the base layer
+        if idx in nested["new_index"].values:
+            assert outer_res_on.loc[idx]["nested"] is not None
+        else:
+            assert outer_res_on.loc[idx]["nested"] is None
+        # Check the values for each column in our "base" layer
+        for col in base.columns:
+            assert col in outer_res_on.columns
+            if idx not in base.index:
+                assert idx in nested["new_index"].values
+                # We expect a NaN value in the base layer due to the "outer" join
+                assert pd.isna(outer_res_on.loc[idx][col])
+            else:
+                assert not pd.isna(outer_res_on.loc[idx][col])
+
     # Test the "inner" behavior
     inner_res = base.add_nested(nested, "nested", how="inner")
     assert "nested" in inner_res.columns
@@ -268,6 +373,22 @@ def test_add_nested_with_flat_df_and_mismatched_index():
             assert col in inner_res.columns
             assert not pd.isna(inner_res.loc[idx][col])
 
+    # Test still adding the nested frame in a "inner" fashion but on the "new_index" column
+    inner_res_on = base.add_nested(nested, "nested", how="inner", on="new_index")
+    assert "nested" in inner_res_on.columns
+    # We expect the new index to be the set intersection of the base and nested column we used
+    # for the 'on' argument
+    assert set(inner_res_on.index) == set(base.index).intersection(set(nested.new_index))
+    # Check that the new_index column we joined on was dropped from the nested layer
+    assert "new_index" not in right_res_on["nested"].nest.to_flat().columns
+    for idx in inner_res_on.index:
+        # None of our nested values should be None
+        assert inner_res_on.loc[idx]["nested"] is not None
+        assert idx in nested["new_index"].values
+        # Check the values for each column in our "base" layer
+        for col in base.columns:
+            assert col in inner_res_on.columns
+            assert not pd.isna(inner_res_on.loc[idx][col])
 
 def test_add_nested_with_series():
     """Test that add_nested correctly adds a nested column to the base df"""
