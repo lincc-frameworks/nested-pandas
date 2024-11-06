@@ -1,13 +1,14 @@
-import nested_pandas as npd
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
+from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
+
+import nested_pandas as npd
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.packer import pack_flat, pack_seq
-from numpy.testing import assert_array_equal
-from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
 
 
 def test_registered():
@@ -981,3 +982,27 @@ def test_values():
     series = pack_seq([{"a": [1, 2, 3], "b": [3, 2, 1]}, {"a": [4, None], "b": [7, 8]}])
     for value in series.nest.values():
         assert_series_equal(value, series.nest[value.name])
+
+def test_get_list_index():
+    """Test that the get_list_index() method works."""
+    # First check that an empty NestedSeries returns an empty list index.
+    empty_struct_array = pa.StructArray.from_arrays(arrays=[],names=[])
+    empty_series = pd.Series(empty_struct_array, dtype=NestedDtype(empty_struct_array.type), index=[])
+    assert len(empty_series) == 0
+    assert len(empty_series.array.get_list_index()) == 0
+
+    # Create a NestedType series
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([0, 1, 2, 3]), np.array([4, 5, 6, 7])]),
+            pa.array([np.array([7, 6, 4, 2]), np.array([0, 1, 2, 3])]),
+            pa.array([np.array([8, 9, 1, 9]), np.array([0, 0, 2, 3])]),
+        ],
+        names=["a", "b", "c"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
+
+    # Validate the generation of a flat length ordinal array
+    list_index = series.array.get_list_index()
+    assert len(list_index) == series.nest.flat_length
+    assert np.equal(list_index, [0, 0, 0, 0, 1, 1, 1, 1]).all()
