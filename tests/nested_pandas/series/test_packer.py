@@ -2,11 +2,10 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from numpy.testing import assert_array_equal
-from pandas.testing import assert_frame_equal, assert_series_equal
-
 from nested_pandas import NestedDtype
 from nested_pandas.series import packer
+from numpy.testing import assert_array_equal
+from pandas.testing import assert_frame_equal, assert_series_equal
 
 
 def offsets_reused(nested_series):
@@ -67,6 +66,7 @@ def test_pack_with_flat_df_and_index():
     offsets_reused(series)
     assert_series_equal(series, desired)
 
+
 def test_pack_with_flat_df_and_on():
     """Test packing a dataframe on a column"""
     df = pd.DataFrame(
@@ -97,6 +97,7 @@ def test_pack_with_flat_df_and_on():
     offsets_reused(series)
     assert_series_equal(series, desired)
 
+
 def test_pack_with_flat_df_and_on_and_index():
     """Test packing a dataframe on a column while also specifying an index"""
     df = pd.DataFrame(
@@ -124,6 +125,7 @@ def test_pack_with_flat_df_and_on_and_index():
     )
     offsets_reused(series)
     assert_series_equal(series, desired)
+
 
 def test_pack_with_series_of_dfs():
     """Test pack(pd.Series([pd.DataFrame(), ...]))."""
@@ -184,6 +186,7 @@ def test_pack_flat():
     offsets_reused(actual)
     assert_series_equal(actual, desired)
 
+
 def test_pack_flat_with_on():
     """Test pack_flat() where you pack on a given column."""
     df = pd.DataFrame(
@@ -202,13 +205,13 @@ def test_pack_flat_with_on():
             # Index 0: # All of the values where column 'c' is 0
             (
                 np.array([8, 1, 3, 5]),  # values from column 'a'
-                np.array([1, 0, 0, 0])   # values from column 'b'
+                np.array([1, 0, 0, 0]),  # values from column 'b'
             ),
             # Index 1: # All of the values where column 'c' is 1
             (
                 np.array([7, 9, 2, 4, 6]),  # values from column 'a'
-                np.array([0, 0, 1, 1, 1])   # values from column 'b'
-            )
+                np.array([0, 0, 1, 1, 1]),  # values from column 'b'
+            ),
         ],
         index=[0, 1],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
@@ -216,6 +219,7 @@ def test_pack_flat_with_on():
     desired.index.name = "c"
     offsets_reused(actual)
     assert_series_equal(actual, desired)
+
 
 def test_pack_sorted_df_into_struct():
     """Test pack_sorted_df_into_struct()."""

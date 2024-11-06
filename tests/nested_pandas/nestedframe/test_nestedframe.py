@@ -2,11 +2,10 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from pandas.testing import assert_frame_equal
-
 from nested_pandas import NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
+from pandas.testing import assert_frame_equal
 
 
 def test_nestedframe_construction():
@@ -188,8 +187,7 @@ def test_add_nested_with_flat_df():
 def test_add_nested_with_flat_df_and_mismatched_index():
     """Test add_nested when index values of base are missing matches in nested"""
 
-    base = NestedFrame(
-        data={"a": [1, 2, 3], "b": [2, 4, 6], "new_index": [0, 1, 3] }, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "new_index": [0, 1, 3]}, index=[0, 1, 2])
 
     nested = pd.DataFrame(
         data={
@@ -377,6 +375,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
     # Since we have confirmed that the "nex_index" column was the intersection that we expected
     # we know that none of the joined values should be none
     assert not inner_res_on.isnull().values.any()
+
 
 def test_add_nested_with_series():
     """Test that add_nested correctly adds a nested column to the base df"""

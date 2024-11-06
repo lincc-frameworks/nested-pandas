@@ -1,14 +1,13 @@
+import nested_pandas as npd
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from numpy.testing import assert_array_equal
-from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
-
-import nested_pandas as npd
 from nested_pandas import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.packer import pack_flat, pack_seq
+from numpy.testing import assert_array_equal
+from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
 
 
 def test_registered():
@@ -983,10 +982,11 @@ def test_values():
     for value in series.nest.values():
         assert_series_equal(value, series.nest[value.name])
 
+
 def test_get_list_index():
     """Test that the get_list_index() method works."""
     # First check that an empty NestedSeries returns an empty list index.
-    empty_struct_array = pa.StructArray.from_arrays(arrays=[],names=[])
+    empty_struct_array = pa.StructArray.from_arrays(arrays=[], names=[])
     empty_series = pd.Series(empty_struct_array, dtype=NestedDtype(empty_struct_array.type), index=[])
     assert len(empty_series) == 0
     assert len(empty_series.array.get_list_index()) == 0

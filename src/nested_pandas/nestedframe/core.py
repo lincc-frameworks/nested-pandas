@@ -271,7 +271,7 @@ class NestedFrame(pd.DataFrame):
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
         on : str, default: None
-            A column in the list 
+            A column in the list
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
