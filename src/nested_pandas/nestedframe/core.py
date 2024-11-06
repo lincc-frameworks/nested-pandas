@@ -202,6 +202,8 @@ class NestedFrame(pd.DataFrame):
                 nested = item.split(".")[0]
                 col = ".".join(item.split(".")[1:])
                 return self[nested].nest.get_flat_series(col)
+            else:
+                raise KeyError(f"Column '{item}' not found in nested columns or base columns")
         else:
             return super().__getitem__(item)
 
