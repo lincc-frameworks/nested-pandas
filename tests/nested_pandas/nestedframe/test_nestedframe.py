@@ -542,7 +542,7 @@ def test_from_lists():
 def test_query():
     """Test that NestedFrame.query handles nested queries correctly"""
 
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 2, 3], "b": [2, 3, 4, 6]}, index=[0, 1, 1, 2])
 
     nested = pd.DataFrame(
         data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
@@ -564,10 +564,10 @@ def test_query():
 
     # Test nested queries
     nest_queried = base.query("nested.c > 1")
-    assert len(nest_queried.nested.nest.to_flat()) == 5
+    assert len(nest_queried.nested.nest.to_flat()) == 7
 
     nest_queried = base.query("(nested.c > 1) and (nested.d>2)")
-    assert len(nest_queried.nested.nest.to_flat()) == 4
+    assert len(nest_queried.nested.nest.to_flat()) == 5
 
     # Check edge conditions
     with pytest.raises(ValueError):
