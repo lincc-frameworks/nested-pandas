@@ -12,11 +12,9 @@ from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
 from pandas.core.computation.expr import PARSERS, PandasExprVisitor
 
-from nested_pandas.series import packer
+from nested_pandas.nestedframe.utils import extract_nest_names
 from nested_pandas.series.dtype import NestedDtype
-
-from ..series.packer import pack_sorted_df_into_struct
-from .utils import extract_nest_names
+from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
 
 class NestedPandasExprVisitor(PandasExprVisitor):
@@ -219,10 +217,8 @@ class NestedFrame(pd.DataFrame):
             "." in key and key.split(".")[0] in self.nested_columns
         ):
             nested, col = key.split(".")
-            new_flat = self[nested].nest.to_flat()
-            new_flat[col] = value
-            packed = packer.pack(new_flat)
-            return super().__setitem__(nested, packed)
+            new_nested_series = self[nested].nest.with_flat_field(col, value)
+            return super().__setitem__(nested, new_nested_series)
 
         # Adding a new nested structure from a column
         # Allows statements like ndf["new_nested.t"] = ndf["nested.t"] - 5
@@ -231,8 +227,9 @@ class NestedFrame(pd.DataFrame):
             if isinstance(value, pd.Series):
                 value.name = col
                 value = value.to_frame()
-            packed = packer.pack(value)
-            return super().__setitem__(new_nested, packed)
+            new_df = self.add_nested(value, name=new_nested)
+            self._update_inplace(new_df)
+            return None
 
         return super().__setitem__(key, value)
 
@@ -242,6 +239,7 @@ class NestedFrame(pd.DataFrame):
         name: str,
         *,
         how: str = "left",
+        on: None | str | list[str] = None,
         dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs input object to a nested column and adds it to the NestedFrame
@@ -272,6 +270,8 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
+        on : str, default: None
+            A column in the list
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -282,13 +282,16 @@ class NestedFrame(pd.DataFrame):
         NestedFrame
             A new NestedFrame with the added nested column.
         """
+        if on is not None and not isinstance(on, str):
+            raise ValueError("Currently we only support a single column for 'on'")
         # Add sources to objects
-        packed = packer.pack(obj, name=name, dtype=dtype)
+        packed = pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()
-        return new_df.join(packed, how=how)
+        res = new_df.join(packed, how=how, on=on)
+        return res
 
     @classmethod
-    def from_flat(cls, df, base_columns, nested_columns=None, index=None, name="nested"):
+    def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
         """Creates a NestedFrame with base and nested columns from a flat
         dataframe.
 
@@ -304,7 +307,7 @@ class NestedFrame(pd.DataFrame):
             in the list will attempt to be packed into a single nested column
             with the name provided in `nested_name`. If None, is defined as all
             columns not in `base_columns`.
-        index: str, or None
+        on: str or None
             The name of a column to use as the new index. Typically, the index
             should have a unique value per row for base columns, and should
             repeat for nested columns. For example, a dataframe with two
@@ -330,11 +333,11 @@ class NestedFrame(pd.DataFrame):
         """
 
         # Resolve new index
-        if index is not None:
+        if on is not None:
             # if a base column is chosen remove it
-            if index in base_columns:
-                base_columns = [col for col in base_columns if col != index]
-            df = df.set_index(index)
+            if on in base_columns:
+                base_columns = [col for col in base_columns if col != on]
+            df = df.set_index(on)
 
         # drop duplicates on index
         out_df = df[base_columns][~df.index.duplicated(keep="first")]
@@ -401,7 +404,7 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("No columns were assigned as list columns.")
 
         # Pack list columns into a nested column
-        packed_df = packer.pack_lists(df[list_columns])
+        packed_df = pack_lists(df[list_columns])
         packed_df.name = name
 
         # join the nested column to the base_column df
@@ -519,17 +522,33 @@ class NestedFrame(pd.DataFrame):
         # since it operated on the base attributes.
         if isinstance(result, _SeriesFromNest):
             nest_name, flat_nest = result.nest_name, result.flat_nest
-            new_flat_nest = flat_nest.loc[result]
-            result = self.copy()
-            result[nest_name] = pack_sorted_df_into_struct(new_flat_nest)
+            # Reset index to "ordinal" like [0, 0, 0, 1, 1, 2, 2, 2]
+            list_index = self[nest_name].array.get_list_index()
+            flat_nest = flat_nest.set_index(list_index)
+            query_result = result.set_axis(list_index)
+            # Selecting flat values matching the query result
+            new_flat_nest = flat_nest[query_result]
+            new_df = self._set_filtered_flat_df(nest_name, new_flat_nest)
         else:
-            result = self.loc[result]
+            new_df = self.loc[result]
 
         if inplace:
-            self._update_inplace(result)
+            self._update_inplace(new_df)
             return None
         else:
-            return result
+            return new_df
+
+    def _set_filtered_flat_df(self, nest_name, flat_df):
+        """Set a filtered flat dataframe for a nested column
+
+        Here we assume that flat_df has filtered "ordinal" index,
+        e.g. flat_df.index == [0, 2, 2, 2], while self.index
+        is arbitrary (e.g. ["a", "b", "a"]),
+        and self[nest_name].array.list_index is [0, 0, 1, 1, 1, 2, 2, 2, 2].
+        """
+        new_df = self.reset_index(drop=True)
+        new_df[nest_name] = pack_sorted_df_into_struct(flat_df, name=nest_name)
+        return new_df.set_index(self.index)
 
     def _resolve_dropna_target(self, on_nested, subset):
         """resolves the target layer for a given set of dropna kwargs"""
@@ -654,34 +673,32 @@ class NestedFrame(pd.DataFrame):
             return super().dropna(
                 axis=axis, how=how, thresh=thresh, subset=subset, inplace=inplace, ignore_index=ignore_index
             )
+        if ignore_index:
+            raise ValueError("ignore_index is not supported for nested columns")
         if subset is not None:
             subset = [col.split(".")[-1] for col in subset]
+        target_flat = self[target].nest.to_flat()
+        target_flat = target_flat.set_index(self[target].array.get_list_index())
         if inplace:
-            target_flat = self[target].nest.to_flat()
             target_flat.dropna(
                 axis=axis,
                 how=how,
                 thresh=thresh,
                 subset=subset,
-                inplace=inplace,
-                ignore_index=ignore_index,
+                inplace=True,
             )
-            self[target] = packer.pack_flat(target_flat)
-            return self
-        # Or if not inplace
-        new_df = self.copy()
-        new_df[target] = packer.pack_flat(
-            new_df[target]
-            .nest.to_flat()
-            .dropna(
+        else:
+            target_flat = target_flat.dropna(
                 axis=axis,
                 how=how,
                 thresh=thresh,
                 subset=subset,
-                inplace=inplace,
-                ignore_index=ignore_index,
+                inplace=False,
             )
-        )
+        new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
+        if inplace:
+            self._update_inplace(new_df)
+            return None
         return new_df
 
     def reduce(self, func, *args, **kwargs) -> NestedFrame:  # type: ignore[override]

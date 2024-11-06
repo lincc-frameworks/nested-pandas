@@ -67,6 +67,66 @@ def test_pack_with_flat_df_and_index():
     assert_series_equal(series, desired)
 
 
+def test_pack_with_flat_df_and_on():
+    """Test packing a dataframe on a column"""
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4],
+            "b": [0, 1, 0, 1],
+            "c": [1, 0, 1, 0],
+        },
+        index=[1, 2, 1, 2],
+    )
+    series = packer.pack(df, name="series", on="c")
+
+    desired = pd.Series(
+        data=[
+            # All of the values where the column c is 0
+            (np.array([2, 4]), np.array([1, 1])),
+            # All of the values where the column c is 1
+            (np.array([1, 3]), np.array([0, 0])),
+        ],
+        # Since we packed on 'c', we expect to see the unique sorted
+        # values of 'c' as the index
+        index=[0, 1],
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        name="series",
+    )
+    # The index name should be the same as the column we packed on
+    desired.index.name = "c"
+    offsets_reused(series)
+    assert_series_equal(series, desired)
+
+
+def test_pack_with_flat_df_and_on_and_index():
+    """Test packing a dataframe on a column while also specifying an index"""
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4],
+            "b": [0, 1, 0, 1],
+            "c": [1, 0, 1, 0],
+        },
+        index=[1, 2, 1, 2],
+    )
+    new_index = [101, 102]
+    series = packer.pack(df, name="series", index=new_index, on="c")
+
+    desired = pd.Series(
+        data=[
+            # All of the values where the column c is 0
+            (np.array([2, 4]), np.array([1, 1])),
+            # All of the values where the column c is 1
+            (np.array([1, 3]), np.array([0, 0])),
+        ],
+        # We still expect to see the overriden index despite packing on 'c'
+        index=new_index,
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        name="series",
+    )
+    offsets_reused(series)
+    assert_series_equal(series, desired)
+
+
 def test_pack_with_series_of_dfs():
     """Test pack(pd.Series([pd.DataFrame(), ...]))."""
     input_series = pd.Series(
@@ -123,6 +183,40 @@ def test_pack_flat():
         index=[1, 2, 3, 4],
         dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
     )
+    offsets_reused(actual)
+    assert_series_equal(actual, desired)
+
+
+def test_pack_flat_with_on():
+    """Test pack_flat() where you pack on a given column."""
+    df = pd.DataFrame(
+        data={
+            "a": [7, 8, 9, 1, 2, 3, 4, 5, 6],
+            "b": [0, 1, 0, 0, 1, 0, 1, 0, 1],
+            "c": [1, 0, 1, 0, 1, 0, 1, 0, 1],
+        },
+        index=[4, 4, 4, 1, 1, 2, 2, 3, 3],
+    )
+    # Pack on the c olumn
+    actual = packer.pack_flat(df, on="c")
+
+    desired = pd.Series(
+        data=[
+            # Index 0: # All of the values where column 'c' is 0
+            (
+                np.array([8, 1, 3, 5]),  # values from column 'a'
+                np.array([1, 0, 0, 0]),  # values from column 'b'
+            ),
+            # Index 1: # All of the values where column 'c' is 1
+            (
+                np.array([7, 9, 2, 4, 6]),  # values from column 'a'
+                np.array([0, 0, 1, 1, 1]),  # values from column 'b'
+            ),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+    )
+    desired.index.name = "c"
     offsets_reused(actual)
     assert_series_equal(actual, desired)
 
