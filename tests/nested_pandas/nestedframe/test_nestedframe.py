@@ -1014,3 +1014,10 @@ def test_eval_assignment():
     assert set(nf.p2.nest.fields) == {"e", "f"}
     assert (nf["p2.e"] == nf["packed.d"] * 2 + nf.c).all()
     assert (nf["p2.f"] == nf["p2.e"] + nf.b).all()
+
+
+def test_access_non_existing_column():
+    """Test that accessing a non-existing column raises a KeyError"""
+    nf = NestedFrame()
+    with pytest.raises(KeyError):
+        _ = nf["non_existing_column"]
