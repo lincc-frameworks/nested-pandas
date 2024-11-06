@@ -10,7 +10,6 @@ import pyarrow as pa
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
-from pandas.api.types import is_bool_dtype
 from pandas.core.computation.expr import PARSERS, PandasExprVisitor
 
 from nested_pandas.nestedframe.utils import extract_nest_names
@@ -271,8 +270,8 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
-        on : str, list of str, default: None
-            Columns to join on.
+        on : str, default: None
+            A column in the list 
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -283,10 +282,13 @@ class NestedFrame(pd.DataFrame):
         NestedFrame
             A new NestedFrame with the added nested column.
         """
+        if on is not None and not isinstance(on, str):
+            raise ValueError("Currently we only support a single column for 'on'")
         # Add sources to objects
         packed = pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()
-        return new_df.join(packed, how=how)
+        res = new_df.join(packed, how=how, on=on)
+        return res
 
     @classmethod
     def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
@@ -519,14 +521,11 @@ class NestedFrame(pd.DataFrame):
         # to the nest and repack.  Otherwise, apply it to this instance as usual,
         # since it operated on the base attributes.
         if isinstance(result, _SeriesFromNest):
-            if not is_bool_dtype(result.dtype):
-                raise ValueError("Query condition must evaluate to a boolean Series")
-
             nest_name, flat_nest = result.nest_name, result.flat_nest
-
             # Reset index to "ordinal" like [0, 0, 0, 1, 1, 2, 2, 2]
-            flat_nest = flat_nest.set_index(self[nest_name].array.list_index)
-            query_result = result.set_axis(self[nest_name].array.list_index)
+            list_index = self[nest_name].array.get_list_index()
+            flat_nest = flat_nest.set_index(list_index)
+            query_result = result.set_axis(list_index)
             # Selecting flat values matching the query result
             new_flat_nest = flat_nest[query_result]
             new_df = self._set_filtered_flat_df(nest_name, new_flat_nest)
@@ -679,7 +678,7 @@ class NestedFrame(pd.DataFrame):
         if subset is not None:
             subset = [col.split(".")[-1] for col in subset]
         target_flat = self[target].nest.to_flat()
-        target_flat = target_flat.set_index(self[target].array.list_index)
+        target_flat = target_flat.set_index(self[target].array.get_list_index())
         if inplace:
             target_flat.dropna(
                 axis=axis,
