@@ -594,6 +594,25 @@ def test_query():
     assert base["nested.d"].shape == (2,)
 
 
+def test_query_on_non_identifier_columns():
+    """
+    Column names very often follow the same rules as Python identifiers, but
+    they are not required to.  Test that query() can handle such names.
+    """
+    # Taken from GH#174
+    nf = NestedFrame(data={"dog": [1, 2, 3], "good dog": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"a": [0, 2, 4, 1, 4, 3, 1, 4, 1], "b": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    nf = nf.add_nested(nested, "bad dog")
+    nf2 = nf.query("`good dog` > 3")
+    assert nf.shape == (3, 3)
+    assert nf2.shape == (2, 3)
+    nf3 = nf.query("`bad dog`.a > 2")
+    assert nf3["bad dog"].nest["a"].size == 4
+
+
 def test_dropna():
     """Test that dropna works on all layers"""
 

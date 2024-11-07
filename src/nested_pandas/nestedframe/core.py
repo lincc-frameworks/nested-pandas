@@ -10,9 +10,11 @@ import pyarrow as pa
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
+from pandas.core.computation import ops
+from pandas.core.computation.eval import Expr, ensure_scope
 from pandas.core.computation.expr import PARSERS, PandasExprVisitor
+from pandas.core.computation.parsing import clean_column_name
 
-from nested_pandas.nestedframe.utils import extract_nest_names
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
@@ -79,6 +81,22 @@ class _NestResolver(dict):
     def __init__(self, outer: NestedFrame):
         self._outer = outer
         super().__init__()
+        # Pre-load the field resolvers for all columns which are known at present.
+        for column in outer.nested_columns:
+            self._initialize_field_resolver(column, outer)
+
+    def _initialize_field_resolver(self, column: str, outer: NestedFrame):
+        """
+        Initialize a resolver for the given nested column, and also an alias
+        for it, in the case of column names that have spaces or are otherwise
+        not identifier-like.
+        """
+        super().__setitem__(column, _NestedFieldResolver(column, outer))
+        clean_id = clean_column_name(column)
+        # And once more for the cleaned name, if it's different.
+        # This allows us to capture references to it from the Pandas evaluator.
+        if clean_id != column:
+            super().__setitem__(clean_id, _NestedFieldResolver(column, outer))
 
     def __contains__(self, item):
         top_nest = item if "." not in item else item.split(".")[0].strip()
@@ -89,7 +107,7 @@ class _NestResolver(dict):
         if not super().__contains__(top_nest):
             if top_nest not in self._outer.nested_columns:
                 raise KeyError(f"Unknown nest {top_nest}")
-            super().__setitem__(top_nest, _NestedFieldResolver(top_nest, self._outer))
+            self._initialize_field_resolver(top_nest, self._outer)
         return super().__getitem__(top_nest)
 
     def __setitem__(self, item, _):
@@ -131,6 +149,48 @@ class _NestedFieldResolver:
             result.flat_nest = self._flat_nest
             return result
         raise AttributeError(f"No attribute {item_name}")
+
+
+def _subexprs_by_nest(parents: list, node) -> dict[str, list]:
+    """
+    Given an expression which contains references to both base and nested
+    columns, return a dictionary of the sub-expressions that should be
+    evaluated independently, keyed by nesting context.
+
+    The key of the dictionary is the name of the nested column, and will
+    be a blank string in the case of base columns.  The value is a list
+    of the parent nodes that lead to sub-expressions that can be evaluated
+    successfully.
+
+    While this is not in use today for automatically splitting expressions,
+    it can be used to detect whether an expression is suitably structured
+    for evaluation: the returned dictionary should have a single key.
+    """
+    if isinstance(node, ops.Term) and not isinstance(node, ops.Constant):
+        if isinstance(node.value, _SeriesFromNest):
+            return {node.value.nest_name: parents}
+        return {getattr(node, "upper_name", ""): parents}
+    if not isinstance(node, ops.Op):
+        return {}
+    sources = [getattr(node, "lhs", None), getattr(node, "rhs", None)]
+    result: dict[str, list] = {}
+    for source in sources:
+        child = _subexprs_by_nest(parents, source)
+        for k, v in child.items():
+            result.setdefault(k, []).append(v)
+    # After a complete traversal across sources, check for any necessary splits.
+    # If it's homogenous, move the split-node up the tree.
+    if len(result) == 1:
+        # Let the record of each parent node drift up the tree,
+        # and merge the subtrees into a single node, since by definition,
+        # this node is homogeneous over all of its children, and can
+        # be evaluated in a single step.
+        result = {k: [node] for k in result}
+    # If the result is either empty or has more than one key, leave the result
+    # alone.  Each key represents a different nest (with a blank string for the base),
+    # and the value is the highest point in the expression tree where the expression
+    # was still within a single nest.
+    return result
 
 
 class NestedFrame(pd.DataFrame):
@@ -457,6 +517,39 @@ class NestedFrame(pd.DataFrame):
         kwargs["parser"] = "nested-pandas"
         return super().eval(expr, **kwargs)
 
+    def extract_nest_names(
+        self,
+        expr: str,
+        local_dict=None,
+        global_dict=None,
+        resolvers=(),
+        level: int = 0,
+        target=None,
+        **kwargs,
+    ) -> set[str]:
+        """
+        Given a string expression, parse it and visit the resulting expression tree,
+        surfacing the nesting types.  The purpose is to identify expressions that attempt
+        to mix base and nested columns, or columns from two different nests.
+        """
+        index_resolvers = self._get_index_resolvers()
+        column_resolvers = self._get_cleaned_column_resolvers()
+        resolvers = resolvers + (_NestResolver(self), column_resolvers, index_resolvers)
+        # Parser needs to be the "nested-pandas" parser.
+        # We also need the same variable context that eval() will have, so that
+        # backtick-quoted names are substituted as expected.
+        env = ensure_scope(
+            level + 1,
+            global_dict=global_dict,
+            local_dict=local_dict,
+            resolvers=resolvers,
+            target=target,
+        )
+        parsed_expr = Expr(expr, parser="nested-pandas", env=env)
+        expr_tree = parsed_expr.terms
+        separable = _subexprs_by_nest([], expr_tree)
+        return set(separable.keys())
+
     def query(self, expr: str, *, inplace: bool = False, **kwargs) -> NestedFrame | None:
         """
         Query the columns of a NestedFrame with a boolean expression. Specified
@@ -514,7 +607,7 @@ class NestedFrame(pd.DataFrame):
         # At present, the query expression must be either entirely within a
         # single nest, or have nothing but base columns.  Mixed structures are not
         # supported, so preflight the expression.
-        nest_names = extract_nest_names(expr)
+        nest_names = self.extract_nest_names(expr, **kwargs)
         if len(nest_names) > 1:
             raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
         result = self.eval(expr, **kwargs)
