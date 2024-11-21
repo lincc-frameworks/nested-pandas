@@ -612,6 +612,17 @@ def test_query_on_non_identifier_columns():
     nf3 = nf.query("`bad dog`.a > 2")
     assert nf3["bad dog"].nest["a"].size == 4
 
+    # And also for fields within the nested columns.
+    # Taken from GH#176
+    nf = NestedFrame(data={"dog": [1, 2, 3], "good dog": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"n/a": [0, 2, 4, 1, 4, 3, 1, 4, 1], "n/b": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    nf = nf.add_nested(nested, "bad dog")
+    nf4 = nf.query("`bad dog`.`n/a` > 2")
+    assert nf4["bad dog"].nest["n/a"].size == 4
+
 
 def test_dropna():
     """Test that dropna works on all layers"""
