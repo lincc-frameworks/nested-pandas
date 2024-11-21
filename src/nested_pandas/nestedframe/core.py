@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -139,8 +140,15 @@ class _NestedFieldResolver:
         # Flattened only once for every access of this particular nest
         # within the expression.
         self._flat_nest = outer[nest_name].nest.to_flat()
+        # Save aliases to any columns that are not identifier-like.
+        self._aliases = {}
+        for column in self._flat_nest.columns:
+            clean_id = clean_column_name(column)
+            if clean_id != column:
+                self._aliases[clean_id] = column
 
     def __getattr__(self, item_name: str):
+        item_name = self._aliases.get(item_name, item_name)
         if item_name in self._flat_nest:
             result = _SeriesFromNest(self._flat_nest[item_name])
             # Assigning these properties directly in order to avoid any complication
@@ -193,6 +201,25 @@ def _subexprs_by_nest(parents: list, node) -> dict[str, list]:
     return result
 
 
+def parse_hierarchical_components(delimited_path: str, delimiter: str = ".") -> list[str]:
+    """
+    Given a string that may be a delimited path, parse it into its components,
+    respecting backticks that are used to protect component names that may contain the delimiter.
+    """
+    pattern = re.compile(r"`[^`]+`")
+    aliases = {}
+
+    def sub_and_alias(match):
+        original = match.group(0)[1:-1]  # remove backticks
+        alias = clean_column_name(original)
+        if alias != original:
+            aliases[alias] = original
+        return alias
+
+    splittable_fields = pattern.sub(sub_and_alias, delimited_path)
+    return [aliases.get(x, x) for x in splittable_fields.split(delimiter)]
+
+
 class NestedFrame(pd.DataFrame):
     """A Pandas Dataframe extension with support for nested structure.
 
@@ -232,62 +259,76 @@ class NestedFrame(pd.DataFrame):
                 nest_cols.append(column)
         return nest_cols
 
-    def _is_known_hierarchical_column(self, colname) -> bool:
+    def _is_known_hierarchical_column(self, components: list[str] | str) -> bool:
         """Determine whether a string is a known hierarchical column name"""
-        if "." in colname:
-            base_name = colname.split(".")[0]
-            if base_name in self.nested_columns:
-                # TODO: only handles one level of nesting for now
-                nested_name = ".".join(colname.split(".")[1:])
-                return nested_name in self.all_columns[base_name]
+        if isinstance(components, str):
+            components = parse_hierarchical_components(components)
+        if len(components) < 2:
             return False
+        base_name = components[0]
+        if base_name in self.nested_columns:
+            nested_name = ".".join(components[1:])
+            return nested_name in self.all_columns[base_name]
         return False
 
-    def _is_known_column(self, colname) -> bool:
-        """Determine whether a string is a known column name"""
-        return colname in self.columns or self._is_known_hierarchical_column(colname)
+    def _is_known_column(self, components: list[str] | str) -> bool:
+        """Determine whether a list of field components describes a known column name"""
+        if isinstance(components, str):
+            components = parse_hierarchical_components(components)
+        if ".".join(components) in self.columns:
+            return True
+        return self._is_known_hierarchical_column(components)
 
     def __getitem__(self, item):
         """Adds custom __getitem__ behavior for nested columns"""
 
-        if isinstance(item, str):
-            # Preempt the nested check if the item is a base column
-            if item in self.columns:
-                return super().__getitem__(item)
-            # If a nested column name is passed, return a flat series for that column
-            # flat series is chosen over list series for utility
-            # e.g. native ability to do something like ndf["nested.a"] + 3
-            elif self._is_known_hierarchical_column(item):
-                # TODO: only handles one level of nesting for now
-                nested = item.split(".")[0]
-                col = ".".join(item.split(".")[1:])
-                return self[nested].nest.get_flat_series(col)
-            else:
-                raise KeyError(f"Column '{item}' not found in nested columns or base columns")
-        else:
+        if not isinstance(item, str):
             return super().__getitem__(item)
+
+        # Preempt the nested check if the item is a base column, with or without
+        # dots and backticks.
+        if item in self.columns:
+            return super().__getitem__(item)
+        components = parse_hierarchical_components(item)
+        # One more check on the entirety of the item name, in case backticks were used
+        # (even if they weren't necessary).
+        cleaned_item = ".".join(components)
+        if cleaned_item in self.columns:
+            return super().__getitem__(cleaned_item)
+
+        # If a nested column name is passed, return a flat series for that column
+        # flat series is chosen over list series for utility
+        # e.g. native ability to do something like ndf["nested.a"] + 3
+        if self._is_known_hierarchical_column(components):
+            nested = components[0]
+            field = ".".join(components[1:])
+            return self[nested].nest.get_flat_series(field)
+        else:
+            raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
 
     def __setitem__(self, key, value):
         """Adds custom __setitem__ behavior for nested columns"""
-
+        components = parse_hierarchical_components(key)
         # Replacing or adding columns to a nested structure
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
         # Or ndf["nested.base_t"] = ndf["nested.t"] - 5
         # Performance note: This requires building a new nested structure
         # TODO: Support assignment of a new column to an existing nested col from a list series
-        if self._is_known_hierarchical_column(key) or (
-            "." in key and key.split(".")[0] in self.nested_columns
+        if self._is_known_hierarchical_column(components) or (
+            len(components) > 1 and components[0] in self.nested_columns
         ):
-            nested, col = key.split(".")
-            new_nested_series = self[nested].nest.with_flat_field(col, value)
+            if len(components) != 2:
+                raise ValueError(f"Only one level of nesting is supported; given {key}")
+            nested, field = components
+            new_nested_series = self[nested].nest.with_flat_field(field, value)
             return super().__setitem__(nested, new_nested_series)
 
         # Adding a new nested structure from a column
         # Allows statements like ndf["new_nested.t"] = ndf["nested.t"] - 5
-        if "." in key:
-            new_nested, col = key.split(".")
+        if len(components) > 1:
+            new_nested, field = components
             if isinstance(value, pd.Series):
-                value.name = col
+                value.name = field
                 value = value.to_frame()
             new_df = self.add_nested(value, name=new_nested)
             self._update_inplace(new_df)
@@ -838,12 +879,15 @@ class NestedFrame(pd.DataFrame):
         # Parse through the initial args to determine the columns to apply the function to
         requested_columns = []
         for arg in args:
-            if not isinstance(arg, str) or not self._is_known_column(arg):
-                # We've reached an argument that is not a valid column, so we assume
-                # the remaining args are extra arguments to the function
+            # Stop when we reach an argument that is not a valid column, as we assume
+            # that the remaining args are extra arguments to the function
+            if not isinstance(arg, str):
                 break
-            layer = "base" if "." not in arg else arg.split(".")[0]
-            col = arg.split(".")[-1]
+            components = parse_hierarchical_components(arg)
+            if not self._is_known_column(components):
+                break
+            layer = "base" if len(components) < 2 else components[0]
+            col = components[-1]
             requested_columns.append((layer, col))
 
         # We require the first *args to be the columns to apply the function to
