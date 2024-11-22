@@ -201,25 +201,6 @@ def _subexprs_by_nest(parents: list, node) -> dict[str, list]:
     return result
 
 
-def parse_hierarchical_components(delimited_path: str, delimiter: str = ".") -> list[str]:
-    """
-    Given a string that may be a delimited path, parse it into its components,
-    respecting backticks that are used to protect component names that may contain the delimiter.
-    """
-    pattern = re.compile(r"`[^`]+`")
-    aliases = {}
-
-    def sub_and_alias(match):
-        original = match.group(0)[1:-1]  # remove backticks
-        alias = clean_column_name(original)
-        if alias != original:
-            aliases[alias] = original
-        return alias
-
-    splittable_fields = pattern.sub(sub_and_alias, delimited_path)
-    return [aliases.get(x, x) for x in splittable_fields.split(delimiter)]
-
-
 class NestedFrame(pd.DataFrame):
     """A Pandas Dataframe extension with support for nested structure.
 
@@ -261,10 +242,30 @@ class NestedFrame(pd.DataFrame):
                 nest_cols.append(column)
         return nest_cols
 
+    def _parse_hierarchical_components(self, delimited_path: str, delimiter: str = ".") -> list[str]:
+        """
+        Given a string that may be a delimited path, parse it into its components,
+        respecting backticks that are used to protect component names that may contain the delimiter.
+        """
+        aliases = getattr(self, "_aliases", None)
+        if aliases is None:
+            aliases = {}
+            pattern = re.compile(r"`[^`]+`")
+
+            def sub_and_alias(match):
+                original = match.group(0)[1:-1]  # remove backticks
+                alias = clean_column_name(original)
+                if alias != original:
+                    aliases[alias] = original
+                return alias
+
+            delimited_path = pattern.sub(sub_and_alias, delimited_path)
+        return [aliases.get(x, x) for x in delimited_path.split(delimiter)]
+
     def _is_known_hierarchical_column(self, components: list[str] | str) -> bool:
         """Determine whether a string is a known hierarchical column name"""
         if isinstance(components, str):
-            components = parse_hierarchical_components(components)
+            components = self._parse_hierarchical_components(components)
         if len(components) < 2:
             return False
         base_name = components[0]
@@ -276,7 +277,7 @@ class NestedFrame(pd.DataFrame):
     def _is_known_column(self, components: list[str] | str) -> bool:
         """Determine whether a list of field components describes a known column name"""
         if isinstance(components, str):
-            components = parse_hierarchical_components(components)
+            components = self._parse_hierarchical_components(components)
         if ".".join(components) in self.columns:
             return True
         return self._is_known_hierarchical_column(components)
@@ -291,7 +292,7 @@ class NestedFrame(pd.DataFrame):
         # dots and backticks.
         if item in self.columns:
             return super().__getitem__(item)
-        components = parse_hierarchical_components(item)
+        components = self._parse_hierarchical_components(item)
         # One more check on the entirety of the item name, in case backticks were used
         # (even if they weren't necessary).
         cleaned_item = ".".join(components)
@@ -310,10 +311,7 @@ class NestedFrame(pd.DataFrame):
 
     def __setitem__(self, key, value):
         """Adds custom __setitem__ behavior for nested columns"""
-        components = parse_hierarchical_components(key)
-        aliases = getattr(self, "_aliases", None)
-        if aliases:
-            components = [aliases.get(x, x) for x in components]
+        components = self._parse_hierarchical_components(key)
         # Replacing or adding columns to a nested structure
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
         # Or ndf["nested.base_t"] = ndf["nested.t"] - 5
@@ -578,7 +576,9 @@ class NestedFrame(pd.DataFrame):
         kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
-        return super().eval(expr, **kwargs)
+        answer = super().eval(expr, **kwargs)
+        self._aliases.clear()
+        return answer
 
     def extract_nest_names(
         self,
@@ -905,7 +905,7 @@ class NestedFrame(pd.DataFrame):
             # that the remaining args are extra arguments to the function
             if not isinstance(arg, str):
                 break
-            components = parse_hierarchical_components(arg)
+            components = self._parse_hierarchical_components(arg)
             if not self._is_known_column(components):
                 break
             layer = "base" if len(components) < 2 else components[0]
