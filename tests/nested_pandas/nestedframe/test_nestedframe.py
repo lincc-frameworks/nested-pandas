@@ -1045,6 +1045,20 @@ def test_eval_assignment():
     assert (nf["p2.e"] == nf["packed.d"] * 2 + nf.c).all()
     assert (nf["p2.f"] == nf["p2.e"] + nf.b).all()
 
+    # Verify that assignment can be done to nested columns and fields
+    # having names which are not valid Python identifiers, and must
+    # be quoted with backticks.
+    nf = NestedFrame(data={"dog": [1, 2, 3], "good dog": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"n/a": [0, 2, 4, 1, 4, 3, 1, 4, 1], "n/b": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    nf = nf.add_nested(nested, "bad dog")
+    nfx = nf.eval("`bad dog`.`n/c` = `bad dog`.`n/b` + 2.5")
+    # The number of columns at the top should not have changed
+    assert len(nfx.columns) == len(nf.columns)
+    assert (nfx["bad dog"].nest["n/c"] == nf["bad dog"].nest["n/b"] + 2.5).all()
+
 
 def test_access_non_existing_column():
     """Test that accessing a non-existing column raises a KeyError"""

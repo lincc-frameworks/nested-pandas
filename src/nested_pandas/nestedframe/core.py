@@ -84,9 +84,9 @@ class _NestResolver(dict):
         super().__init__()
         # Pre-load the field resolvers for all columns which are known at present.
         for column in outer.nested_columns:
-            self._initialize_field_resolver(column, outer)
+            self._initialize_column_resolver(column, outer)
 
-    def _initialize_field_resolver(self, column: str, outer: NestedFrame):
+    def _initialize_column_resolver(self, column: str, outer: NestedFrame):
         """
         Initialize a resolver for the given nested column, and also an alias
         for it, in the case of column names that have spaces or are otherwise
@@ -108,7 +108,7 @@ class _NestResolver(dict):
         if not super().__contains__(top_nest):
             if top_nest not in self._outer.nested_columns:
                 raise KeyError(f"Unknown nest {top_nest}")
-            self._initialize_field_resolver(top_nest, self._outer)
+            self._initialize_column_resolver(top_nest, self._outer)
         return super().__getitem__(top_nest)
 
     def __setitem__(self, item, _):
@@ -232,6 +232,8 @@ class NestedFrame(pd.DataFrame):
     # Series produce instances of this class, preserving the type and origin.
     __pandas_priority__ = 4500
 
+    _metadata = ["_aliases"]
+
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
         return NestedFrame
@@ -309,6 +311,9 @@ class NestedFrame(pd.DataFrame):
     def __setitem__(self, key, value):
         """Adds custom __setitem__ behavior for nested columns"""
         components = parse_hierarchical_components(key)
+        aliases = getattr(self, "_aliases", None)
+        if aliases:
+            components = [aliases.get(x, x) for x in components]
         # Replacing or adding columns to a nested structure
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
         # Or ndf["nested.base_t"] = ndf["nested.t"] - 5
@@ -553,6 +558,23 @@ class NestedFrame(pd.DataFrame):
         --------
         https://pandas.pydata.org/docs/reference/api/pandas.eval.html
         """
+        pattern = re.compile(r"`[^`]+`", re.MULTILINE)
+        # Gather all aliases for backtick-quoted names, and give them to the _NestResolver.
+        # We need to be proactive, syntactically, and not merely look up column names that
+        # presently exist, because both column and field names may be created by separate
+        # lines.
+        self._aliases: dict[str, str] = {}
+
+        def sub_and_alias(match):
+            original = match.group(0)[1:-1]  # remove backticks
+            alias = clean_column_name(original)
+            if alias != original:
+                self._aliases[alias] = original
+            return alias
+
+        # Something like this will be done again; we're not saving this.
+        _ = pattern.sub(sub_and_alias, expr)
+
         kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
