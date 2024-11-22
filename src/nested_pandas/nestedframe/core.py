@@ -206,6 +206,26 @@ def _subexprs_by_nest(parents: list, node) -> dict[str, list]:
     return result
 
 
+def _identify_aliases(expr: str) -> tuple[str, dict[str, str]]:
+    """
+    Given an expression string, identify backtick-quoted names
+    and replace them with cleaned names, returning the cleaned
+    expression and a dictionary of aliases, where the keys are
+    clean aliases to the original names.
+    """
+    aliases = {}
+    pattern = re.compile(r"`[^`]+`", re.MULTILINE)
+
+    def sub_and_alias(match):
+        original = match.group(0)[1:-1]  # remove backticks
+        alias = clean_column_name(original)
+        if alias != original:
+            aliases[alias] = original
+        return alias
+
+    return pattern.sub(sub_and_alias, expr), aliases
+
+
 class NestedFrame(pd.DataFrame):
     """A Pandas Dataframe extension with support for nested structure.
 
@@ -218,6 +238,10 @@ class NestedFrame(pd.DataFrame):
     # Series produce instances of this class, preserving the type and origin.
     __pandas_priority__ = 4500
 
+    # The "_aliases" attribute is usually None or not even present, but when it is present,
+    # it indicates that an evaluation is in progress, and that columns and fields with names
+    # that are not identifier-like have been aliases to cleaned names, and this attribute
+    # contains those aliases, keyed by the cleaned name.
     _metadata = ["_aliases"]
 
     @property
@@ -254,17 +278,7 @@ class NestedFrame(pd.DataFrame):
         """
         aliases = getattr(self, "_aliases", None)
         if aliases is None:
-            aliases = {}
-            pattern = re.compile(r"`[^`]+`")
-
-            def sub_and_alias(match):
-                original = match.group(0)[1:-1]  # remove backticks
-                alias = clean_column_name(original)
-                if alias != original:
-                    aliases[alias] = original
-                return alias
-
-            delimited_path = pattern.sub(sub_and_alias, delimited_path)
+            delimited_path, aliases = _identify_aliases(delimited_path)
         return [aliases.get(x, x) for x in delimited_path.split(delimiter)]
 
     def _is_known_hierarchical_column(self, components: list[str] | str) -> bool:
@@ -561,23 +575,8 @@ class NestedFrame(pd.DataFrame):
         --------
         https://pandas.pydata.org/docs/reference/api/pandas.eval.html
         """
-        pattern = re.compile(r"`[^`]+`", re.MULTILINE)
-        # Gather all aliases for backtick-quoted names, and give them to the _NestResolver.
-        # We need to be proactive, syntactically, and not merely look up column names that
-        # presently exist, because both column and field names may be created by separate
-        # lines.
-        self._aliases: dict[str, str] | None = {}
-
-        def sub_and_alias(match):
-            original = match.group(0)[1:-1]  # remove backticks
-            alias = clean_column_name(original)
-            if alias != original:
-                self._aliases[alias] = original
-            return alias
-
-        # Using re.sub to drive the generation of aliases; we aren't interested in the
-        # result in this case.
-        _ = pattern.sub(sub_and_alias, expr)
+        _, aliases = _identify_aliases(expr)
+        self._aliases: dict[str, str] | None = aliases
 
         kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
         kwargs["inplace"] = inplace
