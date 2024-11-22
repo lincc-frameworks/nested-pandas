@@ -141,14 +141,19 @@ class _NestedFieldResolver:
         # within the expression.
         self._flat_nest = outer[nest_name].nest.to_flat()
         # Save aliases to any columns that are not identifier-like.
-        self._aliases = {}
-        for column in self._flat_nest.columns:
-            clean_id = clean_column_name(column)
-            if clean_id != column:
-                self._aliases[clean_id] = column
+        # If our given frame has aliases for identifiers, use these instead
+        # of generating our own.
+        self._aliases = getattr(outer, "_aliases", None)
+        if self._aliases is None:
+            self._aliases = {}
+            for column in self._flat_nest.columns:
+                clean_id = clean_column_name(column)
+                if clean_id != column:
+                    self._aliases[clean_id] = column
 
     def __getattr__(self, item_name: str):
-        item_name = self._aliases.get(item_name, item_name)
+        if self._aliases:
+            item_name = self._aliases.get(item_name, item_name)
         if item_name in self._flat_nest:
             result = _SeriesFromNest(self._flat_nest[item_name])
             # Assigning these properties directly in order to avoid any complication
@@ -561,7 +566,7 @@ class NestedFrame(pd.DataFrame):
         # We need to be proactive, syntactically, and not merely look up column names that
         # presently exist, because both column and field names may be created by separate
         # lines.
-        self._aliases: dict[str, str] = {}
+        self._aliases: dict[str, str] | None = {}
 
         def sub_and_alias(match):
             original = match.group(0)[1:-1]  # remove backticks
@@ -570,14 +575,15 @@ class NestedFrame(pd.DataFrame):
                 self._aliases[alias] = original
             return alias
 
-        # Something like this will be done again; we're not saving this.
+        # Using re.sub to drive the generation of aliases; we aren't interested in the
+        # result in this case.
         _ = pattern.sub(sub_and_alias, expr)
 
         kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
         answer = super().eval(expr, **kwargs)
-        self._aliases.clear()
+        self._aliases = None
         return answer
 
     def extract_nest_names(
