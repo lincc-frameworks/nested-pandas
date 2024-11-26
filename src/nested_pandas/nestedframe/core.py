@@ -872,7 +872,7 @@ class NestedFrame(pd.DataFrame):
         Takes a function and applies it to each top-level row of the NestedFrame.
 
         The user may specify which columns the function is applied to, with
-        columns from the 'base' layer being passsed to the function as
+        columns from the 'base' layer being passed to the function as
         scalars and columns from the nested layers being passed as numpy arrays.
 
         Parameters
