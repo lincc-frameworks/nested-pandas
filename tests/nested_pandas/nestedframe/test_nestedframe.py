@@ -85,6 +85,35 @@ def test_is_known_hierarchical_column():
     assert not base._is_known_hierarchical_column("base.a")
 
 
+def test_is_known_column():
+    """
+    Test that known (non-hierarchical) columns can be identified.  The key
+    point to test is that columns which might look like they are nested,
+    but which are already known to not be, are correctly identified.
+    """
+    base = NestedFrame(data={"R. A.": [1, 2, 3], "nested.b": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    assert base._is_known_column("R. A.")
+    assert base._is_known_column("`R. A.`")
+    assert base._is_known_column("nested.b")
+
+    # In this context, the "." delimiter matters a lot, so the following, which would be
+    # acceptable in an .eval() context, is not acceptable here.
+    assert not base._is_known_column("nested . b")
+    assert not base._is_known_column("nested. c")
+    assert not base._is_known_column("nested  .d")
+
+    # But hierarchical ones should also work
+    assert base._is_known_column("nested.c")
+    assert base._is_known_column("nested.d")
+
+
 def test_get_nested_column():
     """Test that __getitem__ can retrieve a nested column"""
 
@@ -165,6 +194,21 @@ def test_get_dot_names():
 
     assert len(nf[".b."]) == 2
     assert len(nf["nested.R.A."]) == 4
+
+
+def test_nesting_limit():
+    """Test the ability to prevent nesting beyond a depth of 1."""
+    nf = NestedFrame.from_flat(
+        NestedFrame({"a": [1, 2, 3, 4], ".b.": [1, 1, 3, 3], "R.A.": [3, None, 6, 5]}, index=[1, 1, 2, 2]),
+        base_columns=[".b."],
+    )
+    with pytest.raises(ValueError):
+        # The error gets triggered for the attempt to create new nested columns; if the column has
+        # already been created, it should be fine.
+        nf["nested.c.d.e"] = nf[".b."]
+    nf["nested.c"] = nf["nested.R.A."]
+    # Test that the above works with backticks, too, even in cases where they are not strictly necessary.
+    nf["`nested.d`"] = nf["`.b.`"]
 
 
 def test_add_nested_with_flat_df():
