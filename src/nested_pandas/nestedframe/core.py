@@ -19,6 +19,10 @@ from pandas.core.computation.parsing import clean_column_name
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
+# Used to identify backtick-protected names in the expressions
+# used in NestedFrame.eval() and NestedFrame.query().
+_backtick_protected_names = re.compile(r"`[^`]+`", re.MULTILINE)
+
 
 class NestedPandasExprVisitor(PandasExprVisitor):
     """
@@ -214,7 +218,6 @@ def _identify_aliases(expr: str) -> tuple[str, dict[str, str]]:
     clean aliases to the original names.
     """
     aliases = {}
-    pattern = re.compile(r"`[^`]+`", re.MULTILINE)
 
     def sub_and_alias(match):
         original = match.group(0)[1:-1]  # remove backticks
@@ -223,7 +226,7 @@ def _identify_aliases(expr: str) -> tuple[str, dict[str, str]]:
             aliases[alias] = original
         return alias
 
-    return pattern.sub(sub_and_alias, expr), aliases
+    return _backtick_protected_names.sub(sub_and_alias, expr), aliases
 
 
 class NestedFrame(pd.DataFrame):
