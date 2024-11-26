@@ -870,6 +870,14 @@ def test_reduce():
     for i in range(len(result)):
         assert result["offset_avg"].values[i] == expected_offset_avg[i]
 
+    # Verify that we can understand a string argument to the reduce function,
+    # so long as it isn't a column name.
+    def make_id(col1, prefix_str):
+        return f"{prefix_str}{col1}"
+
+    result = nf.reduce(make_id, "b", "some_id_")
+    assert result[0][1] == "some_id_4"
+
 
 def test_reduce_duplicated_cols():
     """Tests nf.reduce() to correctly handle duplicated column names."""
