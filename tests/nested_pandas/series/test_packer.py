@@ -286,6 +286,42 @@ def test_pack_lists():
         assert_series_equal(series.nest.get_list_series(field_name), packed_df[field_name])
 
 
+def test_pack_lists_with_chunked_arrays():
+    """Issue https://github.com/lincc-frameworks/nested-pandas/issues/180"""
+    chunked_a = pd.Series(
+        pa.chunked_array([pa.array([[1, 2, 3], [4, 5]])] * 3),
+        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        name="a",
+    )
+    chunked_b = pd.Series(
+        pa.chunked_array([pa.array([[0.0, 1.0, 2.0], [3.0, 4.0]])] * 3),
+        dtype=pd.ArrowDtype(pa.list_(pa.float64())),
+        name="b",
+    )
+    list_df = pd.DataFrame({"a": chunked_a, "b": chunked_b}, index=[0, 1, 2, 3, 4, 5])
+    series = packer.pack_lists(list_df)
+    assert_series_equal(series.nest.get_list_series("a"), chunked_a)
+    assert_series_equal(series.nest.get_list_series("b"), chunked_b)
+
+
+def test_pack_lists_with_uneven_chunked_arrays():
+    """Issue https://github.com/lincc-frameworks/nested-pandas/issues/180"""
+    chunked_a = pd.Series(
+        pa.chunked_array([pa.array([[1, 2, 3], [4, 5]])] * 3),
+        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        name="a",
+    )
+    chunked_b = pd.Series(
+        pa.array([[0.0, 1.0, 2.0], [3.0, 4.0]] * 3),
+        dtype=pd.ArrowDtype(pa.list_(pa.float64())),
+        name="b",
+    )
+    list_df = pd.DataFrame({"a": chunked_a, "b": chunked_b}, index=[0, 1, 2, 3, 4, 5])
+    series = packer.pack_lists(list_df)
+    assert_series_equal(series.nest.get_list_series("a"), chunked_a)
+    assert_series_equal(series.nest.get_list_series("b"), chunked_b)
+
+
 def test_pack_seq_with_dfs_and_index():
     """Test pack_seq()."""
     dfs = [

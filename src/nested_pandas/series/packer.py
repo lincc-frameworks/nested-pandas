@@ -196,10 +196,34 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_flat : Pack a "flat" dataframe with repeated indexes.
     """
-    struct_array = pa.StructArray.from_arrays(
-        [df[column] for column in df.columns],
-        names=df.columns,
-    )
+    # When series is converted to pa.array it may be both Array and ChunkedArray
+    # We convert it to chunked for the sake of consistency
+    pa_arrays_maybe_chunked = {column: pa.array(df[column]) for column in df.columns}
+    pa_chunked_arrays = {
+        column: arr if isinstance(arr, pa.ChunkedArray) else pa.chunked_array([arr])
+        for column, arr in pa_arrays_maybe_chunked.items()
+    }
+
+    # If all chunk arrays have the same chunk lengths, we can build a chunked struct array with no
+    # data copying.
+    chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
+    if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
+        chunks = []
+        numpy_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
+        for i in range(numpy_chunks):
+            chunks.append(
+                pa.StructArray.from_arrays(
+                    [arr.chunk(i) for arr in pa_chunked_arrays.values()],
+                    names=pa_chunked_arrays.keys(),
+                )
+            )
+        struct_array = pa.chunked_array(chunks)
+    else:  # "flatten" the chunked arrays
+        struct_array = pa.StructArray.from_arrays(
+            [arr.combine_chunks() for arr in pa_chunked_arrays.values()],
+            names=pa_chunked_arrays.keys(),
+        )
+
     ext_array = NestedExtensionArray(struct_array, validate=validate)
     return pd.Series(
         ext_array,
