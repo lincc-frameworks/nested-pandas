@@ -206,11 +206,11 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
 
     # If all chunk arrays have the same chunk lengths, we can build a chunked struct array with no
     # data copying.
-    chunk_lengths = np.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
-    if np.all(chunk_lengths == chunk_lengths[0]):
-        n_chunks = chunk_lengths.shape[1]
+    chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
+    if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
         chunks = []
-        for i in range(n_chunks):
+        numpy_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
+        for i in range(numpy_chunks):
             chunks.append(
                 pa.StructArray.from_arrays(
                     [arr.chunk(i) for arr in pa_chunked_arrays.values()],
