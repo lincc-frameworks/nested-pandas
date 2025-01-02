@@ -2,6 +2,7 @@
 [project]
 name = "nested-pandas"
 license = {file = "LICENSE"}
+description = "An extension of pandas for efficient representation of nested associated datasets."
 readme = "README.md"
 authors = [
     { name = "LINCC Frameworks", email = "brantd@uw.edu" }
