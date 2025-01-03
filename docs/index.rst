@@ -19,15 +19,10 @@ is used internally to aid in scalability and performance.
   :align: center
   :alt: Example NestedFrame
 
-<<<<<<< before updating
 Nested-Pandas is motivated by time-domain astronomy use cases, where we see
 typically two levels of information, information about astronomical objects and
 then an associated set of `N` measurements of those objects. Nested-Pandas offers
 a performant and memory-efficient package for working with these types of datasets. 
-=======
-   >> conda create env -n <env_name> python=3.11
-   >> conda activate <env_name>
->>>>>>> after updating
 
 Core advantages being:
 
