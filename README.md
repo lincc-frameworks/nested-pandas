@@ -21,13 +21,13 @@ is used internally to aid in scalability and performance.
 Nested-Pandas allows data like this:
 
 <p align="center">
-    <img src="./intro_images/pandas_dfs.png" alt="pandas dataframes" width="400"/>
+    <img src="./docs/intro_images/pandas_dfs.png" alt="pandas dataframes" width="400"/>
 </p>
 
 To instead be represented like this:
 
 <p align="center">
-    <img src="./intro_images/nestedframe.png" alt="nestedframe" width="400"/>
+    <img src="./docs/intro_images/nestedframe.png" alt="nestedframe" width="400"/>
 </p>
 
 Where the nested data is represented as nested dataframes:
@@ -38,7 +38,7 @@ Where the nested data is represented as nested dataframes:
 ```
 
 <p align="center">
-    <img src="./intro_images/loc_into_nested.png" alt="sub-dataframe" width="225"/>
+    <img src="./docs/intro_images/loc_into_nested.png" alt="sub-dataframe" width="225"/>
 </p>
 
 Allowing powerful and straightforward operations, like:
@@ -50,7 +50,7 @@ Allowing powerful and straightforward operations, like:
 ```
 
 <p align="center">
-    <img src="./intro_images/reduce.png" alt="using reduce" width="150"/>
+    <img src="./docs/intro_images/reduce.png" alt="using reduce" width="150"/>
 </p>
 
 Nested-Pandas is motivated by time-domain astronomy use cases, where we see
