@@ -524,6 +524,30 @@ def test_view_sorted_series_as_list_array_raises_when_not_sorted():
         packer.view_sorted_series_as_list_array(series)
 
 
+def test_view_sorted_series_as_list_array_chunked_input():
+    """Issue #189
+
+    https://github.com/lincc-frameworks/nested-pandas/issues/189
+    """
+    series = pd.Series(
+        pa.chunked_array([pa.array([0, 1, 2]), pa.array([None, 4])]),
+        name="a",
+        index=np.arange(5),
+        dtype=pd.ArrowDtype(pa.int64()),
+    )
+    offset = np.array([0, 2, 4, 5])
+    unique_index = ["x", "y", "z"]
+    desired = pd.Series(
+        pa.array([[0, 1], [2, None], [4]]),
+        index=unique_index,
+        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        name="a",
+    )
+
+    actual = packer.view_sorted_series_as_list_array(series, offset, unique_index)
+    assert_series_equal(actual, desired)
+
+
 @pytest.mark.parametrize(
     "index,offsets",
     [
