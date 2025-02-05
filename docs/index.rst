@@ -1,3 +1,4 @@
+
 .. nested_pandas documentation main file.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
@@ -13,10 +14,44 @@ tooling and support for nested dataframes packed into values of top-level
 dataframe columns. `Pyarrow <https://arrow.apache.org/docs/python/index.html>`_ 
 is used internally to aid in scalability and performance.
 
-.. image:: ../nestedframe.png
-  :width: 600
+Nested-Pandas allows data like this:
+
+.. image:: ./intro_images/pandas_dfs.png
+  :width: 400
   :align: center
-  :alt: Example NestedFrame
+  :alt: pandas dataframes
+
+To instead be represented like this:
+
+.. image:: ./intro_images/nestedframe.png
+  :width: 400
+  :align: center
+  :alt: pandas dataframes
+
+Where the nested data is represented as nested dataframes:
+
+.. code-block:: python
+
+   # Each row of "object_nf" now has it's own sub-dataframe of matched rows from "source_df"
+   object_nf.loc[0]["nested_sources"]
+
+.. image:: ./intro_images/loc_into_nested.png
+  :width: 225
+  :align: center
+  :alt: pandas dataframes
+
+Allowing powerful and straightforward operations, like:
+
+.. code-block:: python
+
+   # Compute the mean flux for each row of "object_nf"
+   import numpy as np
+   object_nf.reduce(np.mean, "nested_sources.flux")
+
+.. image:: ./intro_images/reduce.png
+  :width: 150
+  :align: center
+  :alt: pandas dataframes
 
 Nested-Pandas is motivated by time-domain astronomy use cases, where we see
 typically two levels of information, information about astronomical objects and

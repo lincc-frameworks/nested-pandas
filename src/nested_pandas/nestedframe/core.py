@@ -1,7 +1,9 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import ast
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -9,11 +11,222 @@ import pyarrow as pa
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
+from pandas.core.computation import ops
+from pandas.core.computation.eval import Expr, ensure_scope
+from pandas.core.computation.expr import PARSERS, PandasExprVisitor
+from pandas.core.computation.parsing import clean_column_name
 
-from nested_pandas.series import packer
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
-from .utils import _ensure_spacing
+# Used to identify backtick-protected names in the expressions
+# used in NestedFrame.eval() and NestedFrame.query().
+_backtick_protected_names = re.compile(r"`[^`]+`", re.MULTILINE)
+
+
+class NestedPandasExprVisitor(PandasExprVisitor):
+    """
+    Custom expression visitor for NestedFrame evaluations, which may assign to
+    nested columns.
+    """
+
+    def visit_Assign(self, node, **kwargs):  # noqa: N802
+        """
+        Visit an assignment node, which may assign to a nested column.
+        """
+        if not isinstance(node.targets[0], ast.Attribute):
+            # If the target is not an attribute, then it's a simple assignment as usual
+            return super().visit_Assign(node)
+        target = node.targets[0]
+        if not isinstance(target.value, ast.Name):
+            raise ValueError("Assignments to nested columns must be of the form `nested.col = ...`")
+        # target.value.id will be the name of the nest, target.attr is the column name.
+        # Describing the proper target for the assigner is enough for both overwrite and
+        # creation of new columns.  The assigner will be a string like "nested.col".
+        # This works both for the creation of new nest members and new nests.
+        self.assigner = f"{target.value.id}.{target.attr}"
+        # Continue visiting.
+        return self.visit(node.value, **kwargs)
+
+
+PARSERS["nested-pandas"] = NestedPandasExprVisitor
+
+
+class _SeriesFromNest(pd.Series):
+    """
+    Series that were unpacked from a nest.
+    """
+
+    _metadata = ["nest_name", "flat_nest"]
+
+    @property
+    def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return _SeriesFromNest
+
+    @property
+    def _constructor_expanddim(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return NestedFrame
+
+    # https://pandas.pydata.org/docs/development/extending.html#arithmetic-with-3rd-party-types
+    # The __pandas_priority__ of Series is 3000, so give _SeriesFromNest a
+    # higher priority, so that binary operations involving this class and
+    # Series produce instances of this class, preserving the type and origin.
+    __pandas_priority__ = 3500
+
+
+class _NestResolver(dict):
+    """
+    Used by NestedFrame.eval to resolve the names of nests at the top level.
+    While the resolver is normally a dictionary, with values that are fixed
+    upon entering evaluation, this object needs to be dynamic so that it can
+    support multi-line expressions, where new nests may be created during
+    evaluation.
+    """
+
+    def __init__(self, outer: NestedFrame):
+        self._outer = outer
+        super().__init__()
+        # Pre-load the field resolvers for all columns which are known at present.
+        for column in outer.nested_columns:
+            self._initialize_column_resolver(column, outer)
+
+    def _initialize_column_resolver(self, column: str, outer: NestedFrame):
+        """
+        Initialize a resolver for the given nested column, and also an alias
+        for it, in the case of column names that have spaces or are otherwise
+        not identifier-like.
+        """
+        super().__setitem__(column, _NestedFieldResolver(column, outer))
+        clean_id = clean_column_name(column)
+        # And once more for the cleaned name, if it's different.
+        # This allows us to capture references to it from the Pandas evaluator.
+        if clean_id != column:
+            super().__setitem__(clean_id, _NestedFieldResolver(column, outer))
+
+    def __contains__(self, item):
+        top_nest = item if "." not in item else item.split(".")[0].strip()
+        return top_nest in self._outer.nested_columns
+
+    def __getitem__(self, item):
+        top_nest = item if "." not in item else item.split(".")[0].strip()
+        if not super().__contains__(top_nest):
+            if top_nest not in self._outer.nested_columns:
+                raise KeyError(f"Unknown nest {top_nest}")
+            self._initialize_column_resolver(top_nest, self._outer)
+        return super().__getitem__(top_nest)
+
+    def __setitem__(self, item, _):
+        # Called to update the resolver with intermediate values.
+        # The important point is to intercept the call so that the evaluator
+        # does not create any new resolvers on the fly.  We do NOT want to
+        # store the given value, since the resolver does lazy-loading.
+        # What we DO want to do, however, is to invalidate the cache for
+        # any field resolver for a given nest that is receiving an assignment.
+        # Since the resolvers are created as-needed in __getitem__, all we need
+        # to do is delete them from the local cache when this pattern is detected.
+        if "." in item:
+            top_nest = item.split(".")[0].strip()
+            if top_nest in self._outer.nested_columns and super().__contains__(top_nest):
+                del self[top_nest]  # force re-creation in __setitem__
+
+
+class _NestedFieldResolver:
+    """
+    Used by NestedFrame.eval to resolve the names of fields in nested columns when
+    encountered in expressions, interpreting __getattr__ in terms of a
+    specific nest.
+    """
+
+    def __init__(self, nest_name: str, outer: NestedFrame):
+        self._nest_name = nest_name
+        # Save the outer frame with an eye toward repacking.
+        self._outer = outer
+        # Flattened only once for every access of this particular nest
+        # within the expression.
+        self._flat_nest = outer[nest_name].nest.to_flat()
+        # Save aliases to any columns that are not identifier-like.
+        # If our given frame has aliases for identifiers, use these instead
+        # of generating our own.
+        self._aliases = getattr(outer, "_aliases", None)
+        if self._aliases is None:
+            self._aliases = {}
+            for column in self._flat_nest.columns:
+                clean_id = clean_column_name(column)
+                if clean_id != column:
+                    self._aliases[clean_id] = column
+
+    def __getattr__(self, item_name: str):
+        if self._aliases:
+            item_name = self._aliases.get(item_name, item_name)
+        if item_name in self._flat_nest:
+            result = _SeriesFromNest(self._flat_nest[item_name])
+            # Assigning these properties directly in order to avoid any complication
+            # or interference with the inherited pd.Series constructor.
+            result.nest_name = self._nest_name
+            result.flat_nest = self._flat_nest
+            return result
+        raise AttributeError(f"No attribute {item_name}")
+
+
+def _subexprs_by_nest(parents: list, node) -> dict[str, list]:
+    """
+    Given an expression which contains references to both base and nested
+    columns, return a dictionary of the sub-expressions that should be
+    evaluated independently, keyed by nesting context.
+
+    The key of the dictionary is the name of the nested column, and will
+    be a blank string in the case of base columns.  The value is a list
+    of the parent nodes that lead to sub-expressions that can be evaluated
+    successfully.
+
+    While this is not in use today for automatically splitting expressions,
+    it can be used to detect whether an expression is suitably structured
+    for evaluation: the returned dictionary should have a single key.
+    """
+    if isinstance(node, ops.Term) and not isinstance(node, ops.Constant):
+        if isinstance(node.value, _SeriesFromNest):
+            return {node.value.nest_name: parents}
+        return {getattr(node, "upper_name", ""): parents}
+    if not isinstance(node, ops.Op):
+        return {}
+    sources = [getattr(node, "lhs", None), getattr(node, "rhs", None)]
+    result: dict[str, list] = {}
+    for source in sources:
+        child = _subexprs_by_nest(parents, source)
+        for k, v in child.items():
+            result.setdefault(k, []).append(v)
+    # After a complete traversal across sources, check for any necessary splits.
+    # If it's homogenous, move the split-node up the tree.
+    if len(result) == 1:
+        # Let the record of each parent node drift up the tree,
+        # and merge the subtrees into a single node, since by definition,
+        # this node is homogeneous over all of its children, and can
+        # be evaluated in a single step.
+        result = {k: [node] for k in result}
+    # If the result is either empty or has more than one key, leave the result
+    # alone.  Each key represents a different nest (with a blank string for the base),
+    # and the value is the highest point in the expression tree where the expression
+    # was still within a single nest.
+    return result
+
+
+def _identify_aliases(expr: str) -> tuple[str, dict[str, str]]:
+    """
+    Given an expression string, identify backtick-quoted names
+    and replace them with cleaned names, returning the cleaned
+    expression and a dictionary of aliases, where the keys are
+    clean aliases to the original names.
+    """
+    aliases = {}
+
+    def sub_and_alias(match):
+        original = match.group(0)[1:-1]  # remove backticks
+        alias = clean_column_name(original)
+        if alias != original:
+            aliases[alias] = original
+        return alias
+
+    return _backtick_protected_names.sub(sub_and_alias, expr), aliases
 
 
 class NestedFrame(pd.DataFrame):
@@ -22,8 +235,17 @@ class NestedFrame(pd.DataFrame):
     See https://pandas.pydata.org/docs/development/extending.html#subclassing-pandas-data-structures
     """
 
-    # normal properties
-    _metadata = ["added_property"]
+    # https://pandas.pydata.org/docs/development/extending.html#arithmetic-with-3rd-party-types
+    # The __pandas_priority__ of DataFrame is 4000, so give NestedFrame a
+    # higher priority, so that binary operations involving this class and
+    # Series produce instances of this class, preserving the type and origin.
+    __pandas_priority__ = 4500
+
+    # The "_aliases" attribute is usually None or not even present, but when it is present,
+    # it indicates that an evaluation is in progress, and that columns and fields with names
+    # that are not identifier-like have been aliases to cleaned names, and this attribute
+    # contains those aliases, keyed by the cleaned name.
+    _metadata = ["_aliases"]
 
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -38,7 +260,7 @@ class NestedFrame(pd.DataFrame):
         """returns a dictionary of columns for each base/nested dataframe"""
         all_columns = {"base": self.columns}
         for column in self.columns:
-            if isinstance(self[column].dtype, NestedDtype):
+            if isinstance(self.dtypes[column], NestedDtype):
                 nest_cols = self[column].nest.fields
                 all_columns[column] = nest_cols
         return all_columns
@@ -48,7 +270,7 @@ class NestedFrame(pd.DataFrame):
         """retrieves the base column names for all nested dataframes"""
         nest_cols = []
         for column in self.columns:
-            if isinstance(self[column].dtype, NestedDtype):
+            if isinstance(self.dtypes[column], NestedDtype):
                 nest_cols.append(column)
         return nest_cols
 
@@ -64,21 +286,101 @@ class NestedFrame(pd.DataFrame):
         repr = super().pipe(my_style, self.nested_columns).to_html(max_rows=max_rows)
         return repr
 
-    def _is_known_hierarchical_column(self, colname) -> bool:
+    def _parse_hierarchical_components(self, delimited_path: str, delimiter: str = ".") -> list[str]:
+        """
+        Given a string that may be a delimited path, parse it into its components,
+        respecting backticks that are used to protect component names that may contain the delimiter.
+        """
+        aliases = getattr(self, "_aliases", None)
+        if aliases is None:
+            delimited_path, aliases = _identify_aliases(delimited_path)
+        return [aliases.get(x, x) for x in delimited_path.split(delimiter)]
+
+    def _is_known_hierarchical_column(self, components: list[str] | str) -> bool:
         """Determine whether a string is a known hierarchical column name"""
-        if "." in colname:
-            left, right = colname.split(".")
-            if left in self.nested_columns:
-                return right in self.all_columns[left]
+        if isinstance(components, str):
+            components = self._parse_hierarchical_components(components)
+        if len(components) < 2:
             return False
+        base_name = components[0]
+        if base_name in self.nested_columns:
+            nested_name = ".".join(components[1:])
+            return nested_name in self.all_columns[base_name]
         return False
 
-    def _is_known_column(self, colname) -> bool:
-        """Determine whether a string is a known column name"""
-        return colname in self.columns or self._is_known_hierarchical_column(colname)
+    def _is_known_column(self, components: list[str] | str) -> bool:
+        """Determine whether a list of field components describes a known column name"""
+        if isinstance(components, str):
+            components = self._parse_hierarchical_components(components)
+        if ".".join(components) in self.columns:
+            return True
+        return self._is_known_hierarchical_column(components)
+
+    def __getitem__(self, item):
+        """Adds custom __getitem__ behavior for nested columns"""
+
+        if not isinstance(item, str):
+            return super().__getitem__(item)
+
+        # Preempt the nested check if the item is a base column, with or without
+        # dots and backticks.
+        if item in self.columns:
+            return super().__getitem__(item)
+        components = self._parse_hierarchical_components(item)
+        # One more check on the entirety of the item name, in case backticks were used
+        # (even if they weren't necessary).
+        cleaned_item = ".".join(components)
+        if cleaned_item in self.columns:
+            return super().__getitem__(cleaned_item)
+
+        # If a nested column name is passed, return a flat series for that column
+        # flat series is chosen over list series for utility
+        # e.g. native ability to do something like ndf["nested.a"] + 3
+        if self._is_known_hierarchical_column(components):
+            nested = components[0]
+            field = ".".join(components[1:])
+            return self[nested].nest.get_flat_series(field)
+        else:
+            raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
+
+    def __setitem__(self, key, value):
+        """Adds custom __setitem__ behavior for nested columns"""
+        components = self._parse_hierarchical_components(key)
+        # Replacing or adding columns to a nested structure
+        # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
+        # Or ndf["nested.base_t"] = ndf["nested.t"] - 5
+        # Performance note: This requires building a new nested structure
+        # TODO: Support assignment of a new column to an existing nested col from a list series
+        if self._is_known_hierarchical_column(components) or (
+            len(components) > 1 and components[0] in self.nested_columns
+        ):
+            if len(components) != 2:
+                raise ValueError(f"Only one level of nesting is supported; given {key}")
+            nested, field = components
+            new_nested_series = self[nested].nest.with_flat_field(field, value)
+            return super().__setitem__(nested, new_nested_series)
+
+        # Adding a new nested structure from a column
+        # Allows statements like ndf["new_nested.t"] = ndf["nested.t"] - 5
+        if len(components) > 1:
+            new_nested, field = components
+            if isinstance(value, pd.Series):
+                value.name = field
+                value = value.to_frame()
+            new_df = self.add_nested(value, name=new_nested)
+            self._update_inplace(new_df)
+            return None
+
+        return super().__setitem__(key, value)
 
     def add_nested(
-        self, obj, name: str, *, dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None
+        self,
+        obj,
+        name: str,
+        *,
+        how: str = "left",
+        on: None | str | list[str] = None,
+        dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Packs input object to a nested column and adds it to the NestedFrame
 
@@ -98,6 +400,18 @@ class NestedFrame(pd.DataFrame):
             missing values.
         name : str
             The name of the nested column to be added to the NestedFrame.
+        how : {'left', 'right', 'outer', 'inner'}, default: 'left'
+            How to handle the operation of the two objects:
+
+            - left: use calling frame's index.
+            - right: use the calling frame's index and order but drop values
+              not in the other frame's index.
+            - outer: form union of calling frame's index with other frame's
+              index, and sort it lexicographically.
+            - inner: form intersection of calling frame's index with other
+              frame's index, preserving the order of the calling index.
+        on : str, default: None
+            A column in the list
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -108,45 +422,218 @@ class NestedFrame(pd.DataFrame):
         NestedFrame
             A new NestedFrame with the added nested column.
         """
+        if on is not None and not isinstance(on, str):
+            raise ValueError("Currently we only support a single column for 'on'")
         # Add sources to objects
-        packed = packer.pack(obj, name=name, dtype=dtype)
-        label = packed.name
+        packed = pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()
-        new_df[label] = packed
-        return new_df
+        res = new_df.join(packed, how=how, on=on)
+        return res
 
-    def _split_query(self, expr) -> dict:
-        """Splits a pandas query into multiple subqueries for nested and base layers"""
-        # Ensure query has needed spacing for upcoming split
-        expr = _ensure_spacing(expr)
-        nest_exprs = {col: [] for col in self.nested_columns + ["base"]}  # type: dict
-        split_expr = expr.split(" ")
+    @classmethod
+    def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
+        """Creates a NestedFrame with base and nested columns from a flat
+        dataframe.
 
-        i = 0
-        current_focus = "base"
-        while i < len(split_expr):
-            expr_slice = split_expr[i].strip("()")
-            # Check if it's a nested column
-            if self._is_known_hierarchical_column(expr_slice):
-                nested, colname = split_expr[i].split(".")
-                current_focus = nested.strip("()")
-                # account for parentheses
-                j = 0
-                while j < len(nested):
-                    if nested[j] == "(":
-                        nest_exprs[current_focus].append("(")
-                    j += 1
-                nest_exprs[current_focus].append(colname)
-            # or if it's a top-level column
-            elif expr_slice in self.columns:
-                current_focus = "base"
-                nest_exprs[current_focus].append(split_expr[i])
+        Parameters
+        ----------
+        df: pd.DataFrame or NestedFrame
+            A flat dataframe.
+        base_columns: list-like
+            The columns that should be used as base (flat) columns in the
+            output dataframe.
+        nested_columns: list-like, or None
+            The columns that should be packed into a nested column. All columns
+            in the list will attempt to be packed into a single nested column
+            with the name provided in `nested_name`. If None, is defined as all
+            columns not in `base_columns`.
+        on: str or None
+            The name of a column to use as the new index. Typically, the index
+            should have a unique value per row for base columns, and should
+            repeat for nested columns. For example, a dataframe with two
+            columns; a=[1,1,1,2,2,2] and b=[5,10,15,20,25,30] would want an
+            index like [0,0,0,1,1,1] if a is chosen as a base column. If not
+            provided the current index will be used.
+        name:
+            The name of the output column the `nested_columns` are packed into.
+
+        Returns
+        -------
+        NestedFrame
+            A NestedFrame with the specified nesting structure.
+
+        Examples
+        --------
+
+        >>> nf = NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4],
+        ...                   "c":[1,2,3,4,5], "d":[2,4,6,8,10]},
+        ...                   index=[0,0,0,1,1])
+
+        >>> NestedFrame.from_flat(nf, base_columns=["a","b"])
+        """
+
+        # Resolve new index
+        if on is not None:
+            # if a base column is chosen remove it
+            if on in base_columns:
+                base_columns = [col for col in base_columns if col != on]
+            df = df.set_index(on)
+
+        # drop duplicates on index
+        out_df = df[base_columns][~df.index.duplicated(keep="first")]
+
+        # Convert df to NestedFrame if needed
+        if not isinstance(out_df, NestedFrame):
+            out_df = NestedFrame(out_df)
+
+        # add nested
+        if nested_columns is None:
+            nested_columns = [col for col in df.columns if col not in base_columns]
+        return out_df.add_nested(df[nested_columns], name=name)
+
+    @classmethod
+    def from_lists(cls, df, base_columns=None, list_columns=None, name="nested"):
+        """Creates a NestedFrame with base and nested columns from a flat
+        dataframe.
+
+        Parameters
+        ----------
+        df: pd.DataFrame or NestedFrame
+            A dataframe with list columns.
+        base_columns: list-like, or None
+            Any columns that have non-list values in the input df. These will
+            simply be kept as identical columns in the result
+        list_columns: list-like, or None
+            The list-value columns that should be packed into a nested column.
+            All columns in the list will attempt to be packed into a single
+            nested column with the name provided in `nested_name`. If None, is
+            defined as all columns not in `base_columns`.
+        name:
+            The name of the output column the `nested_columns` are packed into.
+
+        Returns
+        -------
+        NestedFrame
+            A NestedFrame with the specified nesting structure.
+
+         Examples
+        --------
+
+        >>> nf = NestedFrame({"c":[1,2,3], "d":[2,4,6],
+        ...                   "e":[[1,2,3], [4,5,6], [7,8,9]]},
+        ...                  index=[0,1,2])
+
+
+        >>> NestedFrame.from_lists(nf, base_columns=["c","d"])
+        """
+
+        # Resolve base and list columns
+        if base_columns is None:
+            if list_columns is None:
+                # with no inputs, assume all columns are list-valued
+                list_columns = df.columns
             else:
-                nest_exprs[current_focus].append(split_expr[i])
-            i += 1
-        return {expr: " ".join(nest_exprs[expr]) for expr in nest_exprs if len(nest_exprs[expr]) > 0}
+                # if list_columns are defined, assume everything else is base
+                base_columns = [col for col in df.columns if col not in list_columns]
+        else:
+            if list_columns is None:
+                # with defined base_columns, assume everything else is list
+                list_columns = [col for col in df.columns if col not in base_columns]
 
-    def query(self, expr) -> Self:  # type: ignore[name-defined] # noqa: F821
+        if len(list_columns) == 0:
+            raise ValueError("No columns were assigned as list columns.")
+
+        # Pack list columns into a nested column
+        packed_df = pack_lists(df[list_columns])
+        packed_df.name = name
+
+        # join the nested column to the base_column df
+        if base_columns is not None:
+            return df[base_columns].join(packed_df)
+        # or just return the packed_df as a nestedframe if no base cols
+        else:
+            return NestedFrame(packed_df.to_frame())
+
+    def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
+        """
+
+        Evaluate a string describing operations on NestedFrame columns.
+
+        Operates on columns only, not specific rows or elements.  This allows
+        `eval` to run arbitrary code, which can make you vulnerable to code
+        injection if you pass user input to this function.
+
+        Works the same way as `pd.DataFrame.eval`, except that this method
+        will also automatically unpack nested columns into NestedSeries,
+        and the resulting expression will have the dimensions of the unpacked
+        series.
+
+        Parameters
+        ----------
+        expr : str
+            The expression string to evaluate.
+        inplace : bool, default False
+            If the expression contains an assignment, whether to perform the
+            operation inplace and mutate the existing NestedFrame. Otherwise,
+            a new NestedFrame is returned.
+        **kwargs
+            See the documentation for :func:`eval` for complete details
+            on the keyword arguments accepted by
+            :meth:`~pandas.NestedFrame.eval`.
+
+        Returns
+        -------
+        ndarray, scalar, pandas object, nested-pandas object, or None
+            The result of the evaluation or None if ``inplace=True``.
+
+        See Also
+        --------
+        https://pandas.pydata.org/docs/reference/api/pandas.eval.html
+        """
+        _, aliases = _identify_aliases(expr)
+        self._aliases: dict[str, str] | None = aliases
+
+        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
+        kwargs["inplace"] = inplace
+        kwargs["parser"] = "nested-pandas"
+        answer = super().eval(expr, **kwargs)
+        self._aliases = None
+        return answer
+
+    def extract_nest_names(
+        self,
+        expr: str,
+        local_dict=None,
+        global_dict=None,
+        resolvers=(),
+        level: int = 0,
+        target=None,
+        **kwargs,
+    ) -> set[str]:
+        """
+        Given a string expression, parse it and visit the resulting expression tree,
+        surfacing the nesting types.  The purpose is to identify expressions that attempt
+        to mix base and nested columns, or columns from two different nests.
+        """
+        index_resolvers = self._get_index_resolvers()
+        column_resolvers = self._get_cleaned_column_resolvers()
+        resolvers = resolvers + (_NestResolver(self), column_resolvers, index_resolvers)
+        # Parser needs to be the "nested-pandas" parser.
+        # We also need the same variable context that eval() will have, so that
+        # backtick-quoted names are substituted as expected.
+        env = ensure_scope(
+            level + 1,
+            global_dict=global_dict,
+            local_dict=local_dict,
+            resolvers=resolvers,
+            target=target,
+        )
+        parsed_expr = Expr(expr, parser="nested-pandas", env=env)
+        expr_tree = parsed_expr.terms
+        separable = _subexprs_by_nest([], expr_tree)
+        return set(separable.keys())
+
+    def query(self, expr: str, *, inplace: bool = False, **kwargs) -> NestedFrame | None:
         """
         Query the columns of a NestedFrame with a boolean expression. Specified
         queries can target nested columns in addition to the typical column set
@@ -174,10 +661,16 @@ class NestedFrame(pd.DataFrame):
             For example, if one of your columns is called ``a a`` and you want
             to sum it with ``b``, your query should be ```a a` + b``.
 
+        inplace : bool
+            Whether to modify the DataFrame rather than creating a new one.
+        **kwargs
+            See the documentation for :func:`eval` for complete details
+            on the keyword arguments accepted by :meth:`DataFrame.query`.
+
         Returns
         -------
-        DataFrame
-            DataFrame resulting from the provided query expression.
+        NestedFrame
+            NestedFrame resulting from the provided query expression.
 
         Notes
         -----
@@ -189,31 +682,56 @@ class NestedFrame(pd.DataFrame):
 
         >>> df.query("mynested.a > 2")
         """
-
-        # Rebuild queries for each specified nested/base layer
-        exprs_to_use = self._split_query(expr)
-
-        # For now (simplicity), limit query to only operating on one layer
-        if len(exprs_to_use.keys()) != 1:
+        if not isinstance(expr, str):
+            msg = f"expr must be a string to be evaluated, {type(expr)} given"
+            raise ValueError(msg)
+        kwargs["level"] = kwargs.pop("level", 0) + 1
+        kwargs["target"] = None
+        # At present, the query expression must be either entirely within a
+        # single nest, or have nothing but base columns.  Mixed structures are not
+        # supported, so preflight the expression.
+        nest_names = self.extract_nest_names(expr, **kwargs)
+        if len(nest_names) > 1:
             raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
+        result = self.eval(expr, **kwargs)
+        # If the result is a _SeriesFromNest, then the evaluation has caused unpacking,
+        # which means that a nested attribute was referenced.  Apply this result
+        # to the nest and repack.  Otherwise, apply it to this instance as usual,
+        # since it operated on the base attributes.
+        if isinstance(result, _SeriesFromNest):
+            nest_name, flat_nest = result.nest_name, result.flat_nest
+            # Reset index to "ordinal" like [0, 0, 0, 1, 1, 2, 2, 2]
+            list_index = self[nest_name].array.get_list_index()
+            flat_nest = flat_nest.set_index(list_index)
+            query_result = result.set_axis(list_index)
+            # Selecting flat values matching the query result
+            new_flat_nest = flat_nest[query_result]
+            new_df = self._set_filtered_flat_df(nest_name, new_flat_nest)
+        else:
+            new_df = self.loc[result]
 
-        # Send queries to layers
-        # We'll only execute 1 per the Error above, but the loop will be useful
-        # for when/if we allow multi-layer queries
-        result = self.copy()
-        for expr in exprs_to_use:
-            if expr == "base":
-                result = super().query(exprs_to_use["base"], inplace=False)
-            else:
-                # TODO: does not work with queries that empty the dataframe
-                result[expr] = result[expr].nest.query_flat(exprs_to_use[expr])
-        return result
+        if inplace:
+            self._update_inplace(new_df)
+            return None
+        else:
+            return new_df
+
+    def _set_filtered_flat_df(self, nest_name, flat_df):
+        """Set a filtered flat dataframe for a nested column
+
+        Here we assume that flat_df has filtered "ordinal" index,
+        e.g. flat_df.index == [0, 2, 2, 2], while self.index
+        is arbitrary (e.g. ["a", "b", "a"]),
+        and self[nest_name].array.list_index is [0, 0, 1, 1, 1, 2, 2, 2, 2].
+        """
+        new_df = self.reset_index(drop=True)
+        new_df[nest_name] = pack_sorted_df_into_struct(flat_df, name=nest_name)
+        return new_df.set_index(self.index)
 
     def _resolve_dropna_target(self, on_nested, subset):
         """resolves the target layer for a given set of dropna kwargs"""
 
         nested_cols = self.nested_columns
-        columns = self.columns
 
         # first check the subset kwarg input
         subset_target = []
@@ -222,13 +740,15 @@ class NestedFrame(pd.DataFrame):
                 subset = [subset]
 
             for col in subset:
-                col = col.split(".")[0]
-                if col in nested_cols:
-                    subset_target.append(col)
-                elif col in columns:
+                # Without a ".", always assume base layer
+                if "." not in col:
                     subset_target.append("base")
                 else:
-                    raise ValueError(f"Column name {col} not found in any base or nested columns")
+                    layer, col = col.split(".")
+                    if layer in nested_cols:
+                        subset_target.append(layer)
+                    else:
+                        raise ValueError(f"layer '{layer}' not found in the base columns")
 
             # Check for 1 target
             subset_target = np.unique(subset_target)
@@ -331,34 +851,32 @@ class NestedFrame(pd.DataFrame):
             return super().dropna(
                 axis=axis, how=how, thresh=thresh, subset=subset, inplace=inplace, ignore_index=ignore_index
             )
+        if ignore_index:
+            raise ValueError("ignore_index is not supported for nested columns")
         if subset is not None:
             subset = [col.split(".")[-1] for col in subset]
+        target_flat = self[target].nest.to_flat()
+        target_flat = target_flat.set_index(self[target].array.get_list_index())
         if inplace:
-            target_flat = self[target].nest.to_flat()
             target_flat.dropna(
                 axis=axis,
                 how=how,
                 thresh=thresh,
                 subset=subset,
-                inplace=inplace,
-                ignore_index=ignore_index,
+                inplace=True,
             )
-            self[target] = packer.pack_flat(target_flat)
-            return self
-        # Or if not inplace
-        new_df = self.copy()
-        new_df[target] = packer.pack_flat(
-            new_df[target]
-            .nest.to_flat()
-            .dropna(
+        else:
+            target_flat = target_flat.dropna(
                 axis=axis,
                 how=how,
                 thresh=thresh,
                 subset=subset,
-                inplace=inplace,
-                ignore_index=ignore_index,
+                inplace=False,
             )
-        )
+        new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
+        if inplace:
+            self._update_inplace(new_df)
+            return None
         return new_df
 
     def reduce(self, func, *args, **kwargs) -> NestedFrame:  # type: ignore[override]
@@ -366,14 +884,15 @@ class NestedFrame(pd.DataFrame):
         Takes a function and applies it to each top-level row of the NestedFrame.
 
         The user may specify which columns the function is applied to, with
-        columns from the 'base' layer being passsed to the function as
+        columns from the 'base' layer being passed to the function as
         scalars and columns from the nested layers being passed as numpy arrays.
 
         Parameters
         ----------
         func : callable
             Function to apply to each nested dataframe. The first arguments to `func` should be which
-            columns to apply the function to.
+            columns to apply the function to. See the Notes for recommendations
+            on writing func outputs.
         args : positional arguments
             Positional arguments to pass to the function, the first *args should be the names of the
             columns to apply the function to.
@@ -387,33 +906,30 @@ class NestedFrame(pd.DataFrame):
 
         Notes
         -----
-        The recommend return value of func should be a `pd.Series` where the indices are the names of the
-        output columns in the dataframe returned by `reduce`. Note however that in cases where func
-        returns a single value there may be a performance benefit to returning the scalar value
-        rather than a `pd.Series`.
+        By default, `reduce` will produce a `NestedFrame` with enumerated
+        column names for each returned value of the function. For more useful
+        naming, it's recommended to have `func` return a dictionary where each
+        key is an output column of the dataframe returned by `reduce`.
 
         Example User Function:
-        ```
-        import pandas as pd
 
-        def my_sum(col1, col2):
-            return pd.Series(
-                [sum(col1), sum(col2)],
-                index=["sum_col1", "sum_col2"],
-            )
-
-        ```
+        >>> def my_sum(col1, col2):
+        >>>    '''reduce will return a NestedFrame with two columns'''
+        >>>    return {"sum_col1": sum(col1), "sum_col2": sum(col2)}
 
         """
         # Parse through the initial args to determine the columns to apply the function to
         requested_columns = []
         for arg in args:
-            if not isinstance(arg, str) or not self._is_known_column(arg):
-                # We've reached an argument that is not a valid column, so we assume
-                # the remaining args are extra arguments to the function
+            # Stop when we reach an argument that is not a valid column, as we assume
+            # that the remaining args are extra arguments to the function
+            if not isinstance(arg, str):
                 break
-            layer = "base" if "." not in arg else arg.split(".")[0]
-            col = arg.split(".")[-1]
+            components = self._parse_hierarchical_components(arg)
+            if not self._is_known_column(components):
+                break
+            layer = "base" if len(components) < 2 else components[0]
+            col = components[-1]
             requested_columns.append((layer, col))
 
         # We require the first *args to be the columns to apply the function to

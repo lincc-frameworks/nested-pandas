@@ -1,3 +1,4 @@
+import nested_pandas as npd
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -487,6 +488,17 @@ def test_query_flat_empty_rows():
     assert_series_equal(filtered, desired)
 
 
+def test_query_flat_with_empty_result():
+    """Make sure the index is properly set for empty result cases"""
+    base = npd.NestedFrame({"a": []}, index=pd.Index([], dtype=np.float64))
+    nested = npd.NestedFrame({"b": []}, index=pd.Index([], dtype=np.float64))
+
+    ndf = base.add_nested(nested, "nested")
+
+    res = ndf.nested.nest.query_flat("b > 2")
+    assert res.index.dtype == np.float64
+
+
 @pytest.mark.parametrize(
     "df",
     [
@@ -526,6 +538,32 @@ def test_get_list_series():
             data=[np.array([1, 2, 3]), np.array([4, 5, 6])],
             dtype=pd.ArrowDtype(pa.list_(pa.int64())),
             index=[5, 7],
+            name="a",
+        ),
+    )
+
+
+def test_get_list_series_multiple_chunks():
+    """Test that .nest.get_list_series() works when underlying array is chunked"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            [np.array([1, 2, 3]), np.array([4, 5, 6])],
+            [np.array([6, 4, 2]), np.array([1, 2, 3])],
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 3)
+    series = pd.Series(chunked_array, dtype=NestedDtype(chunked_array.type), index=[5, 7, 9, 11, 13, 15])
+    assert series.array.num_chunks == 3
+
+    lists = series.nest.get_list_series("a")
+
+    assert_series_equal(
+        lists,
+        pd.Series(
+            data=[np.array([1, 2, 3]), np.array([4, 5, 6])] * 3,
+            dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+            index=[5, 7, 9, 11, 13, 15],
             name="a",
         ),
     )
@@ -572,6 +610,33 @@ def test___getitem___single_field():
             dtype=pd.ArrowDtype(pa.float64()),
             index=[0, 0, 0, 1, 1, 1],
             name="b",
+        ),
+    )
+
+
+def test___getitem___single_field_multiple_chunks():
+    """Reproduces issue 142
+
+    https://github.com/lincc-frameworks/nested-pandas/issues/142
+    """
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            [np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])],
+            [np.array([4.0, 5.0, 6.0]), np.array([3.0, 4.0, 5.0])],
+        ],
+        names=["a", "b"],
+    )
+    chunked_array = pa.chunked_array([struct_array] * 3)
+    series = pd.Series(chunked_array, dtype=NestedDtype(chunked_array.type), index=[0, 1, 2, 3, 4, 5])
+    assert series.array.num_chunks == 3
+
+    assert_series_equal(
+        series.nest["a"],
+        pd.Series(
+            np.array([1.0, 2.0, 3.0, 1.0, 2.0, 1.0] * 3),
+            dtype=pd.ArrowDtype(pa.float64()),
+            index=[0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5],
+            name="a",
         ),
     )
 
@@ -805,7 +870,7 @@ def test_to_flat_dropna():
     """
 
     flat = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, np.NaN, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        data={"c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
     nested = pack_flat(flat, name="nested")
@@ -916,3 +981,28 @@ def test_values():
     series = pack_seq([{"a": [1, 2, 3], "b": [3, 2, 1]}, {"a": [4, None], "b": [7, 8]}])
     for value in series.nest.values():
         assert_series_equal(value, series.nest[value.name])
+
+
+def test_get_list_index():
+    """Test that the get_list_index() method works."""
+    # First check that an empty NestedSeries returns an empty list index.
+    empty_struct_array = pa.StructArray.from_arrays(arrays=[], names=[])
+    empty_series = pd.Series(empty_struct_array, dtype=NestedDtype(empty_struct_array.type), index=[])
+    assert len(empty_series) == 0
+    assert len(empty_series.array.get_list_index()) == 0
+
+    # Create a NestedType series
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([0, 1, 2, 3]), np.array([4, 5, 6, 7])]),
+            pa.array([np.array([7, 6, 4, 2]), np.array([0, 1, 2, 3])]),
+            pa.array([np.array([8, 9, 1, 9]), np.array([0, 0, 2, 3])]),
+        ],
+        names=["a", "b", "c"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
+
+    # Validate the generation of a flat length ordinal array
+    list_index = series.array.get_list_index()
+    assert len(list_index) == series.nest.flat_length
+    assert np.equal(list_index, [0, 0, 0, 0, 1, 1, 1, 1]).all()

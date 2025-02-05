@@ -27,6 +27,7 @@ def pack(
     name: str | None = None,
     *,
     index=None,
+    on: None | str | list[str] = None,
     dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
 ) -> pd.Series:
     """Pack a "flat" dataframe or a sequence of dataframes into a "nested" series.
@@ -40,6 +41,8 @@ def pack(
     index : convertable to pd.Index, optional
         Index of the output series. If obj is a pd.DataFrame, it is always nested by the original index,
         and this value is used to override the index after the nesting.
+    on: str or list of str, optional
+        Column name(s) to join on. If None, the index is used.
     dtype : dtype or None
         NestedDtype of the output series, or other type to derive from. If None,
         the dtype is inferred from the first non-missing dataframe.
@@ -50,14 +53,14 @@ def pack(
         Output series.
     """
     if isinstance(obj, pd.DataFrame):
-        nested = pack_flat(obj, name=name)
+        nested = pack_flat(obj, name=name, on=on)
         if index is not None:
             nested.index = index
         return nested
     return pack_seq(obj, name=name, index=index, dtype=dtype)
 
 
-def pack_flat(df: pd.DataFrame, name: str | None = None) -> pd.Series:
+def pack_flat(df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] = None) -> pd.Series:
     """Make a structure of lists representation of a "flat" dataframe.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -73,6 +76,8 @@ def pack_flat(df: pd.DataFrame, name: str | None = None) -> pd.Series:
         Input dataframe, with repeated indexes.
     name : str, optional
         Name of the pd.Series.
+    on : str or list of str, optional
+        Column name(s) to join on. If None, the df's index is used.
 
     Returns
     -------
@@ -86,9 +91,11 @@ def pack_flat(df: pd.DataFrame, name: str | None = None) -> pd.Series:
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
 
+    if on is not None:
+        df = df.set_index(on)
     # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
-    flat = df.sort_index(kind="stable")
-    return pack_sorted_df_into_struct(flat, name=name)
+    sorted_flat = df.sort_index(kind="stable")
+    return pack_sorted_df_into_struct(sorted_flat, name=name)
 
 
 def pack_seq(
@@ -189,10 +196,34 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_flat : Pack a "flat" dataframe with repeated indexes.
     """
-    struct_array = pa.StructArray.from_arrays(
-        [df[column] for column in df.columns],
-        names=df.columns,
-    )
+    # When series is converted to pa.array it may be both Array and ChunkedArray
+    # We convert it to chunked for the sake of consistency
+    pa_arrays_maybe_chunked = {column: pa.array(df[column]) for column in df.columns}
+    pa_chunked_arrays = {
+        column: arr if isinstance(arr, pa.ChunkedArray) else pa.chunked_array([arr])
+        for column, arr in pa_arrays_maybe_chunked.items()
+    }
+
+    # If all chunk arrays have the same chunk lengths, we can build a chunked struct array with no
+    # data copying.
+    chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
+    if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
+        chunks = []
+        numpy_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
+        for i in range(numpy_chunks):
+            chunks.append(
+                pa.StructArray.from_arrays(
+                    [arr.chunk(i) for arr in pa_chunked_arrays.values()],
+                    names=pa_chunked_arrays.keys(),
+                )
+            )
+        struct_array = pa.chunked_array(chunks)
+    else:  # "flatten" the chunked arrays
+        struct_array = pa.StructArray.from_arrays(
+            [arr.combine_chunks() for arr in pa_chunked_arrays.values()],
+            names=pa_chunked_arrays.keys(),
+        )
+
     ext_array = NestedExtensionArray(struct_array, validate=validate)
     return pd.Series(
         ext_array,
@@ -262,10 +293,17 @@ def view_sorted_series_as_list_array(
     if unique_index is None:
         unique_index = series.index[offset[:-1]]
 
+    # Input series may be represented by pyarrow.ChunkedArray, in this case pa.array(series) would fail
+    # with "TypeError: Cannot convert a 'ChunkedArray' to a 'ListArray'".
+    # https://github.com/lincc-frameworks/nested-pandas/issues/189
+    flat_array = pa.array(series, from_pandas=True)
+    if isinstance(flat_array, pa.ChunkedArray):
+        flat_array = flat_array.combine_chunks()
     list_array = pa.ListArray.from_arrays(
         offset,
-        pa.array(series, from_pandas=True),
+        flat_array,
     )
+
     return pd.Series(
         list_array,
         dtype=pd.ArrowDtype(list_array.type),

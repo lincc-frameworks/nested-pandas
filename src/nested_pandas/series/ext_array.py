@@ -204,7 +204,7 @@ class NestedExtensionArray(ExtensionArray):
             # Copy will happen later in replace_with_mask() anyway
             value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
-            # Our replace_with_mask implementation doesm't work with scalars
+            # Our replace_with_mask implementation doesn't work with scalars
             value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
 
         if argsort is not None:
@@ -387,7 +387,7 @@ class NestedExtensionArray(ExtensionArray):
         This implementation returns a shallow copy of the extension array,
         because the underlying PyArrow array is immutable.
         """
-        return type(self)(self._chunked_array)
+        return type(self)(self._chunked_array, validate=False)
 
     def _formatter(self, boxed: bool = False) -> Callable[[Any], str | None]:
         # TODO: make formatted strings more pretty
@@ -647,6 +647,14 @@ class NestedExtensionArray(ExtensionArray):
     def num_chunks(self) -> int:
         """Number of chunks in underlying pyarrow.ChunkedArray"""
         return self._chunked_array.num_chunks
+
+    def get_list_index(self) -> np.ndarray:
+        """Keys mapping values to lists"""
+        if len(self) == 0:
+            # Since we have no list offsets, return an empty array
+            return np.array([], dtype=int)
+        list_index = np.arange(len(self))
+        return np.repeat(list_index, np.diff(self.list_offsets))
 
     def iter_field_lists(self, field: str) -> Generator[np.ndarray, None, None]:
         """Iterate over single field nested lists, as numpy arrays

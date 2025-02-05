@@ -29,13 +29,13 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
 
     if by is None:
         field_to_len = df[nested].nest.fields[0]
-        counts = (
-            df[nested].nest.to_lists().apply(lambda x: len(x[field_to_len]), axis=1).rename(f"n_{nested}")
-        )
+        counts = df[nested].nest.to_lists().apply(lambda x: len(x[field_to_len]), axis=1)
+        counts.name = f"n_{nested}"  # update name directly (rename causes issues downstream)
     else:
         # this may be able to be sped up using tolists() as well
-        counts = df[nested].apply(lambda x: x[by].value_counts())
+        counts = df[nested].apply(lambda x: x[by].value_counts(sort=False))
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
+        counts = counts.reindex(sorted(counts.columns), axis=1)
     if join:
         return df.join(counts)
     # else just return the counts NestedFrame
