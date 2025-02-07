@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import io
 
 import numpy as np
 import pandas as pd
@@ -279,11 +280,20 @@ class NestedFrame(pd.DataFrame):
 
         def my_style(df: NestedFrame, columns):
             """Style generator for nested columns"""
-            style = {column: f"&ltcolumns={df[column].nest.fields}&gt" for column in columns}
+            style = {column:str(len(df[column])) for column in columns}
+            #style = {column:f"&ltcolumns={df[column].nest.fields}&gt" for column in columns}
             return df.style.format(style)
 
         max_rows = pd.get_option("display.max_rows")
-        repr = super().pipe(my_style, self.nested_columns).to_html(max_rows=max_rows)
+        repr = super().pipe(my_style, self.nested_columns)
+        return super().to_html()
+        repr = repr.to_string()
+        #return repr
+        str_repr = io.StringIO(repr)
+        #return repr
+        repr = pd.read_csv(str_repr, sep='\s+').to_html(show_dimensions=True)
+        #return str_repr
+        return repr
         return repr
 
     def _parse_hierarchical_components(self, delimited_path: str, delimiter: str = ".") -> list[str]:
