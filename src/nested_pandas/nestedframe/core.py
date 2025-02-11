@@ -278,23 +278,38 @@ class NestedFrame(pd.DataFrame):
     def _repr_html_(self) -> str | None:
         """Override html representation"""
 
-        def my_style(df: NestedFrame, columns):
-            """Style generator for nested columns"""
-            style = {column:str(len(df[column])) for column in columns}
-            #style = {column:f"&ltcolumns={df[column].nest.fields}&gt" for column in columns}
-            return df.style.format(style)
+        # Without nested columns, just do representation as normal
+        if len(self.nested_columns) == 0:
+            # This mimics pandas behavior
+            if self.shape[0] > pd.get_option("display.max_rows"):
+                return super().to_html(max_rows=pd.get_option("display.min_rows"), show_dimensions=True)
+            else:
+                return super().to_html(max_rows=pd.get_option("display.max_rows"), show_dimensions=True)
 
-        max_rows = pd.get_option("display.max_rows")
-        repr = super().pipe(my_style, self.nested_columns)
-        return super().to_html()
-        repr = repr.to_string()
-        #return repr
-        str_repr = io.StringIO(repr)
-        #return repr
-        repr = pd.read_csv(str_repr, sep='\s+').to_html(show_dimensions=True)
-        #return str_repr
-        return repr
-        return repr
+        # Nested Column Formatting
+        # first cell shows the nested df header and a preview row
+        def repack_first(chunk):
+            output = chunk.head(0).to_html(max_rows=0, max_cols=5, show_dimensions=False, index=False, header=True)
+            with pd.option_context('display.float_format', '{:0.3f}'.format):
+                output += chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
+            return output
+
+        # remaining cells show only a preview row
+        def repack_rest(chunk):
+            with pd.option_context('display.float_format', '{:0.3f}'.format):
+                return (chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False))
+
+        repr = self.style.format({col:repack_first for col in self.nested_columns}, subset=0)
+        repr = repr.format({col:repack_rest for col in self.nested_columns}, subset=pd.IndexSlice[1:])
+
+        # Recover some truncation formatting, limited to head truncation
+        if repr.data.shape[0] > pd.get_option("display.max_rows")//2:
+            html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows")//2)
+        else:
+            html_repr = repr.to_html(max_rows=0)
+        html_repr += f"{repr.data.shape[0]} rows x {repr.data.shape[1]} columns"
+        return html_repr
+
 
     def _parse_hierarchical_components(self, delimited_path: str, delimiter: str = ".") -> list[str]:
         """
