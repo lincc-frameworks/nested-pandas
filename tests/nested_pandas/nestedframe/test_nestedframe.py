@@ -34,6 +34,24 @@ def test_nestedseries_construction():
     assert (frame[0] == [1, 2, 3]).all()
 
 
+def test_html_repr():
+    """Just make sure the html representation code doesn't throw any errors"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    assert list(base.all_columns.keys()) == ["base"]
+    assert list(base.all_columns["base"]) == list(base.columns)
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    base._repr_html_()
+
+
 def test_all_columns():
     """Test the all_columns function"""
 
