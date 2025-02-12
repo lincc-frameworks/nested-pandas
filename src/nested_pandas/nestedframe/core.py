@@ -288,26 +288,31 @@ class NestedFrame(pd.DataFrame):
 
         # Nested Column Formatting
         # first cell shows the nested df header and a preview row
-        def repack_first(chunk):
+        def repack_first_cell(chunk):
+            # Render header separately to keep data aligned
             output = chunk.head(0).to_html(max_rows=0, max_cols=5, show_dimensions=False, index=False, header=True)
-            with pd.option_context('display.float_format', '{:0.3f}'.format):
-                output += chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
+            # Then add a preview row
+            output += repack_row(chunk)
             return output
 
         # remaining cells show only a preview row
-        def repack_rest(chunk):
-            with pd.option_context('display.float_format', '{:0.3f}'.format):
-                return (chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False))
+        def repack_row(chunk):
+            return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
-        repr = self.style.format({col:repack_first for col in self.nested_columns}, subset=0)
-        repr = repr.format({col:repack_rest for col in self.nested_columns}, subset=pd.IndexSlice[1:])
+        # Apply repacking to all nested columns
+        repr = self.style.format({col:repack_first_cell for col in self.nested_columns}, subset=self.index[0])
+        repr = repr.format({col:repack_row for col in self.nested_columns}, subset=pd.IndexSlice[self.index[1]:])
 
         # Recover some truncation formatting, limited to head truncation
+        # Use half of pandas sizes to account for large row height
         if repr.data.shape[0] > pd.get_option("display.max_rows")//2:
             html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows")//2)
         else:
             html_repr = repr.to_html(max_rows=0)
+
+        # Manually append dimensionality to a styler output
         html_repr += f"{repr.data.shape[0]} rows x {repr.data.shape[1]} columns"
+
         return html_repr
 
 
