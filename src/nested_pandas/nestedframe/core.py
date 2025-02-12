@@ -300,8 +300,8 @@ class NestedFrame(pd.DataFrame):
             return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
         # Apply repacking to all nested columns
-        repr = self.style.format({col:repack_first_cell for col in self.nested_columns}, subset=self.index[0])
-        repr = repr.format({col:repack_row for col in self.nested_columns}, subset=pd.IndexSlice[self.index[1]:])
+        repr = self.style.format({col: repack_first_cell for col in self.nested_columns}, subset=self.index[0])
+        repr = repr.format({col: repack_row for col in self.nested_columns}, subset=pd.IndexSlice[self.index[1]:])
 
         # Recover some truncation formatting, limited to head truncation
         # Use half of pandas sizes to account for large row height
