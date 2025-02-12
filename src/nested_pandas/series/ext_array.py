@@ -46,12 +46,103 @@ from pandas import Index
 from pandas._typing import InterpolateOptions, Self
 from pandas.api.extensions import no_default
 from pandas.core.arrays import ArrowExtensionArray, ExtensionArray
+from pandas.core.dtypes.common import is_float_dtype
 from pandas.core.indexers import check_array_indexer, unpack_tuple_and_ellipses, validate_indices
+from pandas.io.formats.format import format_array
 
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.utils import enumerate_chunks, is_pa_type_a_list
 
 __all__ = ["NestedExtensionArray"]
+
+
+BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK = True
+"""Use a trick to by-pass pandas limitations on extension array formatting
+
+Pandas array formatting works in a way, that Pandas objects are always
+being formatted with `str()`, see _GenericArrayFormatter._format_strings()
+method:
+https://github.com/pandas-dev/pandas/blob/0d85d57b18b18e6b216ff081eac0952cb27d0e13/pandas/io/formats/format.py#L1219
+
+_GenericArrayFormatter is used after _ExtensionArrayFormatter was called
+initially and extracted values from the extension array with
+np.asarray(values, dtype=object):
+https://github.com/pandas-dev/pandas/blob/0d85d57b18b18e6b216ff081eac0952cb27d0e13/pandas/io/formats/format.py#L1516
+
+Since our implementation of numpy conversion would return an object array
+of data-frames, these data-frames would always be converted using `str()`,
+which produces ugly and unreadable output. That's why when `__array__` is
+called we check if it was actually called by _ExtensionArrayFormatter and
+instead of returning a numpy array of data-frames, we return an array of
+`_DataFrameWrapperForRepresentation` objects. That class is used for that
+purposes only and should never be used for anything else.
+"""
+try:
+    from pandas.io.formats.format import _ExtensionArrayFormatter
+except ImportError:
+    BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK = False
+
+NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW = 1
+"""Maximum number of nested data-frame's rows to show inside a parent object"""
+
+
+def _is_called_from_func(func: Callable) -> bool:
+    """Check if the given function appears in the call stack by matching its code object.
+
+    Parameters
+    ----------
+    func
+        Function to check
+
+    Returns
+    -------
+    bool
+    """
+    from inspect import currentframe
+
+    frame = currentframe()
+    while frame:
+        if frame.f_code is func.__code__:
+            return True
+        frame = frame.f_back  # Move up the call stack
+    return False
+
+
+def _is_called_from_ext_array_fmter_fmt_strings():
+    """Check if the code was called from _ExtensionArrayFormatter._format_strings
+
+    Returns
+    -------
+    bool
+    """
+    if not BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK:
+        raise RuntimeError("Set BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK to True")
+    return _is_called_from_func(_ExtensionArrayFormatter._format_strings)
+
+
+class _DataFrameWrapperForRepresentation:
+    """A class used to store nested data-frames for the formatting purposes
+
+    It encapsulates the input data-frame and gives access to all its attributes
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Data
+
+    Notes
+    -----
+    Do not use it out of the formatting code
+    """
+
+    def __init__(self, df):
+        self.__internal_nested_df = df
+
+    def __getattr__(self, item):
+        return getattr(self.__internal_nested_df, item)
+
+    def __len__(self):
+        return len(self.__internal_nested_df)
 
 
 def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None) -> pa.DataType | None:
@@ -390,15 +481,31 @@ class NestedExtensionArray(ExtensionArray):
         return type(self)(self._chunked_array, validate=False)
 
     def _formatter(self, boxed: bool = False) -> Callable[[Any], str | None]:
-        # TODO: make formatted strings more pretty
-        # https://github.com/lincc-frameworks/nested-pandas/issues/50
         if boxed:
 
             def box_formatter(value):
                 if value is pd.NA:
                     return str(pd.NA)
-                scalar = convert_df_to_pa_scalar(value, pa_type=self._pyarrow_dtype)
-                return str(scalar.as_py())
+                # Select first few rows
+                df = value.iloc[:NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW]
+                # Format to strings using Pandas default formatters
+
+                def format_series(series):
+                    if is_float_dtype(series.dtype):
+                        # Format with the default Pandas formatter and strip white-spaces it adds
+                        return pd.Series(format_array(series.to_numpy(), None)).str.strip()
+                    # Convert to string, add extra quotes for strings
+                    return series.apply(repr)
+
+                def format_row(row):
+                    return ", ".join(f"{name}: {value}" for name, value in zip(row.index, row))
+
+                # Format series to strings
+                df = df.apply(format_series, axis=0)
+                str_rows = "; ".join(f"{{{format_row(row)}}}" for _index, row in df.iterrows())
+                if len(value) <= NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW:
+                    return f"[{str_rows}]"
+                return f"[{str_rows}; …] ({len(value)} rows)"
 
             return box_formatter
         return repr
@@ -446,7 +553,23 @@ class NestedExtensionArray(ExtensionArray):
 
     def __array__(self, dtype=None):
         """Convert the extension array to a numpy array."""
-        return self.to_numpy(dtype=dtype, copy=False)
+
+        array = self.to_numpy(dtype=dtype, copy=False)
+
+        # Check if called inside _ExtensionArrayFormatter._format_strings
+        # If yes, repack nested data-frames into a wrapper object, so
+        # Pandas would call our _formatter method on them.
+        if (
+            BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK
+            and dtype == np.object_
+            and _is_called_from_ext_array_fmter_fmt_strings()
+        ):
+            for i, df in enumerate(array):
+                # Could be data-frame or NA
+                if isinstance(df, pd.DataFrame):
+                    array[i] = _DataFrameWrapperForRepresentation(df)
+
+        return array
 
     # Adopted from ArrowExtensionArray
     def __getstate__(self):

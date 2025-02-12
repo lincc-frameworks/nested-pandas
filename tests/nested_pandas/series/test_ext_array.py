@@ -893,7 +893,7 @@ def test__formatter_boxed():
     )._formatter(boxed=True)
     d = {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}
     df = pd.DataFrame(d)
-    assert formatter(df) == str(d)
+    assert formatter(df) == "[{a: 1, b: -4.0}; …] (3 rows)"
 
 
 def test__formetter_boxed_na():
