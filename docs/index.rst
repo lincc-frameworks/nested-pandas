@@ -24,7 +24,7 @@ Nested-Pandas allows data like this:
 To instead be represented like this:
 
 .. image:: ./intro_images/nestedframe_example.png
-  :width: 400
+  :width: 300
   :align: center
   :alt: pandas dataframes
 
