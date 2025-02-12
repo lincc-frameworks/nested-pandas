@@ -53,7 +53,7 @@ def test_html_repr():
     base._repr_html_()
 
     # Check repr path without nested cols
-    base[['a', 'b']]._repr_html_()
+    base[["a", "b"]]._repr_html_()
 
 
 def test_all_columns():
