@@ -55,6 +55,10 @@ def test_html_repr():
     # Check repr path without nested cols
     base[["a", "b"]]._repr_html_()
 
+    # Check repr truncation for larger nf
+    nf = generate_data(100, 2)
+    nf._repr_html_()
+
 
 def test_all_columns():
     """Test the all_columns function"""

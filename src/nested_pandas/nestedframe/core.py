@@ -19,6 +19,9 @@ from pandas.core.computation.parsing import clean_column_name
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
+pd.set_option("display.max_rows", 30)
+pd.set_option("display.min_rows", 5)
+
 # Used to identify backtick-protected names in the expressions
 # used in NestedFrame.eval() and NestedFrame.query().
 _backtick_protected_names = re.compile(r"`[^`]+`", re.MULTILINE)
@@ -309,10 +312,10 @@ class NestedFrame(pd.DataFrame):
         )
 
         # Recover some truncation formatting, limited to head truncation
-        # Use half of pandas sizes to account for large row height
-        if repr.data.shape[0] > pd.get_option("display.max_rows") // 2:
-            html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows") // 2)
+        if repr.data.shape[0] > pd.get_option("display.max_rows"):
+            html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows"))
         else:
+            # when under the max_rows threshold, display all rows (behavior of 0 here)
             html_repr = repr.to_html(max_rows=0)
 
         # Manually append dimensionality to a styler output
