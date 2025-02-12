@@ -23,7 +23,7 @@ Nested-Pandas allows data like this:
 
 To instead be represented like this:
 
-.. image:: ./intro_images/nestedframe.png
+.. image:: ./intro_images/nestedframe_example.png
   :width: 400
   :align: center
   :alt: pandas dataframes
@@ -36,7 +36,7 @@ Where the nested data is represented as nested dataframes:
    object_nf.loc[0]["nested_sources"]
 
 .. image:: ./intro_images/loc_into_nested.png
-  :width: 225
+  :width: 300
   :align: center
   :alt: pandas dataframes
 
