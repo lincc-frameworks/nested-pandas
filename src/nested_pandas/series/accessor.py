@@ -115,6 +115,11 @@ class NestSeriesAccessor(Mapping):
         return pd.DataFrame(flat_series)
 
     @property
+    def list_lengths(self) -> np.ndarray:
+        """Lengths of the list arrays"""
+        return self._series.array.list_lengths
+
+    @property
     def flat_length(self) -> int:
         """Length of the flat arrays"""
         return self._series.array.flat_length
