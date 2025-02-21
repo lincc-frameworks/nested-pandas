@@ -241,7 +241,7 @@ class NestedExtensionArray(ExtensionArray):
                 return type(self)(self._chunked_array.filter(pa_item), validate=False)
             # It should be covered by check_array_indexer above
             raise IndexError(
-                "Only integers, slices and integer or " "boolean arrays are valid indices."
+                "Only integers, slices and integer or boolean arrays are valid indices."
             )  # pragma: no cover
 
         if isinstance(item, tuple):
@@ -764,7 +764,9 @@ class NestedExtensionArray(ExtensionArray):
     @property
     def flat_length(self) -> int:
         """Length of the flat arrays"""
-        return sum(chunk.field(0).value_lengths().sum().as_py() for chunk in self._chunked_array.iterchunks())
+        return sum(
+            chunk.field(0).value_lengths().sum().as_py() or 0 for chunk in self._chunked_array.iterchunks()
+        )
 
     @property
     def num_chunks(self) -> int:
