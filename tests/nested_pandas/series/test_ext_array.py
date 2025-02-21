@@ -1454,6 +1454,25 @@ def test_set_flat_field_keep_dtype_raises_for_new_field():
     ext_array.set_flat_field("c", [True, False, True, False, True, False, True], keep_dtype=False)
 
 
+def test_set_flat_field_chunked_values():
+    """Tests that set_flat_field works fine with input value which is chunked"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0, 4.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    new_chunked_values = pa.chunked_array([["x", "y", "z"], ["x1", "x2", "x3", "x4"]])
+    assert new_chunked_values.num_chunks > 1
+    new_series = pd.Series(new_chunked_values, dtype=pd.ArrowDtype(new_chunked_values.type))
+
+    # Previously failed for series with chunked array
+    ext_array.set_flat_field("c", new_series)
+
+
 def test_set_list_field_new_field():
     """Tests setting a new field with a new "list" array"""
     struct_array = pa.StructArray.from_arrays(

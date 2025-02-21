@@ -878,6 +878,8 @@ class NestedExtensionArray(ExtensionArray):
         if len(pa_array) != self.flat_length:
             raise ValueError("The input must be a struct_scalar or have the same length as the flat arrays")
 
+        if isinstance(pa_array, pa.ChunkedArray):
+            pa_array = pa_array.combine_chunks()
         list_array = pa.ListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
 
         return self.set_list_field(field, list_array, keep_dtype=keep_dtype)
