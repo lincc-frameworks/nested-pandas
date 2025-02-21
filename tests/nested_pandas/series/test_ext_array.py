@@ -1226,6 +1226,24 @@ def test_field_names():
     assert ext_array.field_names == ["a", "b"]
 
 
+def test_list_lengths():
+    """Tests that the list lengths of the extension array are correct."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    empty_struct_array = pa.array([], type=struct_array.type)
+    null_struct_array = pa.array([None], type=struct_array.type)
+    ext_array = NestedExtensionArray(
+        pa.chunked_array([struct_array, empty_struct_array, struct_array, null_struct_array])
+    )
+
+    assert ext_array.list_lengths == [3, 4, 3, 4, 0]
+
+
 def test_flat_length():
     """Tests that the flat length of the extension array is correct."""
     struct_array = pa.StructArray.from_arrays(

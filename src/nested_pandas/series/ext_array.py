@@ -761,12 +761,24 @@ class NestedExtensionArray(ExtensionArray):
         """Names of the nested columns"""
         return [field.name for field in self._chunked_array.chunk(0).type]
 
+    def _iter_list_lengths(self) -> Generator[int, None, None]:
+        """Iterate over the lengths of the list arrays"""
+        for chunk in self._chunked_array.iterchunks():
+            for length in chunk.field(0).value_lengths():
+                if length.is_valid:
+                    yield length.as_py()
+                else:
+                    yield 0
+
+    @property
+    def list_lengths(self) -> list[int]:
+        """Lengths of the list arrays"""
+        return list(self._iter_list_lengths())
+
     @property
     def flat_length(self) -> int:
         """Length of the flat arrays"""
-        return sum(
-            chunk.field(0).value_lengths().sum().as_py() or 0 for chunk in self._chunked_array.iterchunks()
-        )
+        return sum(self._iter_list_lengths())
 
     @property
     def num_chunks(self) -> int:
