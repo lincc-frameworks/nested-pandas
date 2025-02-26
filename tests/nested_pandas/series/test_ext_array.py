@@ -603,6 +603,29 @@ def test_chunked_array():
     assert ext_array.chunked_array == pa.chunked_array(struct_array)
 
 
+def test_chunked_list_struct_array():
+    """Test that .chunked_list_struct_array is correct."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    list_array = pa.array(
+        [
+            [{"a": 1, "b": -4.0}, {"a": 2, "b": -5.0}, {"a": 3, "b": -6.0}],
+            [{"a": 1, "b": -3.0}, {"a": 2, "b": -4.0}, {"a": 1, "b": -5.0}],
+        ]
+    )
+    desired = pa.chunked_array([list_array])
+    # pyarrow returns a single bool for ==
+    assert ext_array.chunked_list_struct_array == desired
+    assert ext_array.chunked_list_struct_array.type == ext_array._pyarrow_list_struct_dtype
+
+
 def test_list_offsets_single_chunk():
     """Test that the .list_offset property is correct for a single chunk."""
     struct_array = pa.StructArray.from_arrays(
@@ -1261,7 +1284,7 @@ def test_list_lengths():
         pa.chunked_array([struct_array, empty_struct_array, struct_array, null_struct_array])
     )
 
-    assert ext_array.list_lengths == [3, 4, 3, 4, 0]
+    assert_array_equal(ext_array.list_lengths, [3, 4, 3, 4, 0])
 
 
 def test_flat_length():
@@ -1756,6 +1779,25 @@ def test_to_arrow_ext_array():
 
     to_arrow = ext_array.to_arrow_ext_array()
     assert_series_equal(pd.Series(ext_array), pd.Series(to_arrow), check_dtype=False)
+
+
+def test_to_arrow_ext_array_with_list_struct_true():
+    """Tests that we are getting a valid ArrowExtensionArray when list_struct=True."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1, 2])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    nested_ext_array = NestedExtensionArray(struct_array)
+
+    arrow_ext_array = nested_ext_array.to_arrow_ext_array(list_struct=True)
+    assert_frame_equal(
+        pd.Series(arrow_ext_array).list.flatten().struct.explode(),
+        pd.Series(nested_ext_array).nest.to_flat().reset_index(drop=True),
+        check_index_type=False,
+    )
 
 
 def test_series_interpolate():

@@ -296,7 +296,7 @@ def test_list_lengths():
         ]
     )
     assert series.shape == (3,)
-    assert series.nest.list_lengths == [3, 0, 2]
+    assert_array_equal(series.nest.list_lengths, [3, 0, 2])
 
 
 def test_flat_length():

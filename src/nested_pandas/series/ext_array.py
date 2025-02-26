@@ -54,7 +54,9 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.utils import (
     enumerate_chunks,
     is_pa_type_a_list,
+    transpose_list_struct_array,
     transpose_struct_list_array,
+    transpose_struct_list_type,
     validate_struct_list_array_for_equal_lengths,
 )
 
@@ -657,7 +659,14 @@ class NestedExtensionArray(ExtensionArray):
         if isinstance(values, pa.Array):
             values = pa.chunked_array([values])
 
-        if validate:
+        # Convert list-struct array to struct-list array
+        if is_pa_type_a_list(values.type):
+            struct_chunks = []
+            for list_chunk in values.iterchunks():
+                struct_chunks.append(transpose_list_struct_array(list_chunk))
+            values = pa.chunked_array(struct_chunks)
+        # Validate struct-array with list fields
+        elif validate:
             self._validate(values)
 
         self._chunked_array = values
@@ -692,14 +701,24 @@ class NestedExtensionArray(ExtensionArray):
         return cls._from_sequence(scalars, dtype=dtype)
 
     @property
-    def _pyarrow_dtype(self) -> pa.DataType:
+    def _pyarrow_dtype(self) -> pa.StructType:
         """PyArrow data type of the extension array"""
         return self._dtype.pyarrow_dtype
+
+    @property
+    def _pyarrow_list_struct_dtype(self) -> pa.ListType:
+        """PyArrow data type of the list-struct view over the ext. array"""
+        return transpose_struct_list_type(self._pyarrow_dtype)
 
     @property
     def chunked_array(self) -> pa.ChunkedArray:
         """The underlying PyArrow ChunkedArray"""
         return self._chunked_array
+
+    @property
+    def chunked_list_struct_array(self) -> pa.ChunkedArray:
+        """Chunked list-struct view over the extension array"""
+        return self._list_array
 
     @staticmethod
     def _validate(array: pa.ChunkedArray) -> None:
@@ -723,15 +742,24 @@ class NestedExtensionArray(ExtensionArray):
         """Create a NestedExtensionArray from pandas' ArrowExtensionArray"""
         return cls(array._pa_array)
 
-    def to_arrow_ext_array(self) -> ArrowExtensionArray:
-        """Convert the extension array to pandas' ArrowExtensionArray"""
+    def to_arrow_ext_array(self, list_struct: bool = False) -> ArrowExtensionArray:
+        """Convert the extension array to pandas' ArrowExtensionArray
+
+        Parameters
+        ----------
+        list_struct : bool, optional
+            If False (default), return struct-list array, otherwise return
+            list-struct array.
+        """
+        if list_struct:
+            return ArrowExtensionArray(self._list_array)
         return ArrowExtensionArray(self._chunked_array)
 
     def _replace_chunked_array(self, pa_array: pa.ChunkedArray, *, validate: bool) -> None:
         if validate:
             self._validate(pa_array)
         self._chunked_array = pa_array
-        self._dtype = NestedDtype(pa_array.chunk(0).type)
+        self._dtype = NestedDtype(pa_array.type)
 
     @property
     def list_offsets(self) -> pa.Array:
@@ -745,48 +773,32 @@ class NestedExtensionArray(ExtensionArray):
         pa.ChunkedArray
             The list offsets of the field arrays.
         """
-        # Quick and cheap path for a single chunk
+        # Cheap path for a single chunk
         if self._chunked_array.num_chunks == 1:
             struct_array = cast(pa.StructArray, self._chunked_array.chunk(0))
             return cast(pa.ListArray, struct_array.field(0)).offsets
 
-        chunks = []
-        # The offset of the current chunk in the flat array.
-        # Offset arrays use int32 type, so we cast to it
-        chunk_offset = pa.scalar(0, type=pa.int32())
-        for chunk in self._chunked_array.iterchunks():
-            list_array = cast(pa.ListArray, chunk.field(0))
-            if chunk_offset.equals(pa.scalar(0, type=pa.int32())):
-                offsets = list_array.offsets
-            else:
-                offsets = pa.compute.add(list_array.offsets[1:], chunk_offset)
-            chunks.append(offsets)
-            chunk_offset = offsets[-1]
-        return pa.concat_arrays(chunks)
+        zero_and_lengths = pa.chunked_array(
+            [pa.array([0], type=pa.int32()), pa.array(self.list_lengths, type=pa.int32())]
+        )
+        offsets = pa.compute.cumulative_sum(zero_and_lengths)
+        return offsets.chunk(0) if offsets.num_chunks == 1 else offsets.combine_chunks()
 
     @property
     def field_names(self) -> list[str]:
         """Names of the nested columns"""
         return [field.name for field in self._chunked_array.chunk(0).type]
 
-    def _iter_list_lengths(self) -> Generator[int, None, None]:
-        """Iterate over the lengths of the list arrays"""
-        for chunk in self._chunked_array.iterchunks():
-            for length in chunk.field(0).value_lengths():
-                if length.is_valid:
-                    yield length.as_py()
-                else:
-                    yield 0
-
     @property
-    def list_lengths(self) -> list[int]:
+    def list_lengths(self) -> np.ndarray:
         """Lengths of the list arrays"""
-        return list(self._iter_list_lengths())
+        list_lengths = pa.compute.list_value_length(self._list_array)
+        return np.asarray(list_lengths)
 
     @property
     def flat_length(self) -> int:
         """Length of the flat arrays"""
-        return sum(self._iter_list_lengths())
+        return pa.compute.sum(self.list_lengths).as_py()
 
     @property
     def num_chunks(self) -> int:
@@ -798,8 +810,8 @@ class NestedExtensionArray(ExtensionArray):
         if len(self) == 0:
             # Since we have no list offsets, return an empty array
             return np.array([], dtype=int)
-        list_index = np.arange(len(self))
-        return np.repeat(list_index, np.diff(self.list_offsets))
+        list_index = np.arange(len(self), dtype=int)
+        return np.repeat(list_index, self.list_lengths)
 
     def iter_field_lists(self, field: str) -> Generator[np.ndarray, None, None]:
         """Iterate over single field nested lists, as numpy arrays
@@ -821,7 +833,7 @@ class NestedExtensionArray(ExtensionArray):
                 yield np.asarray(list_scalar.values)
 
     def view_fields(self, fields: str | list[str]) -> Self:  # type: ignore[name-defined] # noqa: F821
-        """Get a view of the extension array with only the specified fields
+        """Get a view of the extension array with the specified fields only
 
         Parameters
         ----------
@@ -850,7 +862,7 @@ class NestedExtensionArray(ExtensionArray):
             chunks.append(struct_array)
         pa_array = pa.chunked_array(chunks)
 
-        return self.__class__(pa_array, validate=False)
+        return type(self)(pa_array, validate=False)
 
     def set_flat_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from flat-array of values
