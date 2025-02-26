@@ -554,6 +554,8 @@ class NestedExtensionArray(ExtensionArray):
         """Convert the extension array to a PyArrow array."""
         if type is None:
             return self._chunked_array
+        if isinstance(type, pa.ListType):
+            return self._list_array.cast(type)
         return self._chunked_array.cast(type)
 
     def __array__(self, dtype=None):

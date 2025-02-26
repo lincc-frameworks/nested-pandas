@@ -1044,6 +1044,26 @@ def test___arrow_array___with_type_cast():
     assert arrow_array == struct_array.cast(new_pa_type)
 
 
+def test___arrow___with_list_type():
+    """Test that the extension array can be converted to a pyarrow array with a list type."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
+            pa.array([-np.array([4, 5, 6]), -np.array([3, 4, 5])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+    list_pa_type = pa.list_(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.int64())]))
+    desired_list_array = pa.array(
+        [
+            [{"a": 1, "b": -4}, {"a": 2, "b": -5}, {"a": 3, "b": -6}],
+            [{"a": 1, "b": -3}, {"a": 2, "b": -4}, {"a": 1, "b": -5}],
+        ]
+    )
+    assert pa.array(ext_array, type=list_pa_type) == desired_list_array
+
+
 def test___array__():
     """Test that the extensions array can be converted to a numpy array and back."""
     struct_array = pa.array(
