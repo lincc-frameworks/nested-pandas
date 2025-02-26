@@ -1808,6 +1808,24 @@ def test_series_interpolate():
         ).interpolate()
 
 
+def test___init___with_list_struct_array():
+    """Check if construction from list-struct pyarrow array works"""
+    list_array = pa.array(
+        [[{"a": 1, "b": 2}, {"a": 3, "b": 4}], [{"a": 5, "b": 6}], [{"a": -1, "b": -2}], []]
+    )
+    ext_array = NestedExtensionArray(list_array)
+    assert ext_array.field_names == ["a", "b"]
+    assert ext_array.flat_length == 4
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([[1, 3], [5], [-1], []]),
+            pa.array([[2, 4], [6], [-2], []]),
+        ],
+        names=["a", "b"],
+    )
+    assert pa.array(ext_array) == struct_array
+
+
 def test__from_sequence_of_strings():
     """We do not support from_sequence_of_strings() which would apply things like pd.read_csv()"""
     with pytest.raises(NotImplementedError):
