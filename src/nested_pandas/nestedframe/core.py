@@ -916,6 +916,123 @@ class NestedFrame(pd.DataFrame):
             return None
         return new_df
 
+    def sort_values(
+        self,
+        by,
+        *,
+        axis=0,
+        ascending=True,
+        inplace=False,
+        kind="quicksort",
+        na_position="last",
+        ignore_index=False,
+        key=None,
+    ):
+        """
+        Sort by the values along either axis.
+
+        Parameters:
+        -----------
+        by : str or list of str
+            Name or list of names to sort by.
+
+            Access nested columns using `nested_df.nested_col` (where
+            `nested_df` refers to a particular nested dataframe and
+            `nested_col` is a column of that nested dataframe).
+        axis : {0 or 'index', 1 or 'columns'}, default 0
+            Axis to be sorted.
+        ascending : bool or list of bool, default True
+            Sort ascending vs. descending. Specify list for multiple sort
+            orders. If this is a list of bools, must match the length of the
+            by.
+        inplace : bool, default False
+            If True, perform operation in-place.
+        kind : {'quicksort', 'mergesort', 'heapsort'}, default 'quicksort'
+            Choice of sorting algorithm. See also ndarray.np.sort for more
+            information. mergesort is the only stable algorithm. For DataFrames,
+            this option is only applied when sorting on a single column or label.
+        na_position : {'first', 'last'}, default 'last'
+            Puts NaNs at the beginning if first; last puts NaNs at the end.
+        ignore_index : bool, default False
+            If True, the resulting axis will be labeled 0, 1, …, n - 1.
+            Always False when applied to nested layers.
+        key : callable, optional
+            Apply the key function to the values before sorting.
+
+        Returns:
+        --------
+        DataFrame or None
+            DataFrame with sorted values if inplace=False, None otherwise.
+        """
+
+        # Resolve target layer
+        target = []
+        if isinstance(by, str):
+            by = [by]
+        # Check "by" columns for hierarchical references
+        for col in by:
+            if self._is_known_hierarchical_column(col):
+                target.append(col.split(".")[0])
+            else:
+                target.append("base")
+
+        # Ensure one target layer, preventing multi-layer operations
+        target = np.unique(target)
+        if len(target) > 1:
+            raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
+        target = str(target[0])
+
+        # Apply pandas sort_values
+        if target == "base":
+            return super().sort_values(
+                by=by,
+                axis=axis,
+                ascending=ascending,
+                inplace=inplace,
+                kind=kind,
+                na_position=na_position,
+                ignore_index=ignore_index,
+                key=key,
+            )
+        elif target in self.nested_columns:
+            target_flat = self[target].nest.to_flat()
+            target_flat = target_flat.set_index(self[target].array.get_list_index())
+
+            if target_flat.index.name is None:  # set name if not present
+                target_flat.index.name = "index"
+            # Index must always be the first sort key for nested columns
+            nested_by = [target_flat.index.name] + [col.split(".")[-1] for col in by]
+
+            if inplace:
+                target_flat.sort_values(
+                    by=nested_by,
+                    axis=axis,
+                    ascending=ascending,
+                    kind=kind,
+                    na_position=na_position,
+                    ignore_index=False,
+                    key=key,
+                    inplace=True,
+                )
+            else:
+                target_flat = target_flat.sort_values(
+                    by=nested_by,
+                    axis=axis,
+                    ascending=ascending,
+                    kind=kind,
+                    na_position=na_position,
+                    ignore_index=False,
+                    key=key,
+                    inplace=False,
+                )
+            new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
+            if inplace:
+                self._update_inplace(new_df)
+                return None
+            return new_df
+        else:
+            raise ValueError(f"Provided target column '{target}' not found in NestedFrame")
+
     def reduce(self, func, *args, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
