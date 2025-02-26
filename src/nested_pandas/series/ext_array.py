@@ -51,7 +51,12 @@ from pandas.core.indexers import check_array_indexer, unpack_tuple_and_ellipses,
 from pandas.io.formats.format import format_array
 
 from nested_pandas.series.dtype import NestedDtype
-from nested_pandas.series.utils import enumerate_chunks, is_pa_type_a_list
+from nested_pandas.series.utils import (
+    enumerate_chunks,
+    is_pa_type_a_list,
+    transpose_struct_list_array,
+    validate_struct_list_array_for_equal_lengths,
+)
 
 __all__ = ["NestedExtensionArray"]
 
@@ -656,6 +661,14 @@ class NestedExtensionArray(ExtensionArray):
         self._chunked_array = values
         self._dtype = NestedDtype(values.type)
 
+    @property
+    def _list_array(self) -> pa.ChunkedArray:
+        """Pyarrow chunked list-struct array representation"""
+        list_chunks = []
+        for struct_chunk in self._chunked_array.iterchunks():
+            list_chunks.append(transpose_struct_list_array(struct_chunk, validate=False))
+        return pa.chunked_array(list_chunks)
+
     @classmethod
     def from_sequence(cls, scalars, *, dtype: NestedDtype | pd.ArrowDtype | pa.DataType = None) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Construct a NestedExtensionArray from a sequence of items
@@ -690,25 +703,18 @@ class NestedExtensionArray(ExtensionArray):
     def _validate(array: pa.ChunkedArray) -> None:
         """Raises ValueError if the input array is not a struct array with all fields being
         list arrays of the same lengths.
+
+        Parameters
+        ----------
+        array : pa.ChunkedArray
+            The array to validate.
+
+        Raises
+        ------
+        ValueError
         """
         for chunk in array.iterchunks():
-            if not pa.types.is_struct(chunk.type):
-                raise ValueError(f"Expected a StructArray, got {chunk.type}")
-            struct_array = cast(pa.StructArray, chunk)
-
-            first_list_array: pa.ListArray | None = None
-            for field in struct_array.type:
-                inner_array = struct_array.field(field.name)
-                if not is_pa_type_a_list(inner_array.type):
-                    raise ValueError(f"Expected a ListArray, got {inner_array.type}")
-                list_array = cast(pa.ListArray, inner_array)
-
-                if first_list_array is None:
-                    first_list_array = list_array
-                    continue
-                # compare offsets from the first list array with the current one
-                if not first_list_array.offsets.equals(list_array.offsets):
-                    raise ValueError("Offsets of all ListArrays must be the same")
+            validate_struct_list_array_for_equal_lengths(chunk)
 
     @classmethod
     def from_arrow_ext_array(cls, array: ArrowExtensionArray) -> Self:  # type: ignore[name-defined] # noqa: F821
