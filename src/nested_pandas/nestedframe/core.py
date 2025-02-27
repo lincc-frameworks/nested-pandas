@@ -1003,6 +1003,12 @@ class NestedFrame(pd.DataFrame):
             # Index must always be the first sort key for nested columns
             nested_by = [target_flat.index.name] + [col.split(".")[-1] for col in by]
 
+            # Augment the ascending kwarg to include the index
+            if isinstance(ascending, bool):
+                ascending = [True] + [ascending] * len(by)
+            elif isinstance(ascending, list):
+                ascending = [True] + ascending
+
             if inplace:
                 target_flat.sort_values(
                     by=nested_by,
