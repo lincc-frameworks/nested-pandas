@@ -994,7 +994,7 @@ class NestedFrame(pd.DataFrame):
                 ignore_index=ignore_index,
                 key=key,
             )
-        elif target in self.nested_columns:
+        else:  # target is a nested column
             target_flat = self[target].nest.to_flat()
             target_flat = target_flat.set_index(self[target].array.get_list_index())
 
