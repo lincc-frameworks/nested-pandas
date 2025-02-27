@@ -1009,28 +1009,16 @@ class NestedFrame(pd.DataFrame):
             elif isinstance(ascending, list):
                 ascending = [True] + ascending
 
-            if inplace:
-                target_flat.sort_values(
-                    by=nested_by,
-                    axis=axis,
-                    ascending=ascending,
-                    kind=kind,
-                    na_position=na_position,
-                    ignore_index=False,
-                    key=key,
-                    inplace=True,
-                )
-            else:
-                target_flat = target_flat.sort_values(
-                    by=nested_by,
-                    axis=axis,
-                    ascending=ascending,
-                    kind=kind,
-                    na_position=na_position,
-                    ignore_index=False,
-                    key=key,
-                    inplace=False,
-                )
+            target_flat = target_flat.sort_values(
+                by=nested_by,
+                axis=axis,
+                ascending=ascending,
+                kind=kind,
+                na_position=na_position,
+                ignore_index=False,
+                key=key,
+                inplace=False,
+            )
             new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
             if inplace:
                 self._update_inplace(new_df)
