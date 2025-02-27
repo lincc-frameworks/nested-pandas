@@ -1036,8 +1036,6 @@ class NestedFrame(pd.DataFrame):
                 self._update_inplace(new_df)
                 return None
             return new_df
-        else:
-            raise ValueError(f"Provided target column '{target}' not found in NestedFrame")
 
     def reduce(self, func, *args, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
