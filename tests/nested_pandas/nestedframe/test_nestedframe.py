@@ -827,6 +827,10 @@ def test_sort_values():
     sv_base = base.sort_values(["nested.d"])
     assert list(sv_base.iloc[0]["nested"]["d"]) == [4, 5, 7]
 
+    # Test multi-layer error trigger
+    with pytest.raises(ValueError):
+        base.sort_values(["a", "nested.c"])
+
     # Test inplace=True
     base.sort_values("nested.d", inplace=True)
     assert list(base.iloc[0]["nested"]["d"]) == [4, 5, 7]
