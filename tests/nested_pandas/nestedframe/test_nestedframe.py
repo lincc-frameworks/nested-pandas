@@ -807,6 +807,60 @@ def test_dropna_errors():
         base.dropna(on_nested="nested", subset=["b"])
 
 
+def test_sort_values():
+    """Test that sort_values works on all layers"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 3, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    # Test basic functionality
+    sv_base = base.sort_values("b")
+    assert list(sv_base.index) == [0, 1, 2]
+
+    # Test on nested column
+    sv_base = base.sort_values(["nested.d"])
+    assert list(sv_base.iloc[0]["nested"]["d"]) == [4, 5, 7]
+
+    # Test multi-layer error trigger
+    with pytest.raises(ValueError):
+        base.sort_values(["a", "nested.c"])
+
+    # Test inplace=True
+    base.sort_values("nested.d", inplace=True)
+    assert list(base.iloc[0]["nested"]["d"]) == [4, 5, 7]
+
+
+def test_sort_values_ascension():
+    """Test that sort_values works with various ascending settings"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 3, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    # Test ascending=False
+    sv_base = base.sort_values("nested.d", ascending=False)
+    assert list(sv_base.iloc[0]["nested"]["d"]) == [7, 5, 4]
+
+    # Test list ascending
+    sv_base = base.sort_values("nested.d", ascending=[False])
+    assert list(sv_base.iloc[0]["nested"]["d"]) == [7, 5, 4]
+
+    # Test multi-by multi-ascending
+    sv_base = base.sort_values(["nested.d", "nested.c"], ascending=[False, True])
+    assert list(sv_base.iloc[0]["nested"]["d"]) == [7, 5, 4]
+
+
 def test_reduce():
     """Tests that we can call reduce on a NestedFrame with a custom function."""
     nf = NestedFrame(
