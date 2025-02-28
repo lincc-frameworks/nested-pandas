@@ -291,6 +291,10 @@ class NestedFrame(pd.DataFrame):
         # Nested Column Formatting
         # first cell shows the nested df header and a preview row
         def repack_first_cell(chunk):
+            # If the chunk is None, just return None
+            # Means that the column labels will not be shown
+            if chunk is None:
+                return None
             # Render header separately to keep data aligned
             output = chunk.head(0).to_html(
                 max_rows=0, max_cols=5, show_dimensions=False, index=False, header=True
@@ -301,6 +305,9 @@ class NestedFrame(pd.DataFrame):
 
         # remaining cells show only a preview row
         def repack_row(chunk):
+            # If the chunk is None, just return None
+            if chunk is None:
+                return None
             return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
         # Apply repacking to all nested columns
@@ -312,7 +319,9 @@ class NestedFrame(pd.DataFrame):
         )
 
         # Recover some truncation formatting, limited to head truncation
-        if repr.data.shape[0] > pd.get_option("display.max_rows"):
+        if pd.get_option("display.max_rows") is None:
+            return repr.to_html(max_rows=0)
+        elif repr.data.shape[0] > pd.get_option("display.max_rows"):
             html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows"))
         else:
             # when under the max_rows threshold, display all rows (behavior of 0 here)
