@@ -1019,7 +1019,10 @@ class NestedFrame(pd.DataFrame):
                 key=key,
                 inplace=False,
             )
+
+            #  Could be optimized, as number of rows doesn't change
             new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
+
             if inplace:
                 self._update_inplace(new_df)
                 return None
