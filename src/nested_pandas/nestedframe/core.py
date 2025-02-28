@@ -308,8 +308,7 @@ class NestedFrame(pd.DataFrame):
             # If the chunk is None, just return None
             if chunk is None:
                 return None
-            else:
-                return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
+            return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
         # Apply repacking to all nested columns
         repr = self.style.format(
