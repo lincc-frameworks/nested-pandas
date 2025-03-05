@@ -977,6 +977,41 @@ class NestedExtensionArray(ExtensionArray):
 
         self._replace_chunked_array(chunked_array, validate=True)
 
+    def fill_field_lists(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
+        """Fill list-arrays with values from the input array
+
+        The input value array must have as many elements as the array, e.g.
+        number of lists, not number of elements in the lists.
+
+        .fill_value("a", [1,2,3]) would set "a" to be
+        [1, 1, ...], [2, 2, ...], [3, 3, ...]
+
+        Parameters
+        ----------
+        field : str
+            The name of the field to fill.
+        value : ArrayLike
+            The array of values to fill the field with. The length of the array
+            is len(self).
+        keep_dtype : bool, default False
+            Whether to keep the original dtype of the field. If True,
+            now new field will be created, and the dtype of the existing
+            field will be kept. If False, the dtype of the field will be
+            inferred from the input value.
+        """
+        if np.ndim(value) == 0:
+            raise ValueError(
+                "The input array must be 1-dimensional, please use NestedExtenstionArray.set_flat_field() or"
+                " .nest.with_flat_field() for scalars"
+            )
+        if np.size(value) != len(self):
+            raise ValueError("The length of the input array must be equal to the length of the series")
+        if isinstance(value, (pa.ChunkedArray, pa.Array)):
+            value = pa.compute.take(value, self.get_list_index())
+        else:
+            value = np.repeat(value, self.list_lengths)
+        return self.set_flat_field(field, value, keep_dtype=keep_dtype)
+
     def pop_fields(self, fields: Iterable[str]):
         """Delete fields from the struct array
 

@@ -377,6 +377,33 @@ def test_with_list_field():
     )
 
 
+def test_with_filled_field():
+    """Test .nest.with_filled_field("field", value)"""
+    series = pack_seq(
+        [
+            pd.DataFrame({"a": [1, 2, 3], "b": [1.0, 5.0, 6.0]}),
+            pd.DataFrame({"a": [1, 2], "b": [None, 0.0]}),
+        ]
+    )
+    new_series = series.nest.with_filled_field(
+        "a",
+        [0, 100],
+    ).nest.with_filled_field(
+        "c",
+        ["abc", "xyz"],
+    )
+
+    desired = pack_seq(
+        [
+            pd.DataFrame({"a": [0, 0, 0], "b": [1.0, 5.0, 6.0], "c": ["abc", "abc", "abc"]}),
+            pd.DataFrame({"a": [100, 100], "b": [None, 0.0], "c": ["xyz", "xyz"]}),
+        ]
+    )
+
+    assert_series_equal(new_series.nest["a"], desired.nest["a"])
+    assert_series_equal(new_series.nest["c"], desired.nest["c"])
+
+
 def test_without_field_single_field():
     """Test .nest.without_field("field")"""
     struct_array = pa.StructArray.from_arrays(

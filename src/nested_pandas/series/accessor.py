@@ -178,7 +178,7 @@ class NestSeriesAccessor(Mapping):
             Name of the field to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a list-array of the same length
-             as the series, e.g. length of the series.
+             as the series.
 
         Returns
         -------
@@ -187,6 +187,31 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.set_list_field(field, value)
+        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+
+    def with_filled_field(self, field: str, value: ArrayLike) -> pd.Series:
+        """Set the field by repeating values and return a new series
+
+        The input value array must have as many elements as the Series,
+        each of them will be repeated in the corresponding list.
+
+        .nest.with_repeated_field("a", [1, 2, 3]) will create a nested field
+        "a" with values [[1, 1, ...], [2, 2, ...], [3, 3, ...]].
+
+        Parameters
+        ----------
+        field : str
+            Name of the field to set. If not present, it will be added.
+        value : ArrayLike
+            Array of values to set. It must have the same length as the series.
+
+        Returns
+        -------
+        pd.Series
+            The new series with the field set.
+        """
+        new_array = self._series.array.copy()
+        new_array.fill_field_lists(field, value)
         return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
 
     def without_field(self, field: str | list[str]) -> pd.Series:
