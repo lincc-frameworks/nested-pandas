@@ -1653,7 +1653,7 @@ def test_set_list_field_keep_dtype_raises_for_new_field():
     ext_array.set_list_field("c", [["x", "y", "z"]], keep_dtype=False)
 
 
-def test_fill_field():
+def test_fill_field_lists():
     """Tests that we can fill a field with an array"""
     ext_array = NestedExtensionArray(
         pa.StructArray.from_arrays(
@@ -1665,8 +1665,8 @@ def test_fill_field():
         )
     )
 
-    ext_array.fill_field("a", [1.0, 2.0])
-    ext_array.fill_field("c", ["abc", "def"])
+    ext_array.fill_field_lists("a", pa.array([1.0, 2.0]))
+    ext_array.fill_field_lists("c", ["abc", "def"])
 
     desired = NestedExtensionArray(
         pa.StructArray.from_arrays(
@@ -1679,6 +1679,25 @@ def test_fill_field():
         )
     )
     assert_series_equal(pd.Series(ext_array), pd.Series(desired))
+
+
+def test_fill_field_lists_fails_for_wrong_length():
+    """Test for multiple exceptions when fill_field_lists fails for wrong length."""
+    ext_array = NestedExtensionArray(
+        pa.StructArray.from_arrays(
+            arrays=[
+                pa.array([np.array([1.0, 2.0, 3.0]), np.array([4.0, 5.0])]),
+                pa.array([-np.array([4.0, 5.0, 6.0]), np.array([7.0, 8.0])]),
+            ],
+            names=["a", "b"],
+        )
+    )
+
+    with pytest.raises(ValueError):
+        ext_array.fill_field_lists("a", [1.0, 2.0, 3.0, 4.0])
+
+    with pytest.raises(ValueError):
+        ext_array.fill_field_lists("c", 1.0)
 
 
 def test_pop_fields():

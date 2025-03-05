@@ -977,7 +977,7 @@ class NestedExtensionArray(ExtensionArray):
 
         self._replace_chunked_array(chunked_array, validate=True)
 
-    def fill_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
+    def fill_field_lists(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Fill list-arrays with values from the input array
 
         The input value array must have as many elements as the array, e.g.
@@ -1000,7 +1000,10 @@ class NestedExtensionArray(ExtensionArray):
             inferred from the input value.
         """
         if np.ndim(value) == 0:
-            raise ValueError("The input array must be 1-dimensional, please use set_flat_field() for scalars")
+            raise ValueError(
+                "The input array must be 1-dimensional, please use NestedExtenstionArray.set_flat_field() or"
+                " .nest.with_flat_field() for scalars"
+            )
         if np.size(value) != len(self):
             raise ValueError("The length of the input array must be equal to the length of the series")
         if isinstance(value, (pa.ChunkedArray, pa.Array)):
