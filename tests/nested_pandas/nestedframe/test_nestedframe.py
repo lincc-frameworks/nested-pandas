@@ -1197,3 +1197,11 @@ def test_access_non_existing_column():
     nf = NestedFrame()
     with pytest.raises(KeyError):
         _ = nf["non_existing_column"]
+
+
+def test_issue193():
+    """https://github.com/lincc-frameworks/nested-pandas/issues/193"""
+    ndf = generate_data(3, 3)
+    ndf.query("nested.flux / nested.t > 0")
+    # This failed with numpy 1 with:
+    # TypeError: Cannot interpret 'double[pyarrow]' as a data type
