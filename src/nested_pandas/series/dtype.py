@@ -27,11 +27,27 @@ class NestedDtype(ExtensionDtype):
     pyarrow_dtype : pyarrow.StructType or pd.ArrowDtype
         The pyarrow data type to use for the nested type. It must be a struct
         type where all fields are list types.
+    inner_dtypes : Mapping[str, object] or None, default None
+        A mapping of field names and their inner types. This will be used to:
+        1. Cast to the correct types when getting flat representations
+           of the nested fields.
+        2. To handle information of the double-nested fields, you should use
+           this NestedDtype for the inner types in this case.
+        Dtypes must be pandas-recognisable types, such as Python native types,
+        numpy dtypes or extension array dtypes. Please wrap pyarrow types with
+        pd.ArrowDtype.
+        We trust these dtypes and make no attempt to validate them when
+        casting.
+        If None, all inner types are assumed to be the same as the
+        corresponding list element types.
     """
 
     # ExtensionDtype overrides #
 
-    _metadata = ("pyarrow_dtype",)
+    _metadata = (
+        "pyarrow_dtype",
+        "inner_dtypes",
+    )
     """Attributes to use as metadata for __eq__ and __hash__"""
 
     @property
@@ -45,7 +61,12 @@ class NestedDtype(ExtensionDtype):
     @property
     def name(self) -> str:
         """The string representation of the nested type"""
-        fields = ", ".join([f"{field.name}: [{field.type.value_type!s}]" for field in self.pyarrow_dtype])
+        # Replace pd.ArrowDtype with pa.DataType, because it has nicer __str__
+        nice_dtypes = {
+            field: dtype.pyarrow_dtype if isinstance(dtype, pd.ArrowDtype) else dtype
+            for field, dtype in self.fields.items()
+        }
+        fields = ", ".join([f"{field}: [{dtype!s}]" for field, dtype in nice_dtypes.items()])
         return f"nested<{fields}>"
 
     @classmethod
@@ -141,21 +162,26 @@ class NestedDtype(ExtensionDtype):
     # Additional methods and attributes #
 
     pyarrow_dtype: pa.StructType
+    inner_dtypes: dict[str, object]
 
-    def __init__(self, pyarrow_dtype: pa.DataType | pd.ArrowDtype) -> None:
+    def __init__(
+        self, pyarrow_dtype: pa.DataType | pd.ArrowDtype, inner_dtypes: Mapping[str, object] | None = None
+    ) -> None:
         if isinstance(pyarrow_dtype, pd.ArrowDtype):
             pyarrow_dtype = pyarrow_dtype.pyarrow_dtype
         self.pyarrow_dtype = self._validate_dtype(pyarrow_dtype)
+        self.inner_dtypes = self._validate_inner_dtypes(self.pyarrow_dtype, inner_dtypes)
 
     @classmethod
-    def from_fields(cls, fields: Mapping[str, pa.DataType]) -> Self:  # type: ignore[name-defined] # noqa: F821
+    def from_fields(cls, fields: Mapping[str, pa.DataType | Self]) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Make NestedDtype from a mapping of field names and list item types.
 
         Parameters
         ----------
-        fields : Mapping[str, pa.DataType]
-            A mapping of field names and their item types. Since all fields are lists, the item types are
-            inner types of the lists, not the list types themselves.
+        fields : Mapping[str, pa.DataType | NestedDtype]
+            A mapping of field names and their item types. Since all fields are
+            lists, the item types are inner types of the lists, not the list
+            types themselves.
 
         Returns
         -------
@@ -172,9 +198,15 @@ class NestedDtype(ExtensionDtype):
         ...     == pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.int64())})
         ... )
         """
-        pyarrow_dtype = pa.struct({field: pa.list_(pa_type) for field, pa_type in fields.items()})
-        pyarrow_dtype = cast(pa.StructType, pyarrow_dtype)
-        return cls(pyarrow_dtype=pyarrow_dtype)
+        pa_fields = {}
+        inner_dtypes = {}
+        for field, dtype in fields.items():
+            if isinstance(dtype, NestedDtype):
+                inner_dtypes[field] = dtype
+                dtype = dtype.pyarrow_dtype
+            pa_fields[field] = dtype
+        pyarrow_dtype = pa.struct({field: pa.list_(pa_type) for field, pa_type in pa_fields.items()})
+        return cls(pyarrow_dtype=pyarrow_dtype, inner_dtypes=inner_dtypes or None)
 
     @staticmethod
     def _validate_dtype(pyarrow_dtype: pa.DataType) -> pa.StructType:
@@ -192,10 +224,49 @@ class NestedDtype(ExtensionDtype):
                 )
         return pyarrow_dtype
 
+    @staticmethod
+    def _validate_inner_dtypes(
+        pyarrow_dtype: pa.StructType, inner_dtypes: Mapping[str, object] | None
+    ) -> dict[str, object]:
+        # Short circuit if there are no inner dtypes
+        if inner_dtypes is None:
+            return {}
+
+        inner_dtypes = dict(inner_dtypes)
+
+        for field_name, inner_dtype in inner_dtypes.items():
+            if field_name not in pyarrow_dtype.names:
+                raise ValueError(f"Field '{field_name}' not found in the pyarrow struct type.")
+            element_type = pyarrow_dtype[field_name].type.value_type
+            test_series = pd.Series([], dtype=pd.ArrowDtype(element_type))
+            try:
+                _ = test_series.astype(inner_dtype)
+            except TypeError as e:
+                raise TypeError(
+                    f"Could not cast the inner dtype '{inner_dtype}' for field '{field_name}' to the"
+                    f" corresponding element type '{element_type}'. {e}"
+                ) from e
+        return inner_dtypes
+
+    def inner_dtype(self, field: str) -> object:
+        """Get the inner dtype for a field.
+
+        Parameters
+        ----------
+        field : str
+            The field name.
+
+        Returns
+        -------
+        object
+            The inner dtype for the field.
+        """
+        return self.inner_dtypes.get(field, pd.ArrowDtype(self.pyarrow_dtype[field].type.value_type))
+
     @property
-    def fields(self) -> dict[str, pa.DataType]:
-        """The mapping of field names and their item types."""
-        return {field.name: field.type.value_type for field in self.pyarrow_dtype}
+    def fields(self) -> dict[str, object]:
+        """The mapping of field names and pandas dtypes of their items"""
+        return {field.name: self.inner_dtype(field.name) for field in self.pyarrow_dtype}
 
     @property
     def field_names(self) -> list[str]:
