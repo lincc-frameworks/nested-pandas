@@ -195,7 +195,12 @@ class NestedFrame(pd.DataFrame):
             if len(components) != 2:
                 raise ValueError(f"Only one level of nesting is supported; given {key}")
             nested, field = components
-            new_nested_series = self[nested].nest.with_flat_field(field, value)
+            # Support a special case of embedding a base column into a nested column, with values being
+            # repeated in each nested list-array.
+            if isinstance(value, pd.Series) and self.index.equals(value.index):
+                new_nested_series = self[nested].nest.with_filled_field(field, value)
+            else:
+                new_nested_series = self[nested].nest.with_flat_field(field, value)
             return super().__setitem__(nested, new_nested_series)
 
         # Adding a new nested structure from a column

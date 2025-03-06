@@ -160,7 +160,7 @@ def test_get_nested_column():
 
 
 def test_set_or_replace_nested_col():
-    """Test that __setitem__ can set or replace a column in a existing nested structure"""
+    """Test that __setitem__ can set or replace a column in an existing nested structure"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
     c = [0, 2, 4, 1, 4, 3, 1, 4, 1]
@@ -187,6 +187,17 @@ def test_set_or_replace_nested_col():
 
     assert "e" in base.nested.nest.fields
     assert np.array_equal(base["nested.d"].values.to_numpy() * 2, base["nested.e"].values.to_numpy())
+
+    # test assignment a new column with list-repeated values
+    base["nested.a"] = base["a"]
+
+    assert "a" in base.nested.nest.fields
+    assert np.array_equal(np.unique(base["a"].to_numpy()), np.unique(base["nested.a"].to_numpy()))
+
+    # rest replacement with a list-repeated column
+    base["nested.c"] = base["a"] + base["b"] - 99
+
+    assert np.array_equal(base["a"] + base["b"] - 99, np.unique(base["nested.c"].to_numpy()))
 
 
 def test_set_new_nested_col():
