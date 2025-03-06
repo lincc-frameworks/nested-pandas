@@ -109,7 +109,7 @@ class NestSeriesAccessor(Mapping):
                 index=pd.Series(index, name=self._series.index.name),
                 name=field,
                 copy=False,
-                dtype=pd.ArrowDtype(chunked_array.type),
+                dtype=self._series.dtype.inner_dtype(field),
             )
 
         return pd.DataFrame(flat_series)
@@ -292,7 +292,7 @@ class NestSeriesAccessor(Mapping):
 
         return pd.Series(
             flat_chunked_array,
-            dtype=pd.ArrowDtype(flat_chunked_array.type),
+            dtype=self._series.dtype.inner_dtype(field),
             index=self.get_flat_index(),
             name=field,
             copy=False,

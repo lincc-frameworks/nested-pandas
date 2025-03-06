@@ -35,7 +35,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from collections.abc import Generator, Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from typing import Any, Callable, cast
 
 import numpy as np
@@ -212,7 +212,7 @@ class NestedExtensionArray(ExtensionArray):
         Parameters
         ----------
         scalars : Sequence
-            The sequence of scalars: disctionaries, DataFrames, None, pd.NA, pa.Array or anything convertible
+            The sequence of scalars: dictionaries, DataFrames, None, pd.NA, pa.Array or anything convertible
             to PyArrow scalars.
         dtype : dtype or None
             dtype of the resulting array
@@ -223,7 +223,8 @@ class NestedExtensionArray(ExtensionArray):
 
         pa_type = to_pyarrow_dtype(dtype)
         pa_array = cls._box_pa_array(scalars, pa_type=pa_type)
-        return cls(pa_array)
+        inner_dtypes = dtype.inner_dtypes if isinstance(dtype, NestedDtype) else None
+        return cls(pa_array, inner_dtypes=inner_dtypes)
 
     # Tricky to implement, but required by things like pd.read_csv
     @classmethod
@@ -655,7 +656,13 @@ class NestedExtensionArray(ExtensionArray):
     _chunked_array: pa.ChunkedArray
     _dtype: NestedDtype
 
-    def __init__(self, values: pa.Array | pa.ChunkedArray, *, validate: bool = True) -> None:
+    def __init__(
+        self,
+        values: pa.Array | pa.ChunkedArray,
+        *,
+        inner_dtypes: Mapping[str, object] | None = None,
+        validate: bool = True,
+    ) -> None:
         if isinstance(values, pa.Array):
             values = pa.chunked_array([values])
 
@@ -670,7 +677,7 @@ class NestedExtensionArray(ExtensionArray):
             self._validate(values)
 
         self._chunked_array = values
-        self._dtype = NestedDtype(values.type)
+        self._dtype = NestedDtype(values.type, inner_dtypes=inner_dtypes)
 
     @property
     def _list_array(self) -> pa.ChunkedArray:
