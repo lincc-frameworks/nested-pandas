@@ -20,8 +20,9 @@ from nested_pandas.series.ext_array import NestedExtensionArray
 )
 def test_from_pyarrow_dtype(pyarrow_dtype):
     """Test that we can construct NestedDtype from pyarrow struct type."""
-    dtype = NestedDtype(pyarrow_dtype)
-    assert dtype.pyarrow_dtype == pyarrow_dtype
+    dtype1 = NestedDtype(pyarrow_dtype)
+    dtype2 = NestedDtype(pd.ArrowDtype(pyarrow_dtype))
+    assert dtype1.pyarrow_dtype == dtype2.pyarrow_dtype == pyarrow_dtype
 
 
 @pytest.mark.parametrize(
@@ -39,6 +40,8 @@ def test_from_pyarrow_dtype_raises(pyarrow_dtype):
     """Test that we raise an error when constructing NestedDtype from invalid pyarrow type."""
     with pytest.raises(ValueError):
         NestedDtype(pyarrow_dtype)
+    with pytest.raises(ValueError):
+        NestedDtype(pd.ArrowDtype(pyarrow_dtype))
 
 
 def test_to_pandas_arrow_dtype():

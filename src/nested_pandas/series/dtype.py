@@ -20,7 +20,14 @@ __all__ = ["NestedDtype"]
 
 @register_extension_dtype
 class NestedDtype(ExtensionDtype):
-    """Data type to handle packed time series data"""
+    """Data type to handle packed time series data
+
+    Parameters
+    ----------
+    pyarrow_dtype : pyarrow.StructType or pd.ArrowDtype
+        The pyarrow data type to use for the nested type. It must be a struct
+        type where all fields are list types.
+    """
 
     # ExtensionDtype overrides #
 
@@ -135,7 +142,9 @@ class NestedDtype(ExtensionDtype):
 
     pyarrow_dtype: pa.StructType
 
-    def __init__(self, pyarrow_dtype: pa.DataType) -> None:
+    def __init__(self, pyarrow_dtype: pa.DataType | pd.ArrowDtype) -> None:
+        if isinstance(pyarrow_dtype, pd.ArrowDtype):
+            pyarrow_dtype = pyarrow_dtype.pyarrow_dtype
         self.pyarrow_dtype = self._validate_dtype(pyarrow_dtype)
 
     @classmethod
@@ -192,27 +201,6 @@ class NestedDtype(ExtensionDtype):
     def field_names(self) -> list[str]:
         """The list of field names of the nested type"""
         return [field.name for field in self.pyarrow_dtype]
-
-    @classmethod
-    def from_pandas_arrow_dtype(cls, pandas_arrow_dtype: ArrowDtype):
-        """Construct NestedDtype from a pandas.ArrowDtype.
-
-        Parameters
-        ----------
-        pandas_arrow_dtype : ArrowDtype
-            The pandas.ArrowDtype to construct NestedDtype from.
-
-        Returns
-        -------
-        NestedDtype
-            The constructed NestedDtype.
-
-        Raises
-        ------
-        ValueError
-            If the given dtype is not a valid nested type.
-        """
-        return cls(pyarrow_dtype=pandas_arrow_dtype.pyarrow_dtype)
 
     def to_pandas_arrow_dtype(self) -> ArrowDtype:
         """Convert NestedDtype to a pandas.ArrowDtype.
