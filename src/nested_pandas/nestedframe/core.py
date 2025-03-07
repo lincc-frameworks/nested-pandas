@@ -72,8 +72,8 @@ class NestedFrame(pd.DataFrame):
     def _repr_html_(self) -> str | None:
         """Override html representation"""
 
-        # Without nested columns, just do representation as normal
-        if len(self.nested_columns) == 0:
+        # Without nested columns (or empty), just do representation as normal
+        if len(self.nested_columns) == 0 or len(self) == 0:
             # This mimics pandas behavior
             if self.shape[0] > pd.get_option("display.max_rows"):
                 return super().to_html(max_rows=pd.get_option("display.min_rows"), show_dimensions=True)
@@ -102,13 +102,24 @@ class NestedFrame(pd.DataFrame):
                 return None
             return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
+        # replace index to ensure proper behavior for duplicate index values
+        index_values = self.index
+        html_df = self.reset_index(drop=True)
+
         # Apply repacking to all nested columns
-        repr = self.style.format(
-            {col: repack_first_cell for col in self.nested_columns}, subset=self.index[0]
+        repr = html_df.style.format(
+            {col: repack_first_cell for col in self.nested_columns}, subset=html_df.index[0]
         )
-        repr = repr.format(
-            {col: repack_row for col in self.nested_columns}, subset=pd.IndexSlice[self.index[1] :]
-        )
+        if len(self) > 1:
+            repr = repr.format(
+                {col: repack_row for col in self.nested_columns}, subset=pd.IndexSlice[html_df.index[1] :]
+            )
+
+        # Create a mapping function to retrieve original index
+        def map_true_index(index):
+            return index_values[index]
+
+        repr = repr.format_index(map_true_index, axis=0)
 
         # Recover some truncation formatting, limited to head truncation
         if pd.get_option("display.max_rows") is None:
