@@ -925,11 +925,15 @@ class NestedFrame(pd.DataFrame):
 
         if infer_nesting:
             # find potential nested structures from columns
-            nested_cols = list(np.unique(
-                [column.split(".", 1)[0]
-                 for column in results_nf.columns
-                 if isinstance(column, str) and "." in column]
-            ))
+            nested_cols = list(
+                np.unique(
+                    [
+                        column.split(".", 1)[0]
+                        for column in results_nf.columns
+                        if isinstance(column, str) and "." in column
+                    ]
+                )
+            )
 
             # pack results into nested structures
             for layer in nested_cols:
