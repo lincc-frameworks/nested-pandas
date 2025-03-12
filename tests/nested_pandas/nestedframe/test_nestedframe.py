@@ -1022,6 +1022,67 @@ def test_reduce_duplicated_cols():
     )
 
 
+def test_reduce_infer_nesting():
+    """Test that nesting inference works in reduce"""
+
+    ndf = generate_data(3, 20, seed=1)
+
+    # Test simple case
+    def complex_output(flux):
+        return {
+            "max_flux": np.max(flux),
+            "lc.flux_quantiles": np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]),
+        }
+
+    result = ndf.reduce(complex_output, "nested.flux")
+    assert list(result.columns) == ["max_flux", "lc"]
+    assert list(result.lc.nest.fields) == ["flux_quantiles"]
+
+    # Test multi-column nested output
+    def complex_output(flux):
+        return {
+            "max_flux": np.max(flux),
+            "lc.flux_quantiles": np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]),
+            "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
+        }
+
+    result = ndf.reduce(complex_output, "nested.flux")
+    assert list(result.columns) == ["max_flux", "lc"]
+    assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
+
+    # Test integer names
+    def complex_output(flux):
+        return np.max(flux), np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]), [0.1, 0.2, 0.3, 0.4, 0.5]
+
+    result = ndf.reduce(complex_output, "nested.flux")
+    assert list(result.columns) == [0, 1, 2]
+
+    # Test multiple nested structures output
+    def complex_output(flux):
+        return {
+            "max_flux": np.max(flux),
+            "lc.flux_quantiles": np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]),
+            "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
+            "meta.colors": ["green", "red", "blue"],
+        }
+
+    result = ndf.reduce(complex_output, "nested.flux")
+    assert list(result.columns) == ["max_flux", "lc", "meta"]
+    assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
+    assert list(result.meta.nest.fields) == ["colors"]
+
+    # Test only nested structure output
+    def complex_output(flux):
+        return {
+            "lc.flux_quantiles": np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]),
+            "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
+        }
+
+    result = ndf.reduce(complex_output, "nested.flux")
+    assert list(result.columns) == ["lc"]
+    assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
+
+
 def test_scientific_notation():
     """
     Test that NestedFrame.query handles constants that are written in scientific notation.
