@@ -845,7 +845,7 @@ class NestedFrame(pd.DataFrame):
                 return None
             return new_df
 
-    def reduce(self, func, *args, **kwargs) -> NestedFrame:  # type: ignore[override]
+    def reduce(self, func, *args, infer_nesting=True, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
 
@@ -862,6 +862,12 @@ class NestedFrame(pd.DataFrame):
         args : positional arguments
             Positional arguments to pass to the function, the first *args should be the names of the
             columns to apply the function to.
+        infer_nesting : bool, default True
+            If True, the function will pack output columns into nested
+            structures based on column names adherring to a nested naming
+            scheme. E.g. "nested.b" and "nested.c" will be packed into a column
+            called "nested" with columns "b" and "c". If False, all outputs
+            will be returned as base columns.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -915,7 +921,25 @@ class NestedFrame(pd.DataFrame):
                 iterators.append(self[layer].array.iter_field_lists(col))
 
         results = [func(*cols, *extra_args, **kwargs) for cols in zip(*iterators)]
-        return NestedFrame(results, index=self.index)
+        results_nf = NestedFrame(results, index=self.index)
+
+        if infer_nesting:
+            # find potential nested structures
+            nested_cols = []
+            for column in results_nf.columns:
+                if isinstance(column, str) and "." in column:
+                    layer, col = column.split(".", 1)
+                    nested_cols.append(layer)
+            nested_cols = np.unique(nested_cols)
+
+            # pack results into nested structures
+            for layer in nested_cols:
+                layer_cols = [col for col in results_nf.columns if col.startswith(f"{layer}.")]
+                rename_df = results_nf[layer_cols].rename(columns=lambda x: x.split(".", 1)[1])
+                nested_col = pack_lists(rename_df, name=layer)
+                results_nf = results_nf[[col for col in results_nf.columns if not col.startswith(f"{layer}.")]].join(nested_col)
+
+        return results_nf
 
     def to_parquet(self, path, by_layer=False, **kwargs) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
