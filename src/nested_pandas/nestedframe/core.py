@@ -924,7 +924,7 @@ class NestedFrame(pd.DataFrame):
         results_nf = NestedFrame(results, index=self.index)
 
         if infer_nesting:
-            # find potential nested structures
+            # find potential nested structures from columns
             nested_cols = []
             for column in results_nf.columns:
                 if isinstance(column, str) and "." in column:
@@ -937,7 +937,9 @@ class NestedFrame(pd.DataFrame):
                 layer_cols = [col for col in results_nf.columns if col.startswith(f"{layer}.")]
                 rename_df = results_nf[layer_cols].rename(columns=lambda x: x.split(".", 1)[1])
                 nested_col = pack_lists(rename_df, name=layer)
-                results_nf = results_nf[[col for col in results_nf.columns if not col.startswith(f"{layer}.")]].join(nested_col)
+                results_nf = results_nf[
+                    [col for col in results_nf.columns if not col.startswith(f"{layer}.")]
+                ].join(nested_col)
 
         return results_nf
 
