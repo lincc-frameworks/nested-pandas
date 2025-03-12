@@ -864,7 +864,7 @@ class NestedFrame(pd.DataFrame):
             columns to apply the function to.
         infer_nesting : bool, default True
             If True, the function will pack output columns into nested
-            structures based on column names adherring to a nested naming
+            structures based on column names adhering to a nested naming
             scheme. E.g. "nested.b" and "nested.c" will be packed into a column
             called "nested" with columns "b" and "c". If False, all outputs
             will be returned as base columns.
