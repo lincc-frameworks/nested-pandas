@@ -930,7 +930,7 @@ class NestedFrame(pd.DataFrame):
                 if isinstance(column, str) and "." in column:
                     layer, col = column.split(".", 1)
                     nested_cols.append(layer)
-            nested_cols = np.unique(nested_cols)
+            nested_cols = list(np.unique(nested_cols))
 
             # pack results into nested structures
             for layer in nested_cols:
