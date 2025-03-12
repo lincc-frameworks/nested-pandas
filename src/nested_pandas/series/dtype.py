@@ -173,7 +173,7 @@ class NestedDtype(ExtensionDtype):
         self.inner_dtypes = self._validate_inner_dtypes(self.pyarrow_dtype, inner_dtypes)
 
     @classmethod
-    def from_fields(cls, fields: Mapping[str, pa.DataType | Self]) -> Self:  # type: ignore[name-defined] # noqa: F821
+    def from_fields(cls, fields: Mapping[str, pa.DataType | pa.ArrowDtype | Self]) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Make NestedDtype from a mapping of field names and list item types.
 
         Parameters
@@ -204,6 +204,8 @@ class NestedDtype(ExtensionDtype):
             if isinstance(dtype, NestedDtype):
                 inner_dtypes[field] = dtype
                 dtype = dtype.pyarrow_dtype
+            elif isinstance(dtype, pd.ArrowDtype):
+                dtype = dtype.pyarrow_dtype
             pa_fields[field] = dtype
         pyarrow_dtype = pa.struct({field: pa.list_(pa_type) for field, pa_type in pa_fields.items()})
         return cls(pyarrow_dtype=pyarrow_dtype, inner_dtypes=inner_dtypes or None)
@@ -229,7 +231,7 @@ class NestedDtype(ExtensionDtype):
         pyarrow_dtype: pa.StructType, inner_dtypes: Mapping[str, object] | None
     ) -> dict[str, object]:
         # Short circuit if there are no inner dtypes
-        if inner_dtypes is None:
+        if inner_dtypes is None or len(inner_dtypes) == 0:
             return {}
 
         inner_dtypes = dict(inner_dtypes)
