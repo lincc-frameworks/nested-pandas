@@ -1,4 +1,4 @@
-API Reference (Test)
+API Reference
 ========================================================================================
 
 .. toctree::
@@ -6,8 +6,7 @@ API Reference (Test)
 
     NestedFrame <reference/nestedframe>
     .nest Accessor <reference/accessor>
-    NestedDtype <reference/nesteddtype>
-    Datasets <reference/datasets>
     Utility Functions <reference/utils>
+    NestedDtype <reference/nesteddtype>
     Nested Extension Array <reference/ext_array>
     Packer Functions <reference/packer>

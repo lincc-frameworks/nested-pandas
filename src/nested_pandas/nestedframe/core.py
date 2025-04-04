@@ -370,13 +370,12 @@ class NestedFrame(pd.DataFrame):
         NestedFrame
             A NestedFrame with the specified nesting structure.
 
-         Examples
+        Examples
         --------
 
         >>> nf = NestedFrame({"c":[1,2,3], "d":[2,4,6],
         ...                   "e":[[1,2,3], [4,5,6], [7,8,9]]},
-        ...                  index=[0,1,2])
-
+        ...                   index=[0,1,2])
 
         >>> NestedFrame.from_lists(nf, base_columns=["c","d"])
         """

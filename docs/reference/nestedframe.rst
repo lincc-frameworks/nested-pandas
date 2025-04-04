@@ -19,8 +19,16 @@ Nesting
     NestedFrame.from_flat
     NestedFrame.from_lists
 
-Extended Pandas Interface
-~~~~~~~~~
+Extended Pandas.DataFrame Interface
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. note:: 
+   The NestedFrame extends the Pandas.DataFrame interface, so all methods
+   of Pandas.DataFrame are available. The following methods are extended
+   to support NestedFrame functionality. Please reference the Pandas
+   documentation for more information.
+   https://pandas.pydata.org/docs/reference/frame.html
+   
 .. autosummary::
     :toctree: api/
 
