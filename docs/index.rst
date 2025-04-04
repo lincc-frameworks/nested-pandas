@@ -87,4 +87,5 @@ Learn more about contributing to this repository in our :doc:`Contribution Guide
    Home page <self>
    Getting Started <gettingstarted>
    Tutorials <tutorials>
+   Test API Reference <reference>
    API Reference <autoapi/index>
