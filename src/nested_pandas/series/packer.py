@@ -7,7 +7,7 @@ TODO: multi-index support
 # "|" for python 3.9
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -158,12 +158,22 @@ def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> pd.
         raise ValueError("The index of the input dataframe must be sorted")
 
     packed_df = view_sorted_df_as_list_arrays(df)
+
+    # Handle columns which are already nested in the input dataframe
+    inner_dtypes = {str(col): dtype for col, dtype in df.dtypes.items() if isinstance(dtype, NestedDtype)}
+
     # No need to validate the dataframe, the length of the nested arrays is forced to be the same by
     # the view_sorted_df_as_list_arrays function.
-    return pack_lists(packed_df, name=name, validate=False)
+    return pack_lists(packed_df, name=name, validate=False, inner_dtypes=inner_dtypes)
 
 
-def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = True) -> pd.Series:
+def pack_lists(
+    df: pd.DataFrame,
+    name: str | None = None,
+    *,
+    validate: bool = True,
+    inner_dtypes: Mapping[str, object] | None = None,
+) -> pd.Series:
     """Make a series of arrow structures from a dataframe with nested arrays.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -184,6 +194,9 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
         Name of the pd.Series.
     validate : bool, default True
         Whether to validate the input dataframe.
+    inner_dtypes : mapping of field names to pandas dtypes to cast to, optional
+        The dtypes to cast the inner arrays to. If not provided, the dtypes
+        may be inferred from the input arrays.
 
     Returns
     -------
@@ -225,11 +238,19 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
         )
 
     ext_array = NestedExtensionArray(struct_array, validate=validate)
+
+    # Put nested dtypes of the input dataframe into the output series dtype
+    # Prefer inferred dtypes over what we previously detected in pack_sorted_df_into_struct
+    inferred_dtype = ext_array.dtype
+    inner_dtypes = dict(inner_dtypes or {})
+    dtype = NestedDtype(inferred_dtype.pyarrow_dtype, inner_dtypes=inner_dtypes | inferred_dtype.inner_dtypes)
+
     return pd.Series(
         ext_array,
         index=df.index,
         copy=False,
         name=name,
+        dtype=dtype,
     )
 
 

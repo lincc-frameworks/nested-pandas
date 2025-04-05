@@ -3,6 +3,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 from nested_pandas import NestedDtype
+from nested_pandas.datasets import generate_data
 from nested_pandas.series import packer
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
@@ -219,6 +220,19 @@ def test_pack_flat_with_on():
     desired.index.name = "c"
     offsets_reused(actual)
     assert_series_equal(actual, desired)
+
+
+def test_pack_flat_with_nested():
+    """Test pack_flat when input already has nested columns."""
+    df = generate_data(10, 3)
+    index = [0, 0, 1, 1, 2, 2, 2, 2, 0, 0]
+    df.index = index
+    actual = packer.pack_flat(df)
+
+    desired_dtype = NestedDtype.from_fields(
+        {col: t if isinstance(t, NestedDtype) else pa.from_numpy_dtype(t) for col, t in df.dtypes.items()}
+    )
+    assert actual.dtype == desired_dtype, f"{actual.dtype.name} != {desired_dtype.name}"
 
 
 def test_pack_sorted_df_into_struct():

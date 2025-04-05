@@ -179,9 +179,32 @@ def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.A
     return pa.compute.if_else(mask, broadcast_value, array)
 
 
-def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.DataType | None) -> pa.Scalar:
-    d = {column: series.values for column, series in df.to_dict("series").items()}
-    return pa.scalar(d, type=pa_type, from_pandas=True)
+def convert_df_to_pa_scalar(
+    df: pd.DataFrame, *, pa_type: pa.DataType | None
+) -> tuple[pa.StructScalar, dict[str, NestedDtype]]:
+    """Convert a pandas DataFrame to a PyArrow StructScalar
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to be converted
+    pa_type : pa.DataType | None
+        The PyArrow data type to be used for the scalar.
+        If None, the data type will be inferred from the DataFrame.
+
+    Returns
+    -------
+    pa.StructScalar
+        The PyArrow StructScalar representing the DataFrame
+    dict[str, object]
+        Pandas dtypes of the DataFrame columns which we'd like to cast the result to.
+    """
+    d = {
+        column: series.values.to_pyarrow_scalar() if isinstance(series.dtype, NestedDtype) else series.values
+        for column, series in df.to_dict("series").items()
+    }
+    inner_dtypes = {column: dtype for column, dtype in df.dtypes.items() if isinstance(dtype, NestedDtype)}
+    return pa.scalar(d, type=pa_type, from_pandas=True), inner_dtypes
 
 
 class NestedExtensionArray(ExtensionArray):
@@ -222,8 +245,13 @@ class NestedExtensionArray(ExtensionArray):
         del copy
 
         pa_type = to_pyarrow_dtype(dtype)
-        pa_array = cls._box_pa_array(scalars, pa_type=pa_type)
-        inner_dtypes = dtype.inner_dtypes if isinstance(dtype, NestedDtype) else None
+        pa_array, infered_inner_dtypes = cls._box_pa_array(scalars, pa_type=pa_type)
+        if isinstance(dtype, NestedDtype):
+            inner_dtypes = dtype.inner_dtypes
+        elif len(infered_inner_dtypes) > 1:
+            inner_dtypes = infered_inner_dtypes
+        else:
+            inner_dtypes = None
         return cls(pa_array, inner_dtypes=inner_dtypes)
 
     # Tricky to implement, but required by things like pd.read_csv
@@ -298,10 +326,10 @@ class NestedExtensionArray(ExtensionArray):
 
         # Try to convert to struct_scalar first, if it fails, convert to array
         try:
-            scalar = self._box_pa_scalar(value, pa_type=self._pyarrow_dtype)
+            scalar, _ = self._box_pa_scalar(value, pa_type=self._pyarrow_dtype)
         except (ValueError, TypeError):
             # Copy will happen later in replace_with_mask() anyway
-            value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
+            value, _ = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
             # Our replace_with_mask implementation doesn't work with scalars
             value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
@@ -460,7 +488,7 @@ class NestedExtensionArray(ExtensionArray):
             raise IndexError("out of bounds value in 'indices'.")
 
         if allow_fill:
-            fill_value = self._box_pa_scalar(fill_value, pa_type=self._pyarrow_dtype)
+            fill_value, _inner_dtypes = self._box_pa_scalar(fill_value, pa_type=self._pyarrow_dtype)
 
             fill_mask = indices_array < 0
             if not fill_mask.any():
@@ -595,23 +623,60 @@ class NestedExtensionArray(ExtensionArray):
     # End of Additional magic methods #
 
     @classmethod
-    def _box_pa_scalar(cls, value, *, pa_type: pa.DataType | None) -> pa.Scalar:
-        """Convert a value to a PyArrow scalar with the specified type."""
-        if isinstance(value, pa.Scalar):
+    def _box_pa_scalar(
+        cls, value, *, pa_type: pa.DataType | None
+    ) -> tuple[pa.StructScalar, dict[str, NestedDtype]]:
+        """Convert a value to a PyArrow scalar with the specified type.
+
+        Parameters
+        ----------
+        value: convertible to a PyArrow scalar
+            The value to be converted.
+        pa_type: PyArrow data type or None (default: None)
+            The type to which the value should be converted. If None,
+            the type is inferred from the value.
+
+        Returns
+        -------
+        pa.StructScalar
+            The converted PyArrow scalar.
+        dict[str, object]
+            Pandas datatypes of the scalar struct-fields.
+        """
+        empty_inner_dtypes = cast(dict[str, NestedDtype], {})
+        if isinstance(value, (pa.StructScalar, pa.NullScalar)):
             if pa_type is None:
-                return value
-            return value.cast(pa_type)
+                return value, empty_inner_dtypes
+            return value.cast(pa_type), empty_inner_dtypes
         if value is pd.NA or value is None:
-            return pa.scalar(None, type=pa_type, from_pandas=True)
+            return pa.scalar(None, type=pa_type, from_pandas=True), empty_inner_dtypes
         if isinstance(value, pd.DataFrame):
             return convert_df_to_pa_scalar(value, pa_type=pa_type)
-        return pa.scalar(value, type=pa_type, from_pandas=True)
+        return pa.scalar(value, type=pa_type, from_pandas=True), empty_inner_dtypes
 
     @classmethod
-    def _box_pa_array(cls, value, *, pa_type: pa.DataType | None) -> pa.Array | pa.ChunkedArray:
-        """Convert a value to a PyArrow array with the specified type."""
+    def _box_pa_array(
+        cls, value, *, pa_type: pa.DataType | None
+    ) -> tuple[pa.Array | pa.ChunkedArray, dict[str, object]]:
+        """Convert a value to a PyArrow array with the specified type.
+
+        Parameters
+        ----------
+        value
+            Value to convert
+        pa_type : pyarrow.DataType or None
+            Pyarrow type to cast to. If None it will be derived
+
+        Returns
+        -------
+        pyarrow.Array or pyarrow.ChunkedArray
+            The result array
+        dict of inferred inner dtypes
+        """
+        inner_dtypes: dict[str, object] = {}
         if isinstance(value, cls):
             pa_array = value._chunked_array
+            inner_dtypes = value.dtype.inner_dtypes.copy()
         elif isinstance(value, (pa.Array, pa.ChunkedArray)):
             pa_array = value
         else:
@@ -619,11 +684,14 @@ class NestedExtensionArray(ExtensionArray):
                 pa_array = pa.array(value, type=pa_type)
             except (ValueError, TypeError, KeyError):
                 scalars: list[pa.Scalar] = []
+                # Pandas dtypes to cast the result Series to. Currently NestedDtype only.
                 for v in value:
                     # If pa_type is not specified, then cast to the first non-null type
                     if pa_type is None and len(scalars) > 0 and not isinstance(scalars[-1], pa.NullScalar):
                         pa_type = scalars[-1].type
-                    scalars.append(cls._box_pa_scalar(v, pa_type=pa_type))
+                    scalar, dtypes = cls._box_pa_scalar(v, pa_type=pa_type)
+                    scalars.append(scalar)
+                    inner_dtypes.update(dtypes)
                 # We recast the scalars to the specified type.
                 # Logically, we should 1) have `pa_type is not None` here,
                 # 2) only "head" null-scalars to be not cast to the specified type.
@@ -633,13 +701,15 @@ class NestedExtensionArray(ExtensionArray):
                 scalars = [s.cast(pa_type) for s in scalars]
                 pa_array = pa.array(scalars)
                 # We already copied the data into scalars
+            else:
+                inner_dtypes = {}
 
         # We always cast - even if the type is the same, it does not hurt
-        # If the type is different the result may still be a view, so we do not set copy=False
+        # If the type is different, the result array may still be a view, so we do not set copy=False
         if pa_type is not None:
             pa_array = pa_array.cast(pa_type)
 
-        return pa_array
+        return pa_array, inner_dtypes
 
     @classmethod
     def _convert_struct_scalar_to_df(cls, value: pa.StructScalar, *, copy: bool, na_value: Any = None) -> Any:
@@ -757,10 +827,31 @@ class NestedExtensionArray(ExtensionArray):
         list_struct : bool, optional
             If False (default), return struct-list array, otherwise return
             list-struct array.
+
+        Returns
+        -------
+        pandas.ArrowExtensionArray
         """
         if list_struct:
             return ArrowExtensionArray(self._list_array)
         return ArrowExtensionArray(self._chunked_array)
+
+    def to_pyarrow_scalar(self, list_struct: bool = False) -> pa.ListScalar:
+        """Convert to a pyarrow scalar of a list type
+
+        Parameters
+        ----------
+        list_struct : bool, optional
+            If False (default), return list-struct-list scalar,
+            otherwise  list-list-struct scalar.
+
+        Returns
+        -------
+        pyarrow.ListScalar
+        """
+        pa_array = self._list_array if list_struct else self._chunked_array
+        pa_type = pa.list_(pa_array.type)
+        return cast(pa.ListScalar, pa.scalar(pa_array, type=pa_type))
 
     def _replace_chunked_array(self, pa_array: pa.ChunkedArray, *, validate: bool) -> None:
         if validate:
