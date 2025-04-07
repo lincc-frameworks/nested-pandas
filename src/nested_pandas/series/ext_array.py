@@ -245,11 +245,11 @@ class NestedExtensionArray(ExtensionArray):
         del copy
 
         pa_type = to_pyarrow_dtype(dtype)
-        pa_array, infered_inner_dtypes = cls._box_pa_array(scalars, pa_type=pa_type)
+        pa_array, inferred_inner_dtypes = cls._box_pa_array(scalars, pa_type=pa_type)
         if isinstance(dtype, NestedDtype):
             inner_dtypes = dtype.inner_dtypes
-        elif len(infered_inner_dtypes) > 1:
-            inner_dtypes = infered_inner_dtypes
+        elif len(inferred_inner_dtypes) > 1:
+            inner_dtypes = inferred_inner_dtypes
         else:
             inner_dtypes = None
         return cls(pa_array, inner_dtypes=inner_dtypes)
