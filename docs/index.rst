@@ -76,7 +76,7 @@ The :doc:`Tutorials <tutorials>`
 section showcases the fundamental features of nested-pandas.
 
 API-level information about nested-pandas is viewable in the 
-:doc:`API Reference <autoapi/index>`
+:doc:`API Reference <reference>`
 section.
 
 Learn more about contributing to this repository in our :doc:`Contribution Guide <gettingstarted/contributing>`.
@@ -87,5 +87,4 @@ Learn more about contributing to this repository in our :doc:`Contribution Guide
    Home page <self>
    Getting Started <gettingstarted>
    Tutorials <tutorials>
-   Test API Reference <reference>
-   API Reference <autoapi/index>
+   API Reference <reference>

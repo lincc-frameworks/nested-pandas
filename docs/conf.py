@@ -26,7 +26,6 @@ version = ".".join(release.split(".")[:2])
 
 extensions = ["sphinx.ext.mathjax", "sphinx.ext.napoleon", "sphinx.ext.viewcode", "sphinx.ext.autosummary"]
 
-extensions.append("autoapi.extension")
 extensions.append("nbsphinx")
 
 # -- sphinx-copybutton configuration ----------------------------------------
@@ -48,19 +47,6 @@ master_doc = "index"
 html_show_sourcelink = False
 # Remove namespaces from class/method signatures
 add_module_names = False
-
-autoapi_type = "python"
-autoapi_dirs = ["../src"]
-autoapi_ignore = ["*/__main__.py", "*/_version.py"]
-autoapi_add_toc_tree_entry = False
-autoapi_member_order = "bysource"
-autoapi_options = [
-    "members",
-    "undoc-members",
-    "show-inheritance",
-    "show-module-summary",
-    "special-members",
-]
 
 html_theme = "sphinx_book_theme"
 
