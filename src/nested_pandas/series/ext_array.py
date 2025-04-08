@@ -798,7 +798,10 @@ class NestedExtensionArray(ExtensionArray):
     @property
     def flat_length(self) -> int:
         """Length of the flat arrays"""
-        return pa.compute.sum(self.list_lengths).as_py()
+        sum_result = pa.compute.sum(self.list_lengths).as_py()
+        if sum_result is None:
+            sum_result = 0
+        return sum_result
 
     @property
     def num_chunks(self) -> int:

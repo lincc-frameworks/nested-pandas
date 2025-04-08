@@ -1277,3 +1277,9 @@ def test_issue193():
     ndf.query("nested.flux / nested.t > 0")
     # This failed with numpy 1 with:
     # TypeError: Cannot interpret 'double[pyarrow]' as a data type
+
+
+def test_issue235():
+    """https://github.com/lincc-frameworks/nested-pandas/issues/235"""
+    nf = generate_data(3, 10).iloc[:0]
+    nf["nested.x"] = []
