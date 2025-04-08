@@ -275,6 +275,21 @@ class NestedFrame(pd.DataFrame):
         -------
         NestedFrame
             A new NestedFrame with the added nested column.
+
+        Examples
+        --------
+
+
+        >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
+        ...            index=[0,1,2])
+        >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
+        ...             index=[0,0,0,1,1,1,2,2,2])
+        >>> # By default, aligns on the index
+        >>> nf.add_nested(nf2, "nested")
+           a  b                nested
+        0  1  4  [{c: 1}; …] (3 rows)
+        1  2  5  [{c: 4}; …] (3 rows)
+        2  3  6  [{c: 7}; …] (3 rows)
         """
         if on is not None and not isinstance(on, str):
             raise ValueError("Currently we only support a single column for 'on'")
@@ -319,11 +334,14 @@ class NestedFrame(pd.DataFrame):
         Examples
         --------
 
-        >>> nf = NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4],
+        >>> nf = npd.NestedFrame({"a":[1,1,1,2,2], "b":[2,2,2,4,4],
         ...                   "c":[1,2,3,4,5], "d":[2,4,6,8,10]},
         ...                   index=[0,0,0,1,1])
 
-        >>> NestedFrame.from_flat(nf, base_columns=["a","b"])
+        >>> npd.NestedFrame.from_flat(nf, base_columns=["a","b"])
+           a  b                      nested
+        0  1  2  [{c: 1, d: 2}; …] (3 rows)
+        1  2  4  [{c: 4, d: 8}; …] (2 rows)
         """
 
         # Resolve new index
@@ -370,15 +388,19 @@ class NestedFrame(pd.DataFrame):
         NestedFrame
             A NestedFrame with the specified nesting structure.
 
-         Examples
+        Examples
         --------
 
-        >>> nf = NestedFrame({"c":[1,2,3], "d":[2,4,6],
+        >>> nf = npd.NestedFrame({"c":[1,2,3], "d":[2,4,6],
         ...                   "e":[[1,2,3], [4,5,6], [7,8,9]]},
-        ...                  index=[0,1,2])
+        ...                   index=[0,1,2])
 
+        >>> npd.NestedFrame.from_lists(nf, base_columns=["c","d"])
+           c  d                nested
+        0  1  2  [{e: 1}; …] (3 rows)
+        1  2  4  [{e: 4}; …] (3 rows)
+        2  3  6  [{e: 7}; …] (3 rows)
 
-        >>> NestedFrame.from_lists(nf, base_columns=["c","d"])
         """
 
         # Resolve base and list columns
@@ -525,6 +547,22 @@ class NestedFrame(pd.DataFrame):
         -------
         NestedFrame
             NestedFrame resulting from the provided query expression.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> nf = nf.query("nested.t > 10")
+        >>> nf
+           a         b                                             nested
+        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
+        2  0.000114  0.691121  [{t: 11.173797, flux: 28.044399, band: 'r'}; …...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
+        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …...
+
 
         Notes
         -----
@@ -688,14 +726,48 @@ class NestedFrame(pd.DataFrame):
         DataFrame or None
             DataFrame with NA entries dropped from it or None if ``inplace=True``.
 
+        Examples
+        --------
+
+        A common usecase for `dropna` is to remove empty nested rows:
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> # this query empties several of the nested dataframes
+        >>> nf = nf.query("nested.t > 19")
+        >>> nf
+            a         b                                        nested
+        0  0.417022  0.184677                                          None
+        1  0.720324  0.372520   [{t: 19.365232, flux: 90.85955, band: 'r'}]
+        2  0.000114  0.691121  [{t: 19.157791, flux: 14.672857, band: 'r'}]
+        3  0.302333  0.793535                                          None
+        4  0.146756  1.077633                                          None
+
+
+        >>> # dropna removes rows with those emptied dataframes
+        >>> nf.dropna(subset="nested")
+            a         b                                        nested
+        1  0.720324  0.372520   [{t: 19.365232, flux: 90.85955, band: 'r'}]
+        2  0.000114  0.691121  [{t: 19.157791, flux: 14.672857, band: 'r'}]
+
+
+        `dropna` can also be used on nested columns:
+
+        >>> nf = generate_data(5,5, seed=1)
+        >>> # Either on the whole dataframe
+        >>> nf.dropna(on_nested="nested")
+        >>> # or on a specific nested column
+        >>> nf.dropna(subset="nested.t")
+
+
         Notes
         -----
         Operations that target a particular nested structure return a dataframe
         with rows of that particular nested structure affected.
 
         Values for `on_nested` and `subset` should be consistent in pointing
-        to a single layer, multi-layer operations are not supported at this
-        time.
+        to a single layer, multi-layer operations are not supported.
         """
 
         # determine target dataframe
@@ -748,8 +820,8 @@ class NestedFrame(pd.DataFrame):
         """
         Sort by the values along either axis.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         by : str or list of str
             Name or list of names to sort by.
 
@@ -776,10 +848,24 @@ class NestedFrame(pd.DataFrame):
         key : callable, optional
             Apply the key function to the values before sorting.
 
-        Returns:
-        --------
+        Returns
+        -------
         DataFrame or None
             DataFrame with sorted values if inplace=False, None otherwise.
+
+        Examples
+        ---------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> # Sort nested values
+        >>> nf.sort_values(by="nested.band")
+           a         b                                             nested
+        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g'}; …]...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
         """
 
         # Resolve target layer
@@ -876,19 +962,57 @@ class NestedFrame(pd.DataFrame):
         `NestedFrame`
             `NestedFrame` with the results of the function applied to the columns of the frame.
 
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> import numpy as np
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> # define a custom user function
+        >>> def example_func(base_col, nested_col):
+        >>>    '''reduce will return a NestedFrame with two columns'''
+        >>>    return {"mean": np.mean(nested_col),
+        ...            "mean_minus_base": np.mean(nested_col) - base_col}
+
+        >>> # apply the function
+        >>> nf.reduce(example_func, "a", "nested.t")
+                mean  mean_minus_base
+        0  11.533440        11.116418
+        1  10.307751         9.587426
+        2   8.294042         8.293928
+        3   9.655291         9.352958
+        4  10.687591        10.540836
+
+        You may want the result of a `reduce` call to have nested structure,
+        we can achieve this by using the `infer_nesting` kwarg:
+
+        >>> # define a custom user function that returns nested structure
+        >>> def example_func(base_col1, base_col2, nested_col):
+        >>>    '''reduce will return a NestedFrame with nested structure'''
+        >>>    return {"offsets.t_a": nested_col - base_col1,
+        ...            "offsets.t_b": nested_col - base_col2}
+
+        By giving both output columns the prefix "offsets.", we signal
+        to reduce to infer that these should be packed into a nested column
+        called "offsets".
+
+        >>> # apply the function with `infer_nesting` (True by default)
+        >>> nf.reduce(example_func, "a", "b", "nested.t")
+                                                  offsets
+        0    [{t_a: 7.966868, t_b: 8.199213}; …] (5 rows)
+        1   [{t_a: 12.984066, t_b: 13.33187}; …] (5 rows)
+        2    [{t_a: 4.088931, t_b: 3.397924}; …] (5 rows)
+        3  [{t_a: 17.260016, t_b: 16.768814}; …] (5 rows)
+        4   [{t_a: 0.400996, t_b: -0.529882}; …] (5 rows)
+
         Notes
         -----
         By default, `reduce` will produce a `NestedFrame` with enumerated
         column names for each returned value of the function. For more useful
         naming, it's recommended to have `func` return a dictionary where each
-        key is an output column of the dataframe returned by `reduce`.
-
-        Example User Function:
-
-        >>> def my_sum(col1, col2):
-        >>>    '''reduce will return a NestedFrame with two columns'''
-        >>>    return {"sum_col1": sum(col1), "sum_col2": sum(col2)}
-
+        key is an output column of the dataframe returned by `reduce` (as
+        shown above).
         """
         # Parse through the initial args to determine the columns to apply the function to
         requested_columns = []
