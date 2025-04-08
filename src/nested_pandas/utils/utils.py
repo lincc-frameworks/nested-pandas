@@ -42,13 +42,14 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     `count_nested` also allows counting by a given subcolumn, for example we
     can count by "band" label:
 
-    >>> count_nested(nf, "nested", by="band")
-              a         b                                             nested  n_nested_g  n_nested_r
-    0  0.417022  0.184677  [{t: 8.38389, flux: 10.233443, band: 'g'}; …] ...           8           2
-    1  0.720324  0.372520  [{t: 13.70439, flux: 41.405599, band: 'g'}; …]...           5           5
-    2  0.000114  0.691121  [{t: 4.089045, flux: 69.440016, band: 'g'}; …]...           5           5
-    3  0.302333  0.793535  [{t: 17.562349, flux: 41.417927, band: 'g'}; …...           6           4
-    4  0.146756  1.077633  [{t: 0.547752, flux: 4.995346, band: 'r'}; …] ...           6           4
+    >>> # join=False, allows the result to be kept separate from the original nf
+    >>> count_nested(nf, "nested", by="band", join=False)
+    band  n_nested_g  n_nested_r
+    0              8           2
+    1              5           5
+    2              5           5
+    3              6           4
+    4              6           4
     """
 
     if by is None:
