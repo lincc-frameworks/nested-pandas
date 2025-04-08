@@ -38,7 +38,7 @@ copybutton_prompt_text = ">> "
 ## lets us suppress the copy button on select code blocks.
 copybutton_selector = "div:not(.no-copybutton) > div.highlight > pre"
 
-templates_path = []
+templates_path = ["_templates"]
 exclude_patterns = ["_build", "**.ipynb_checkpoints"]
 
 # This assumes that sphinx-build is called from the root directory
@@ -47,6 +47,10 @@ master_doc = "index"
 html_show_sourcelink = False
 # Remove namespaces from class/method signatures
 add_module_names = False
+# Hide full module path in navigation
+modindex_common_prefix = ["nested_pandas."]
+# Customize display of autosummary entries
+autosummary_imported_members = True
 
 html_theme = "sphinx_book_theme"
 
