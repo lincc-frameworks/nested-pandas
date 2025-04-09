@@ -21,6 +21,7 @@ def read_parquet(
     pack_columns: dict | None = None,
     dtype_backend: DtypeBackend | lib.NoDefault = lib.no_default,
     reject_nesting: list[str] | str | None = None,
+    infer_nesting: bool = True,
     **kwargs,
 ) -> NestedFrame:
     """
@@ -61,15 +62,68 @@ def read_parquet(
     Returns
     -------
     NestedFrame
-    """
 
-    df = NestedFrame(pd.read_parquet(data, engine="pyarrow", columns=columns, dtype_backend="pyarrow", **kwargs))
+    Notes
+    -----
+    pyarrow supports partial loading of nested structures from parquet, for
+    example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
+    load the "a" column of the "nested" column. Standard pandas/pyarrow
+    behavior will return "a" as a list-array base column with name "a". In
+    Nested-Pandas, this behavior is changed to load the column as a sub-column
+    of a nested column called "nested". Be aware that this will prohibit calls
+    like ```pd.read_parquet("data.parquet", columns=["nested.a", "nested"])```
+    from working, as this implies both full and partial load of "nested".
+    """
 
     # Type convergence for reject_nesting
     if reject_nesting is None:
         reject_nesting = []
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
+
+    # First load through pyarrow
+    table = pa.parquet.read_pandas(
+        data,
+        columns=columns)
+
+    # Resolve partial loading of nested structures
+    # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
+    # Use input column names and the table column names to determine if a column
+    # was from a nested column.
+    nested_structures = {}
+    for col_in, col_pa in zip(columns, table.column_names):
+        # if the column name is not the same, it was a partial load
+        if col_in != col_pa:
+            # get the top-level column name
+            nested_col = col_in.split(".")[0]
+            if nested_col not in reject_nesting:
+                if nested_col not in nested_structures.keys():
+                    nested_structures[nested_col] = [table.column_names.index(col_pa)]
+                else:
+                    nested_structures[nested_col].append(table.column_names.index(col_pa))
+
+    # TODO: Catch and disallow partial loading + full loading (e.g. "nested" and "nested.a")
+    # TODO: Fix multi-column partial loading (e.g. "nested.a" and "nested.b" fails)
+
+    # Build structs and replace columns in table
+    for col, indices in nested_structures.items():
+        # Build a struct column from the columns
+        field_names = [table.column_names[i] for i in indices]
+        struct = pa.StructArray.from_arrays([table.column(i).chunk(0) for i in indices], field_names)
+        # Replace the columns with the struct column
+        for i in indices:
+            # Remove the column from the table
+            table = table.remove_column(i)
+        table = table.append_column(col, struct)
+
+
+    # Convert to NestedFrame
+    # How much of a problem is it that this is not zero_copy? True below fails
+    df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), zero_copy_only=False))
+    
+    
+#df = NestedFrame(pd.read_parquet(data, engine="pyarrow", columns=columns, dtype_backend="pyarrow", **kwargs))
+
 
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
