@@ -148,14 +148,16 @@ def test_to_flat():
     """Test that the .nest.to_flat() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0]), np.array([1.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0]), [None]]),
         ],
         names=["a", "b"],
     )
 
     series = pd.Series(
-        struct_array, dtype=NestedDtype(struct_array.type), index=pd.Series([0, 1], name="idx")
+        struct_array,
+        dtype=NestedDtype(struct_array.type, inner_dtypes={"b": pd.Float64Dtype()}),
+        index=pd.Series([0, 1, 2], name="idx"),
     )
 
     flat = series.nest.to_flat()
@@ -164,28 +166,23 @@ def test_to_flat():
         data={
             "a": pd.Series(
                 data=[1.0, 2.0, 3.0, 1.0, 2.0, 1.0],
-                index=[0, 0, 0, 1, 1, 1],
+                index=[0, 0, 0, 1, 1, 2],
                 name="a",
                 copy=False,
                 dtype=pd.ArrowDtype(pa.float64()),
             ),
             "b": pd.Series(
-                data=[-4.0, -5.0, -6.0, -3.0, -4.0, -5.0],
-                index=[0, 0, 0, 1, 1, 1],
+                data=[-4.0, -5.0, -6.0, -3.0, -4.0, None],
+                index=[0, 0, 0, 1, 1, 2],
                 name="b",
                 copy=False,
-                dtype=pd.ArrowDtype(pa.float64()),
+                dtype=pd.Float64Dtype(),
             ),
         },
-        index=pd.Index([0, 0, 0, 1, 1, 1], name="idx"),
+        index=pd.Index([0, 0, 0, 1, 1, 2], name="idx"),
     )
 
-    assert_array_equal(flat.dtypes, desired.dtypes)
-    assert_array_equal(flat.index, desired.index)
-    assert flat.index.name == desired.index.name
-
-    for column in flat.columns:
-        assert_array_equal(flat[column], desired[column])
+    assert_frame_equal(flat, desired)
 
 
 def test_to_flat_for_chunked_array():

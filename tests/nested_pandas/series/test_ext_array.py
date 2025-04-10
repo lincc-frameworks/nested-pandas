@@ -5,8 +5,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
-from nested_pandas import NestedDtype
+from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar, replace_with_mask
+from nested_pandas.series.packer import pack_flat
 from numpy.testing import assert_array_equal
 from pandas.core.arrays import ArrowExtensionArray
 from pandas.testing import assert_frame_equal, assert_series_equal
@@ -278,23 +279,27 @@ def test_series_built_from_dict():
 def test_convert_df_to_pa_scalar():
     """Test that we can convert a DataFrame to a pyarrow struct_scalar."""
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
-    pa_scalar = convert_df_to_pa_scalar(df, pa_type=None)
-
-    assert pa_scalar == pa.scalar(
+    actual, inner_dtypes = convert_df_to_pa_scalar(df, pa_type=None)
+    expected = pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
         type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
     )
+
+    assert actual == expected
+    assert inner_dtypes == {}
 
 
 def test_convert_df_to_pa_from_scalar():
     """Test that we can convert a DataFrame to a pyarrow struct_scalar."""
     df = pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]})
-    pa_scalar = convert_df_to_pa_scalar(df, pa_type=None)
-
-    assert pa_scalar == pa.scalar(
+    actual, inner_dtypes = convert_df_to_pa_scalar(df, pa_type=None)
+    expected = pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
         type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
     )
+
+    assert actual == expected
+    assert inner_dtypes == {}
 
 
 def test__box_pa_array_from_series_of_df():
@@ -305,7 +310,9 @@ def test__box_pa_array_from_series_of_df():
             pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
         ]
     )
-    list_of_dicts = list(NestedExtensionArray._box_pa_array(series, pa_type=None))
+    pa_array, inner_dtypes = NestedExtensionArray._box_pa_array(series, pa_type=None)
+    assert inner_dtypes == {}
+    list_of_dicts = list(pa_array)
 
     desired_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
 
@@ -321,7 +328,9 @@ def test__box_pa_array_from_list_of_df():
         pd.DataFrame({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}),
         pd.DataFrame({"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]}),
     ]
-    list_of_dicts = list(NestedExtensionArray._box_pa_array(list_of_dfs, pa_type=None))
+    pa_array, inner_dtypes = NestedExtensionArray._box_pa_array(list_of_dfs, pa_type=None)
+    assert inner_dtypes == {}
+    list_of_dicts = list(pa_array)
 
     desired_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
 
@@ -1155,8 +1164,9 @@ def test___array__():
 )
 def test__box_pa_scalar(value, pa_type, desired):
     """Tests _box_pa_scalar()"""
-    actual = NestedExtensionArray._box_pa_scalar(value, pa_type=pa_type)
+    actual, inner_dtypes = NestedExtensionArray._box_pa_scalar(value, pa_type=pa_type)
     assert actual == desired
+    assert inner_dtypes == {}
 
 
 @pytest.mark.parametrize(
@@ -1203,8 +1213,32 @@ def test__box_pa_scalar(value, pa_type, desired):
 )
 def test__box_pa_array(value, pa_type, desired):
     """Tests _box_pa_array"""
-    actual = NestedExtensionArray._box_pa_array(value, pa_type=pa_type)
-    assert actual == desired
+    pa_array, inner_dtypes = NestedExtensionArray._box_pa_array(value, pa_type=pa_type)
+    assert pa_array == desired
+    assert inner_dtypes == {}
+
+
+def test__box_pa_array_from_nested_frames():
+    """Tests _box_pa_array for a collection of nested-frames"""
+
+    nf1 = NestedFrame(
+        {
+            "base": pd.Series([1, 2, 3]),
+            "nested": pack_flat(
+                pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [6, 7, 8, 9, 10]}, index=[0, 0, 1, 1, 2])
+            ),
+        }
+    )
+    nf2 = NestedFrame(
+        {
+            "base": pd.Series([-1, -2, -3, -4]),
+            "nested": pack_flat(
+                pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [6, 7, 8, 9, 10]}, index=[0, 0, 1, 2, 3])
+            ),
+        }
+    )
+
+    pa_array, dtypes = NestedExtensionArray._box_pa_array([nf1, nf2], pa_type=None)
 
 
 def test_series_apply_udf_argument():
