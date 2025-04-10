@@ -60,6 +60,12 @@ def read_parquet(
     of a nested column called "nested". Be aware that this will prohibit calls
     like ```pd.read_parquet("data.parquet", columns=["nested.a", "nested"])```
     from working, as this implies both full and partial load of "nested".
+
+    Furthermore, there are some cases where subcolumns will have the same name
+    as a top-level column. For example, if you have a column "nested" with
+    subcolumns "nested.a" and "nested.b", and also a top-level column "a". In
+    these cases, keep in mind that if "nested" is in the reject_nesting list
+    the operation will fail (but nesting will still work normally).
     """
 
     # Type convergence for reject_nesting
@@ -100,7 +106,6 @@ def read_parquet(
                 "Please either remove the partial load or the full load."
             )
 
-    # TODO: Fix reject nesting when only partial loading
     # Build structs and replace columns in table
     for col, indices in nested_structures.items():
         # Build a struct column from the columns
@@ -113,7 +118,7 @@ def read_parquet(
         table = table.append_column(col, struct)
 
     # Convert to NestedFrame
-    # TODO: How much of a problem is it that this is not zero_copy?
+    # not zero-copy, but reduce memory pressure via the self_destruct kwarg
     # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
     df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), self_destruct=True))
     del table
