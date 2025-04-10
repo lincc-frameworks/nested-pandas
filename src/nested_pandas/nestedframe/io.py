@@ -113,8 +113,10 @@ def read_parquet(
         table = table.append_column(col, struct)
 
     # Convert to NestedFrame
-    # TODO: How much of a problem is it that this is not zero_copy? True below fails
-    df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), zero_copy_only=False))
+    # TODO: How much of a problem is it that this is not zero_copy?
+    # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
+    df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), self_destruct=True))
+    del table
 
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
