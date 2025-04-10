@@ -78,16 +78,16 @@ def read_parquet(
     # Use input column names and the table column names to determine if a column
     # was from a nested column.
     nested_structures = {}
-    for col_in, col_pa in zip(columns, table.column_names):
+    for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
         # if the column name is not the same, it was a partial load
         if col_in != col_pa:
             # get the top-level column name
             nested_col = col_in.split(".")[0]
             if nested_col not in reject_nesting:
                 if nested_col not in nested_structures.keys():
-                    nested_structures[nested_col] = [table.column_names.index(col_pa)]
+                    nested_structures[nested_col] = [i]
                 else:
-                    nested_structures[nested_col].append(table.column_names.index(col_pa))
+                    nested_structures[nested_col].append(i)
 
     # Check for full and partial load of the same column and error
     # Columns in the reject_nesting will not be checked
@@ -100,6 +100,7 @@ def read_parquet(
                 "Please either remove the partial load or the full load."
             )
 
+    # TODO: Fix reject nesting when only partial loading
     # Build structs and replace columns in table
     for col, indices in nested_structures.items():
         # Build a struct column from the columns
