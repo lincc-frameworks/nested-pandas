@@ -16,13 +16,8 @@ from ..series.dtype import NestedDtype
 
 def read_parquet(
     data: FilePath | ReadBuffer[bytes],
-    to_pack: dict | None = None,
     columns: list[str] | None = None,
-    pack_columns: dict | None = None,
-    dtype_backend: DtypeBackend | lib.NoDefault = lib.no_default,
     reject_nesting: list[str] | str | None = None,
-    infer_nesting: bool = True,
-    **kwargs,
 ) -> NestedFrame:
     """
     Load a parquet object from a file path and load a set of other
@@ -43,16 +38,8 @@ def read_parquet(
         partitioned parquet files. Both pyarrow and fastparquet support
         paths to directories as well as file URLs. A directory path could be:
         ``file://localhost/path/to/tables`` or ``s3://bucket/partition_dir``.
-    to_pack: dict, default=None
-        A dictionary of parquet data paths (same criteria as `data`), where
-        each key reflects the desired column name to pack the data into and
-        each value reflects the parquet data to pack. If None, it assumes
-        that any data to pack is already packed as a column within `data`.
     columns : list, default=None
         If not None, only these columns will be read from the file.
-    pack_columns: dict, default=None
-        If not None, selects a set of columns from each keyed nested parquet
-        object to read from the nested files.
     reject_nesting: list or str, default=None
         Column(s) to reject from being cast to a nested dtype. By default,
         nested-pandas assumes that any struct column is castable to a nested
@@ -102,8 +89,16 @@ def read_parquet(
                 else:
                     nested_structures[nested_col].append(table.column_names.index(col_pa))
 
-    # TODO: Catch and disallow partial loading + full loading (e.g. "nested" and "nested.a")
-    # TODO: Fix multi-column partial loading (e.g. "nested.a" and "nested.b" fails)
+    # Check for full and partial load of the same column and error
+    # Columns in the reject_nesting will not be checked
+    for col in columns:
+        if col in nested_structures.keys():
+            raise ValueError(
+                f"The provided column list contains both a full and partial "
+                f"load of the column '{col}'. This is not allowed as the partial "
+                "load will be cast to a nested column that already exists. "
+                "Please either remove the partial load or the full load."
+            )
 
     # Build structs and replace columns in table
     for col, indices in nested_structures.items():
@@ -111,31 +106,17 @@ def read_parquet(
         field_names = [table.column_names[i] for i in indices]
         struct = pa.StructArray.from_arrays([table.column(i).chunk(0) for i in indices], field_names)
         # Replace the columns with the struct column
-        for i in indices:
-            # Remove the column from the table
+        # sort in reverse order to avoid index shifting
+        for i in sorted(indices, reverse=True):
             table = table.remove_column(i)
         table = table.append_column(col, struct)
 
-
     # Convert to NestedFrame
-    # How much of a problem is it that this is not zero_copy? True below fails
+    # TODO: How much of a problem is it that this is not zero_copy? True below fails
     df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), zero_copy_only=False))
-    
-    
-#df = NestedFrame(pd.read_parquet(data, engine="pyarrow", columns=columns, dtype_backend="pyarrow", **kwargs))
-
 
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
-
-    if to_pack is None:
-        return df
-    for pack_key in to_pack:
-        col_subset = pack_columns.get(pack_key, None) if pack_columns is not None else None
-        packed = pd.read_parquet(
-            to_pack[pack_key], engine="pyarrow", columns=col_subset, dtype_backend="pyarrow"
-        )
-        df = df.add_nested(packed, pack_key)
 
     return df
 
