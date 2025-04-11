@@ -90,6 +90,7 @@ def read_parquet(
                     else:
                         nested_structures[nested_col].append(i)
 
+        #print(nested_structures)
         # Check for full and partial load of the same column and error
         # Columns in the reject_nesting will not be checked
         for col in columns:
@@ -101,15 +102,28 @@ def read_parquet(
                     "Please either remove the partial load or the full load."
                 )
 
-        # Build structs and replace columns in table
+        # Build structs and track column indices used
+        structs = {}
+        indices_to_remove = []
         for col, indices in nested_structures.items():
+            print(f"Processing nested column: {col}, indices: {indices}")
+
             # Build a struct column from the columns
             field_names = [table.column_names[i] for i in indices]
-            struct = pa.StructArray.from_arrays([table.column(i).chunk(0) for i in indices], field_names)
-            # Replace the columns with the struct column
-            # sort in reverse order to avoid index shifting
-            for i in sorted(indices, reverse=True):
-                table = table.remove_column(i)
+            structs[col] = pa.StructArray.from_arrays(
+                [table.column(i).chunk(0) for i in indices],  # Child arrays
+                field_names  # Field names
+            )
+            indices_to_remove.extend(indices)
+
+        # Remove the original columns in reverse order to avoid index shifting
+        for i in sorted(indices_to_remove, reverse=True):
+            print(f"Removing column at index {i}: {table.column_names[i]}")
+            table = table.remove_column(i)
+
+        # Append the new struct columns
+        for col, struct in structs.items():
+            print(f"Appending struct column: {col}")
             table = table.append_column(col, struct)
 
     # Convert to NestedFrame
@@ -118,6 +132,7 @@ def read_parquet(
     df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), self_destruct=True))
     del table
 
+    #print(df.dtypes)
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
 
