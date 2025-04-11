@@ -6,6 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
@@ -1070,7 +1071,7 @@ class NestedFrame(pd.DataFrame):
 
         return results_nf
 
-    def to_parquet(self, path, by_layer=False, **kwargs) -> None:
+    def to_parquet(self, path, **kwargs) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
         as a single parquet file where each nested dataset is packed into its
         own column or as an individual parquet file for each layer.
@@ -1083,13 +1084,6 @@ class NestedFrame(pd.DataFrame):
         path : str
             The path to the parquet file to be written if 'by_layer' is False.
             If 'by_layer' is True, this should be the path to an existing.
-        by_layer : bool, default False
-            If False, writes the entire NestedFrame to a single parquet file.
-
-            If True, writes each layer to a separate parquet file within the
-            directory specified by path. The filename for each outputted file will
-            be named after its layer and then the ".parquet" extension.
-            For example for the base layer this is always "base.parquet".
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -1097,22 +1091,26 @@ class NestedFrame(pd.DataFrame):
         -------
         None
         """
-        if not by_layer:
-            # We just defer to the pandas to_parquet method if we're not writing by layer
-            # or there is only one layer in the NestedFrame.
-            super().to_parquet(path, engine="pyarrow", **kwargs)
-        else:
-            # If we're writing by layer, path must be an existing directory
-            if not os.path.isdir(path):
-                raise ValueError("The provided path must be an existing directory if by_layer=True")
 
-            # Write the base layer to a parquet file
-            base_frame = self.drop(columns=self.nested_columns, inplace=False)
-            base_frame.to_parquet(os.path.join(path, "base.parquet"), by_layer=False, **kwargs)
+        # Write through pyarrow
+        # Question: Is this zero-copy? Is there a way to make this zero-copy?
+        # Note: Without pandas metadata, index writing is not as robust set
+        # preserve_index=None for best behavior but index will generally
+        # need to be set manually on load
+        table = pa.Table.from_pandas(self, preserve_index=None)
 
-            # Write each nested layer to a parquet file
-            for layer in self.all_columns:
-                if layer != "base":
-                    path_layer = os.path.join(path, f"{layer}.parquet")
-                    self[layer].nest.to_flat().to_parquet(path_layer, engine="pyarrow", **kwargs)
+        # Update the schema to use the pyarrow dtype for nested columns
+        updated_fields = []
+        for field in table.schema:
+            if field.name in self.nested_columns:
+                # Update the field's type to use NestedDtype.pyarrow_dtype
+                updated_field = pa.field(field.name, self[field.name].dtype.pyarrow_dtype)
+                updated_fields.append(updated_field)
+            else:
+                # Keep the field as is
+                updated_fields.append(field)
+
+        # Cast updated schema & write to parquet
+        table = table.cast(pa.schema(updated_fields))
+        pq.write_table(table, path, **kwargs)
         return None
