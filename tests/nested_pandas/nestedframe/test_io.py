@@ -58,13 +58,13 @@ def test_read_parquet_column_selection(columns):
         assert nf.nested.nest.fields == ["band"]
         assert nf.lincc.nest.fields == ["band"]
 
-
-def test_read_parquet_reject_nesting():
+@pytest.mark.parametrize("reject", [["nested"], "nested"])
+def test_read_parquet_reject_nesting(reject):
     """Test reading a parquet file with column selection"""
     # Load in the example file
     nf = read_parquet("tests/test_data/nested.parquet",
                       columns=["a", "nested"],
-                      reject_nesting=["nested"])
+                      reject_nesting=reject)
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "nested"]
@@ -91,6 +91,13 @@ def test_read_parquet_catch_full_and_partial():
     # Load in the example file
     with pytest.raises(ValueError):
         read_parquet("tests/test_data/nested.parquet", columns=["a", "nested.t", "nested"])
+
+
+def test_read_parquet_catch_failed_cast():
+    """Test reading a parquet file with column selection"""
+    # Load in the example file
+    with pytest.raises(ValueError):
+        read_parquet("tests/test_data/not_nestable.parquet")
 
 
 def test_to_parquet():
