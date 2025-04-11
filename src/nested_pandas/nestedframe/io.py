@@ -60,6 +60,19 @@ def read_parquet(
     subcolumns "nested.a" and "nested.b", and also a top-level column "a". In
     these cases, keep in mind that if "nested" is in the reject_nesting list
     the operation will fail (but nesting will still work normally).
+
+    Examples
+    --------
+
+    Simple loading example:
+
+    >>> import nested_pandas as npd
+    >>> nf = npd.read_parquet("path/to/file.parquet")
+
+    Partial loading:
+
+    >>> #Load only the "a" sub-column of the "nested" column
+    >>> nf = npd.read_parquet("path/to/file.parquet", columns=["nested.a"])
     """
 
     # Type convergence for reject_nesting
