@@ -23,6 +23,8 @@ dependencies = [
     "pandas>=2.2,<2.3",
     "pyarrow>=18",
     "fsspec",
+    "requests",
+    "aiohttp",
 
 ]
 
