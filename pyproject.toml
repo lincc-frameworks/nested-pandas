@@ -21,8 +21,9 @@ dependencies = [
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
     "pandas>=2.2,<2.3",
-    "pyarrow>=15",
+    "pyarrow>=18",
     "fsspec",
+
 ]
 
 [project.urls]

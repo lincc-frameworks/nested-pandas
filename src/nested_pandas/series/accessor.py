@@ -21,6 +21,8 @@ __all__ = ["NestSeriesAccessor"]
 class NestSeriesAccessor(Mapping):
     """Accessor for operations on Series of NestedDtype
 
+    Available as ".nest" property of a Series with NestedDtype.
+
     This accessor implements `MutableMapping` interface over the fields of the
     struct, so you can access, change and delete the fields as if it was a
     dictionary, with `[]`, `[] =` and `del` operators.
@@ -49,6 +51,20 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.DataFrame
             Dataframe of list-arrays.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].nest.to_lists()
+                                   t                       flux       band
+        0  [ 8.38389029 13.4093502 ]  [80.07445687 89.46066635]  ['r' 'g']
+        1  [13.70439001  8.34609605]  [96.82615757  8.50442114]  ['g' 'g']
+        2  [ 4.08904499 11.17379657]  [31.34241782  3.90547832]  ['g' 'g']
+        3  [17.56234873  2.80773877]  [69.23226157 16.98304196]  ['r' 'r']
+        4    [0.54775186 3.96202978]  [87.63891523 87.81425034]  ['g' 'r']
         """
         fields = fields if fields is not None else list(self._series.array.field_names)
         if len(fields) == 0:
@@ -86,6 +102,26 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.DataFrame
             Dataframe of flat arrays.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].nest.to_flat()
+                   t       flux band
+        0    8.38389  80.074457    r
+        0   13.40935  89.460666    g
+        1   13.70439  96.826158    g
+        1   8.346096   8.504421    g
+        2   4.089045  31.342418    g
+        2  11.173797   3.905478    g
+        3  17.562349  69.232262    r
+        3   2.807739  16.983042    r
+        4   0.547752  87.638915    g
+        4    3.96203   87.81425    r
+
         """
         fields = fields if fields is not None else list(self._series.array.field_names)
         if len(fields) == 0:
@@ -146,6 +182,19 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The new series with the field set.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nested_with_avg = nf["nested"].nest.with_field("avg_flux", 50.0)
+        >>> # Look at one row of the series
+        >>> nested_with_avg[0]
+                  t       flux band  avg_flux
+        0   8.38389  80.074457    r      50.0
+        1  13.40935  89.460666    g      50.0
         """
         return self.with_flat_field(field, value)
 
@@ -164,6 +213,20 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The new series with the field set.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nested_with_avg = nf["nested"].nest.with_flat_field("avg_flux",
+        ...                                                     50.0)
+        >>> # Look at one row of the series
+        >>> nested_with_avg[0]
+                  t       flux band  avg_flux
+        0   8.38389  80.074457    r      50.0
+        1  13.40935  89.460666    g      50.0
         """
         new_array = self._series.array.copy()
         new_array.set_flat_field(field, value)
@@ -184,6 +247,22 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The new series with the field set.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(2, 2, seed=1)
+
+        >>> nf_new_band = nf["nested"].nest.with_list_field("new_band",
+        ...                                                 [["g","g"],
+        ...                                                  ["r","r"]])
+        >>> # Look at one row of the series
+        >>> nested_with_avg[0]
+                  t       flux band new_band
+        0  2.935118  39.676747    g        g
+        1  3.725204  41.919451    r        g
+
         """
         new_array = self._series.array.copy()
         new_array.set_list_field(field, value)
@@ -209,6 +288,20 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The new series with the field set.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(3, 2, seed=1)
+
+        >>> nf_filled = nf["nested"].nest.with_filled_field("a", [1,2,3])
+
+        >>> # Look at one row of the series
+        >>> nf_filled[0]
+                   t       flux band  a
+        0   3.725204  20.445225    g  1
+        1  10.776335  67.046751    r  1
         """
         new_array = self._series.array.copy()
         new_array.fill_field_lists(field, value)
@@ -228,6 +321,20 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The new series without the field(s).
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].nest.without_field("flux")
+        0      [{t: 8.38389, band: 'r'}; …] (2 rows)
+        1     [{t: 13.70439, band: 'g'}; …] (2 rows)
+        2     [{t: 4.089045, band: 'g'}; …] (2 rows)
+        3    [{t: 17.562349, band: 'r'}; …] (2 rows)
+        4     [{t: 0.547752, band: 'g'}; …] (2 rows)
+        Name: nested, dtype: nested<t: [double], band: [string]>
         """
         if isinstance(field, str):
             field = [field]
@@ -251,6 +358,20 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The filtered series.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 5, seed=1)
+
+        >>> nf["nested"].nest.query_flat("flux > 50")
+        0          [{t: 13.40935, flux: 98.886109, band: 'g'}]
+        1    [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
+        2          [{t: 4.089045, flux: 83.462567, band: 'g'}]
+        3    [{t: 2.807739, flux: 78.927933, band: 'r'}; …]...
+        4    [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
+        dtype: nested<t: [double], flux: [double], band: [string]>
         """
         flat = self.to_flat().query(query)
 
@@ -261,7 +382,24 @@ class NestSeriesAccessor(Mapping):
         return pack_sorted_df_into_struct(flat)
 
     def get_flat_index(self) -> pd.Index:
-        """Index of the flat arrays"""
+        """Index of the flat arrays
+
+        Returns
+        -------
+        pd.Index
+            The index of the flat arrays. It is a repeated index of the
+            original index, with the number of repetitions equal to the
+            number of elements in the list-array field.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].nest.get_flat_index()
+        Index([0, 0, 1, 1, 2, 2, 3, 3, 4, 4], dtype='int64')
+        """
         flat_index = np.repeat(self._series.index, np.diff(self._series.array.list_offsets))
         # pd.Index supports np.repeat, so flat_index is the same type as self._series.index
         flat_index = cast(pd.Index, flat_index)
@@ -279,6 +417,25 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The flat-array field.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].nest.get_flat_series("flux")
+        0    80.074457
+        0    89.460666
+        1    96.826158
+        1     8.504421
+        2    31.342418
+        2     3.905478
+        3    69.232262
+        3    16.983042
+        4    87.638915
+        4     87.81425
+        Name: flux, dtype: double[pyarrow]
         """
 
         flat_chunks = []
@@ -310,6 +467,20 @@ class NestSeriesAccessor(Mapping):
         -------
         pd.Series
             The list-array field.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].nest.get_list_series("flux")
+        0    [80.07445687 89.46066635]
+        1    [96.82615757  8.50442114]
+        2    [31.34241782  3.90547832]
+        3    [69.23226157 16.98304196]
+        4    [87.63891523 87.81425034]
+        Name: flux, dtype: list<item: double>[pyarrow]
         """
 
         list_chunks = []
