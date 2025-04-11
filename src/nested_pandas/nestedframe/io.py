@@ -1,5 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
+import os
+import io
 
 import pandas as pd
 from pandas._libs import lib
@@ -9,6 +11,13 @@ from pandas._typing import (
     ReadBuffer,
 )
 import pyarrow as pa
+import pyarrow.dataset as ds
+import fsspec
+import pyarrow.parquet as pq
+
+import requests
+import fsspec
+from urllib.parse import urlparse
 
 from .core import NestedFrame
 from ..series.dtype import NestedDtype
@@ -68,10 +77,22 @@ def read_parquet(
 
     # TODO: This potentially can't read remote files
     # maybe load into a pyarrow.dataset first
+    """
+    if isinstance(data, str):
+        # Check if the file is a URL
+        if data.startswith("http://") or data.startswith("https://"):
+            # Use fsspec to open the file
+            fs = fsspec.filesystem("http")
+            with fs.open(data) as f:
+                table = pq.read_table(f, columns=columns)
+        else:
+            # Use pyarrow to read the file directly
+            table = pq.read_table(data, columns=columns)
+    """
+
     # First load through pyarrow
-    table = pa.parquet.read_pandas(
-        data,
-        columns=columns)
+    # This will handle local files, http(s) and s3
+    table = _fs_read_table(data, use_fsspec=True, columns=columns)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -160,3 +181,50 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
                     """
                 )
     return df
+
+
+def _fs_read_table(uri, use_fsspec=True, headers=None, **kwargs):
+    """
+    A smart wrapper around `pq.read_table` that handles multiple filesystems.
+
+    Parameters
+    ----------
+    uri (str):
+        path or URI to a Parquet file
+    use_fsspec (bool):
+        whether to use fsspec for URI handling (e.g., for S3)
+    headers (dict):
+        headers for HTTP requests (optional)
+    kwargs:
+        other keyword arguments passed to `pq.read_table`
+
+    Returns
+    -------
+    pyarrow.Table
+    """
+    parsed = urlparse(uri)
+
+    # --- Local file or file:// URI ---
+    if parsed.scheme in ("", "file"):
+        return pq.read_table(uri, **kwargs)
+
+    # --- HTTP/HTTPS via requests ---
+    elif parsed.scheme in ("http", "https"):
+        if use_fsspec:
+            fs = fsspec.filesystem("http")
+            with fs.open(uri, mode="rb") as f:
+                return pq.read_table(f, **kwargs)
+        else:
+            response = requests.get(uri, headers=headers or {}, stream=True)
+            response.raise_for_status()
+            buf = pa.BufferReader(response.content)
+            return pq.read_table(buf, **kwargs)
+
+    # --- S3/GS/etc via fsspec ---
+    elif use_fsspec:
+        fs, path = fsspec.core.url_to_fs(uri)
+        with fs.open(path, mode="rb") as f:
+            return pq.read_table(f, **kwargs)
+
+    else:
+        raise ValueError(f"Unsupported URI scheme: {parsed.scheme}")
