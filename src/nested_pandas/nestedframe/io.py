@@ -1,26 +1,19 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
-import os
-import io
 
+from urllib.parse import urlparse
+
+import fsspec
 import pandas as pd
-from pandas._libs import lib
+import pyarrow as pa
+import pyarrow.parquet as pq
 from pandas._typing import (
-    DtypeBackend,
     FilePath,
     ReadBuffer,
 )
-import pyarrow as pa
-import pyarrow.dataset as ds
-import fsspec
-import pyarrow.parquet as pq
 
-import requests
-import fsspec
-from urllib.parse import urlparse
-
-from .core import NestedFrame
 from ..series.dtype import NestedDtype
+from .core import NestedFrame
 
 
 def read_parquet(
@@ -31,7 +24,7 @@ def read_parquet(
     """
     Load a parquet object from a file path into a NestedFrame.
 
-    As a deviation from `pandas`, this function loads via 
+    As a deviation from `pandas`, this function loads via
     `pyarrow.parquet.read_table`, and then converts to a NestedFrame.
 
     Parameters
@@ -75,24 +68,9 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # TODO: This potentially can't read remote files
-    # maybe load into a pyarrow.dataset first
-    """
-    if isinstance(data, str):
-        # Check if the file is a URL
-        if data.startswith("http://") or data.startswith("https://"):
-            # Use fsspec to open the file
-            fs = fsspec.filesystem("http")
-            with fs.open(data) as f:
-                table = pq.read_table(f, columns=columns)
-        else:
-            # Use pyarrow to read the file directly
-            table = pq.read_table(data, columns=columns)
-    """
-
     # First load through pyarrow
-    # This will handle local files, http(s) and s3
-    table = _fs_read_table(data, use_fsspec=True, columns=columns)
+    # This wrapper will handle local files, http(s) and s3
+    table = _fs_read_table(data, columns=columns)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -106,16 +84,15 @@ def read_parquet(
                 # get the top-level column name
                 nested_col = col_in.split(".")[0]
                 if nested_col not in reject_nesting:
-                    if nested_col not in nested_structures.keys():
+                    if nested_col not in nested_structures:
                         nested_structures[nested_col] = [i]
                     else:
                         nested_structures[nested_col].append(i)
 
-        #print(nested_structures)
         # Check for full and partial load of the same column and error
         # Columns in the reject_nesting will not be checked
         for col in columns:
-            if col in nested_structures.keys():
+            if col in nested_structures:
                 raise ValueError(
                     f"The provided column list contains both a full and partial "
                     f"load of the column '{col}'. This is not allowed as the partial "
@@ -133,7 +110,7 @@ def read_parquet(
             field_names = [table.column_names[i] for i in indices]
             structs[col] = pa.StructArray.from_arrays(
                 [table.column(i).chunk(0) for i in indices],  # Child arrays
-                field_names  # Field names
+                field_names,  # Field names
             )
             indices_to_remove.extend(indices)
 
@@ -153,7 +130,6 @@ def read_parquet(
     df = NestedFrame(table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), self_destruct=True))
     del table
 
-    #print(df.dtypes)
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
 
@@ -183,7 +159,7 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
     return df
 
 
-def _fs_read_table(uri, use_fsspec=True, headers=None, **kwargs):
+def _fs_read_table(uri, headers=None, **kwargs):
     """
     A smart wrapper around `pq.read_table` that handles multiple filesystems.
 
@@ -191,8 +167,6 @@ def _fs_read_table(uri, use_fsspec=True, headers=None, **kwargs):
     ----------
     uri (str):
         path or URI to a Parquet file
-    use_fsspec (bool):
-        whether to use fsspec for URI handling (e.g., for S3)
     headers (dict):
         headers for HTTP requests (optional)
     kwargs:
@@ -210,21 +184,19 @@ def _fs_read_table(uri, use_fsspec=True, headers=None, **kwargs):
 
     # --- HTTP/HTTPS via requests ---
     elif parsed.scheme in ("http", "https"):
-        if use_fsspec:
-            fs = fsspec.filesystem("http")
-            with fs.open(uri, mode="rb") as f:
-                return pq.read_table(f, **kwargs)
-        else:
-            response = requests.get(uri, headers=headers or {}, stream=True)
-            response.raise_for_status()
-            buf = pa.BufferReader(response.content)
-            return pq.read_table(buf, **kwargs)
-
-    # --- S3/GS/etc via fsspec ---
-    elif use_fsspec:
-        fs, path = fsspec.core.url_to_fs(uri)
-        with fs.open(path, mode="rb") as f:
+        fs = fsspec.filesystem("http")
+        with fs.open(uri, mode="rb") as f:
             return pq.read_table(f, **kwargs)
 
+    # --- S3/GS/etc via fsspec ---
+    # Try to use the url_to_fs function to get the filesystem (S3,GCS, etc)
     else:
-        raise ValueError(f"Unsupported URI scheme: {parsed.scheme}")
+        try:
+            fs, path = fsspec.core.url_to_fs(uri)
+            with fs.open(path, mode="rb") as f:
+                return pq.read_table(f, **kwargs)
+        except ValueError:
+            raise ValueError(
+                f"Unsupported URI scheme: {parsed.scheme}. Please use a local file, "
+                "HTTP/HTTPS URL, or a supported filesystem (e.g., S3, GCS) with fsspec."
+            )
