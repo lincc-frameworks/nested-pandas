@@ -20,24 +20,16 @@ def read_parquet(
     reject_nesting: list[str] | str | None = None,
 ) -> NestedFrame:
     """
-    Load a parquet object from a file path and load a set of other
-    parquet objects to pack into the resulting NestedFrame.
+    Load a parquet object from a file path into a NestedFrame.
 
-    Docstring based on the Pandas equivalent. Pyarrow is automatically
-    used as the `engine` and  `dtype_backend` for the read_parquet function. 
+    As a deviation from `pandas`, this function loads via 
+    `pyarrow.parquet.read_table`, and then converts to a NestedFrame.
 
     Parameters
     ----------
-    data : str, path object or file-like object
-        String, path object (implementing ``os.PathLike[str]``), or file-like
-        object implementing a binary ``read()`` function.
-        The string could be a URL. Valid URL schemes include http, ftp, s3,
-        gs, and file. For file URLs, a host is expected. A local file could be:
-        ``file://localhost/path/to/table.parquet``.
-        A file URL can also be a path to a directory that contains multiple
-        partitioned parquet files. Both pyarrow and fastparquet support
-        paths to directories as well as file URLs. A directory path could be:
-        ``file://localhost/path/to/tables`` or ``s3://bucket/partition_dir``.
+    data: str, pyarrow.NativeFile, or file-like object
+        Path to the data. If a string passed, can be a single file name or
+        directory name. For file-like objects, only read a single file.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -74,6 +66,8 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
+    # TODO: This potentially can't read remote files
+    # maybe load into a pyarrow.dataset first
     # First load through pyarrow
     table = pa.parquet.read_pandas(
         data,
@@ -83,39 +77,40 @@ def read_parquet(
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
     # Use input column names and the table column names to determine if a column
     # was from a nested column.
-    nested_structures = {}
-    for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
-        # if the column name is not the same, it was a partial load
-        if col_in != col_pa:
-            # get the top-level column name
-            nested_col = col_in.split(".")[0]
-            if nested_col not in reject_nesting:
-                if nested_col not in nested_structures.keys():
-                    nested_structures[nested_col] = [i]
-                else:
-                    nested_structures[nested_col].append(i)
+    if columns is not None:
+        nested_structures = {}
+        for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
+            # if the column name is not the same, it was a partial load
+            if col_in != col_pa:
+                # get the top-level column name
+                nested_col = col_in.split(".")[0]
+                if nested_col not in reject_nesting:
+                    if nested_col not in nested_structures.keys():
+                        nested_structures[nested_col] = [i]
+                    else:
+                        nested_structures[nested_col].append(i)
 
-    # Check for full and partial load of the same column and error
-    # Columns in the reject_nesting will not be checked
-    for col in columns:
-        if col in nested_structures.keys():
-            raise ValueError(
-                f"The provided column list contains both a full and partial "
-                f"load of the column '{col}'. This is not allowed as the partial "
-                "load will be cast to a nested column that already exists. "
-                "Please either remove the partial load or the full load."
-            )
+        # Check for full and partial load of the same column and error
+        # Columns in the reject_nesting will not be checked
+        for col in columns:
+            if col in nested_structures.keys():
+                raise ValueError(
+                    f"The provided column list contains both a full and partial "
+                    f"load of the column '{col}'. This is not allowed as the partial "
+                    "load will be cast to a nested column that already exists. "
+                    "Please either remove the partial load or the full load."
+                )
 
-    # Build structs and replace columns in table
-    for col, indices in nested_structures.items():
-        # Build a struct column from the columns
-        field_names = [table.column_names[i] for i in indices]
-        struct = pa.StructArray.from_arrays([table.column(i).chunk(0) for i in indices], field_names)
-        # Replace the columns with the struct column
-        # sort in reverse order to avoid index shifting
-        for i in sorted(indices, reverse=True):
-            table = table.remove_column(i)
-        table = table.append_column(col, struct)
+        # Build structs and replace columns in table
+        for col, indices in nested_structures.items():
+            # Build a struct column from the columns
+            field_names = [table.column_names[i] for i in indices]
+            struct = pa.StructArray.from_arrays([table.column(i).chunk(0) for i in indices], field_names)
+            # Replace the columns with the struct column
+            # sort in reverse order to avoid index shifting
+            for i in sorted(indices, reverse=True):
+                table = table.remove_column(i)
+            table = table.append_column(col, struct)
 
     # Convert to NestedFrame
     # not zero-copy, but reduce memory pressure via the self_destruct kwarg
