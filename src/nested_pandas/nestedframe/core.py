@@ -1,8 +1,6 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -1082,14 +1080,20 @@ class NestedFrame(pd.DataFrame):
         Parameters
         ----------
         path : str
-            The path to the parquet file to be written if 'by_layer' is False.
-            If 'by_layer' is True, this should be the path to an existing.
+            The path to the parquet file
         kwargs : keyword arguments, optional
-            Keyword arguments to pass to the function.
+            Keyword arguments to pass to the function
+            `pyarrow.parquet.write_table <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html>`_
 
         Returns
         -------
         None
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+        >>> nf.to_parquet("nestedframe.parquet")
         """
 
         # Write through pyarrow
