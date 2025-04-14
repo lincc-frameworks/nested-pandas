@@ -1,23 +1,17 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
-import fsspec
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pandas._typing import (
-    FilePath,
-    ReadBuffer,
-)
+from upath import UPath
 
 from ..series.dtype import NestedDtype
 from .core import NestedFrame
 
 
 def read_parquet(
-    data: FilePath | ReadBuffer[bytes],
+    data: str | UPath,
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
 ) -> NestedFrame:
@@ -29,9 +23,10 @@ def read_parquet(
 
     Parameters
     ----------
-    data: str, pyarrow.NativeFile, or file-like object
+    data: str or Upath
         Path to the data. If a string passed, can be a single file name or
         directory name. For file-like objects, only read a single file.
+        Can be a local file path, HTTP/HTTPS URL, or S3 path.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -82,8 +77,12 @@ def read_parquet(
         reject_nesting = [reject_nesting]
 
     # First load through pyarrow
-    # This wrapper will handle local files, http(s) and s3
-    table = _fs_read_table(data, columns=columns)
+    # Use UPath to handle the file path
+    path = UPath(data)
+
+    # use upath to support remote filesystems
+    with path.open("rb") as f:
+        table = pq.read_table(f, columns=columns)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -159,7 +158,7 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
             try:
                 # Attempt to cast Struct to NestedDType
                 df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
-            except TypeError:
+            except TypeError as err:
                 # If cast fails, the struct likely does not fit nested-pandas
                 # criteria for a valid nested column
                 raise ValueError(
@@ -170,48 +169,5 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
                     column to the `reject_nesting` argument of the read_parquet
                     function to skip the cast attempt.
                     """
-                )
+                ) from err
     return df
-
-
-def _fs_read_table(uri, headers=None, **kwargs):
-    """
-    A smart wrapper around `pq.read_table` that handles multiple filesystems.
-
-    Parameters
-    ----------
-    uri (str):
-        path or URI to a Parquet file
-    headers (dict):
-        headers for HTTP requests (optional)
-    kwargs:
-        other keyword arguments passed to `pq.read_table`
-
-    Returns
-    -------
-    pyarrow.Table
-    """
-    parsed = urlparse(uri)
-
-    # --- Local file or file:// URI ---
-    if parsed.scheme in ("", "file"):
-        return pq.read_table(uri, **kwargs)
-
-    # --- HTTP/HTTPS via requests ---
-    elif parsed.scheme in ("http", "https"):
-        fs = fsspec.filesystem("http")
-        with fs.open(uri, mode="rb") as f:
-            return pq.read_table(f, **kwargs)
-
-    # --- S3/GS/etc via fsspec ---
-    # Try to use the url_to_fs function to get the filesystem (S3,GCS, etc)
-    else:
-        try:
-            fs, path = fsspec.core.url_to_fs(uri)
-            with fs.open(path, mode="rb") as f:
-                return pq.read_table(f, **kwargs)
-        except ValueError:
-            raise ValueError(
-                f"Unsupported URI scheme: {parsed.scheme}. Please use a local file, "
-                "HTTP/HTTPS URL, or a supported filesystem (e.g., S3, GCS) with fsspec."
-            )
