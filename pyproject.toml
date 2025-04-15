@@ -22,10 +22,9 @@ dependencies = [
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
     "pandas>=2.2,<2.3",
     "pyarrow>=18",
-    "fsspec",
     "requests",
     "aiohttp",
-    "universal_pathlib"
+    "upathlib"
 
 ]
 
