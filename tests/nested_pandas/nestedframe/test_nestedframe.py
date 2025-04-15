@@ -1292,16 +1292,18 @@ def test_nest_lists():
     """
     for drop_option in [False, True]:
         # Empty dataframe
-        empty_ndf = NestedFrame({"a":[], "b":[], "c":[]})
-        empty_ndf = empty_ndf.nest_lists(columns=["b","c"], name="nested", drop=drop_option)
+        empty_ndf = NestedFrame({"a": [], "b": [], "c": []})
+        empty_ndf = empty_ndf.nest_lists(columns=["b", "c"], name="nested", drop=drop_option)
         assert len(empty_ndf) == 0
         assert empty_ndf.nested.nest.to_flat().shape == (0, 2)
         assert empty_ndf.nested.nest.fields == ["b", "c"]
-        assert set(empty_ndf.columns) == set(["a", "nested"]) if drop_option else set(["a", "b", "c", "nested"])
+        assert (
+            set(empty_ndf.columns) == set(["a", "nested"]) if drop_option else set(["a", "b", "c", "nested"])
+        )
 
         # A non-empty dataframe but with empty lists
-        empty_list_ndf = NestedFrame({"a":[1], "b":[[]], "c":[[]]})
-        empty_list_ndf = empty_list_ndf.nest_lists(columns=["b","c"], name="nested", drop=drop_option)
+        empty_list_ndf = NestedFrame({"a": [1], "b": [[]], "c": [[]]})
+        empty_list_ndf = empty_list_ndf.nest_lists(columns=["b", "c"], name="nested", drop=drop_option)
         assert empty_list_ndf.nested.nest.to_flat().shape == (0, 2)
         assert empty_list_ndf.nested.nest.fields == ["b", "c"]
         if drop_option:
@@ -1310,25 +1312,30 @@ def test_nest_lists():
             assert set(empty_list_ndf.columns) == {"a", "b", "c", "nested"}
 
         with pytest.raises(ValueError):
-            empty_list_ndf.nest_lists(columns=["a","c"], name="nested", drop=drop_option)
+            empty_list_ndf.nest_lists(columns=["a", "c"], name="nested", drop=drop_option)
 
-
-        expected = NestedFrame({"a":[1,2,3], "b":[[1,2,3],[4,5,6],[7,8,9]], "c":[[10,20,30],[40,50,60],[70,80,90]]})
+        expected = NestedFrame(
+            {
+                "a": [1, 2, 3],
+                "b": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+                "c": [[10, 20, 30], [40, 50, 60], [70, 80, 90]],
+            }
+        )
         ndf = expected.copy()
 
         packed_expected = pack_lists(ndf[["b", "c"]], name="nested")
 
         # join back to df as nested col
-        expected = expected.join(packed_expected, how="left")#on=["b", "c"], how="left")
+        expected = expected.join(packed_expected, how="left")  # on=["b", "c"], how="left")
         if drop_option:
             # drop original columns
             expected.drop(columns=["b", "c"], inplace=True)
 
-        # Now perform this the same with 
-        ndf = ndf.nest_lists(columns=["b","c"], name="nested", drop=drop_option) 
+        # Now perform this the same with
+        ndf = ndf.nest_lists(columns=["b", "c"], name="nested", drop=drop_option)
 
         # Check that the nested column is the same
         assert ndf.nested.nest.to_flat().equals(expected.nested.nest.to_flat())
-        
+
         # Check that the original columns are the same
         assert ndf.equals(expected)

@@ -298,8 +298,8 @@ class NestedFrame(pd.DataFrame):
         new_df = self.copy()
         res = new_df.join(packed, how=how, on=on)
         return res
-    
-    def nest_lists(self, name: str, columns: list[str], drop: bool = True,**kwargs) -> Self:
+
+    def nest_lists(self, name: str, columns: list[str], drop: bool = True, **kwargs) -> Self:
         """Packs the specified columns into a nested column.
 
         Parameters
@@ -329,7 +329,7 @@ class NestedFrame(pd.DataFrame):
         if len(new_df) > 0:
             # Check that each column has iterable elements
             for col in columns:
-                if not hasattr(new_df[col].iloc[0], '__iter__'):
+                if not hasattr(new_df[col].iloc[0], "__iter__"):
                     raise ValueError(f"Cannot pack column {col} which does not contain iterable elements.")
             packed = pack_lists(new_df[columns], name=name)
         else:
