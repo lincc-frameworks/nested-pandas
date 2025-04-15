@@ -56,7 +56,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
 
 
 def generate_parquet_file(n_base, n_layer, path, seed=None):
-    """Generates a toy dataset and outputs it as aparquet file.
+    """Generates a toy dataset and outputs it as a parquet file.
 
     Parameters
     ----------
@@ -67,9 +67,7 @@ def generate_parquet_file(n_base, n_layer, path, seed=None):
         Alternatively, a dictionary of layer label, layer_size pairs may be
         specified to created multiple nested columns with custom sizing.
     path : str,
-        The path to the parquet file to write to if `file_per_layer` is `False`,
-        and otherwise the path to the directory to write the parquet file for
-        each layer.
+        The path to the parquet file to write.
     seed : int, default=None
         A seed to use for random generation of data
 

@@ -1098,7 +1098,7 @@ class NestedFrame(pd.DataFrame):
         """
 
         # Write through pyarrow
-        # Question: Is this zero-copy? Is there a way to make this zero-copy?
+        # This is potentially not zero-copy
         # Note: Without pandas metadata, index writing is not as robust set
         # preserve_index=None for best behavior but index will generally
         # need to be set manually on load
