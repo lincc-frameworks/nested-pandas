@@ -24,7 +24,7 @@ dependencies = [
     "pyarrow>=18",
     "requests",
     "aiohttp",
-    "upathlib"
+    "universal_pathlib"
 
 ]
 
