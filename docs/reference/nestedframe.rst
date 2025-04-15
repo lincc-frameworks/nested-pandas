@@ -16,6 +16,7 @@ Nesting
     :toctree: api/
     
     NestedFrame.add_nested
+    NestedFrame.nest_lists
     NestedFrame.from_flat
     NestedFrame.from_lists
 
