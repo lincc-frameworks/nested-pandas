@@ -467,7 +467,8 @@ class NestedFrame(pd.DataFrame):
                 sample_val = df[col].iloc[0]
                 if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, (str, bytes)):
                     raise ValueError(
-                        f"Cannot pack column {col} which does not contain an iterable list based on its first value, {sample_val}."
+                        f"Cannot pack column {col} which does not contain an iterable list based "
+                        "on its first value, {sample_val}."
                     )
             packed_df = pack_lists(df[list_columns])
             packed_df.name = name
