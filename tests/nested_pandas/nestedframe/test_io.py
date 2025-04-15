@@ -2,11 +2,10 @@ import os
 import tempfile
 
 import pandas as pd
-import pytest
-from nested_pandas import NestedFrame, read_parquet
-from pandas.testing import assert_frame_equal
-
 import pyarrow as pa
+import pytest
+from nested_pandas import read_parquet
+from pandas.testing import assert_frame_equal
 
 
 def test_read_parquet():
@@ -25,12 +24,16 @@ def test_read_parquet():
     assert nf.lincc.nest.fields == ["band", "frameworks"]
 
 
-@pytest.mark.parametrize("columns", [["a", "flux"],
-                                     ["flux", "nested", "lincc"],
-                                     ["nested.flux", "nested.band"],
-                                     ["flux", "nested.flux"],
-                                     ["nested.band", "lincc.band"],
-                                     ])
+@pytest.mark.parametrize(
+    "columns",
+    [
+        ["a", "flux"],
+        ["flux", "nested", "lincc"],
+        ["nested.flux", "nested.band"],
+        ["flux", "nested.flux"],
+        ["nested.band", "lincc.band"],
+    ],
+)
 def test_read_parquet_column_selection(columns):
     """Test reading a parquet file with column selection"""
     # Load in the example file
@@ -58,13 +61,12 @@ def test_read_parquet_column_selection(columns):
         assert nf.nested.nest.fields == ["band"]
         assert nf.lincc.nest.fields == ["band"]
 
+
 @pytest.mark.parametrize("reject", [["nested"], "nested"])
 def test_read_parquet_reject_nesting(reject):
     """Test reading a parquet file with column selection"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet",
-                      columns=["a", "nested"],
-                      reject_nesting=reject)
+    nf = read_parquet("tests/test_data/nested.parquet", columns=["a", "nested"], reject_nesting=reject)
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "nested"]
@@ -78,9 +80,7 @@ def test_read_parquet_reject_nesting(reject):
 def test_read_parquet_reject_nesting_partial_loading():
     """Test reading a parquet file with column selection"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet",
-                      columns=["a", "nested.t"],
-                      reject_nesting=["nested"])
+    nf = read_parquet("tests/test_data/nested.parquet", columns=["a", "nested.t"], reject_nesting=["nested"])
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "t"]

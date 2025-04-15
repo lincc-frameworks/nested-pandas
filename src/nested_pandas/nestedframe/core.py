@@ -1082,8 +1082,9 @@ class NestedFrame(pd.DataFrame):
         path : str
             The path to the parquet file
         kwargs : keyword arguments, optional
-            Keyword arguments to pass to the function
-            `pyarrow.parquet.write_table <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html>`_
+            Keyword arguments to pass to
+            `pyarrow.parquet.write_table
+            <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html>`_
 
         Returns
         -------

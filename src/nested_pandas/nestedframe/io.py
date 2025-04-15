@@ -66,8 +66,8 @@ def read_parquet(
 
     Partial loading:
 
-    >>> #Load only the "a" sub-column of the "nested" column
-    >>> nf = npd.read_parquet("path/to/file.parquet", columns=["nested.a"])
+    >>> #Load only the "flux" sub-column of the "nested" column
+    >>> nf = npd.read_parquet("path/to/file.parquet", columns=["a", "nested.flux"])
     """
 
     # Type convergence for reject_nesting
