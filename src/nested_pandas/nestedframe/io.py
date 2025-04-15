@@ -116,8 +116,6 @@ def read_parquet(
         structs = {}
         indices_to_remove = []
         for col, indices in nested_structures.items():
-            print(f"Processing nested column: {col}, indices: {indices}")
-
             # Build a struct column from the columns
             field_names = [table.column_names[i] for i in indices]
             structs[col] = pa.StructArray.from_arrays(
@@ -128,12 +126,10 @@ def read_parquet(
 
         # Remove the original columns in reverse order to avoid index shifting
         for i in sorted(indices_to_remove, reverse=True):
-            print(f"Removing column at index {i}: {table.column_names[i]}")
             table = table.remove_column(i)
 
         # Append the new struct columns
         for col, struct in structs.items():
-            print(f"Appending struct column: {col}")
             table = table.append_column(col, struct)
 
     # Convert to NestedFrame
@@ -158,16 +154,13 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
             try:
                 # Attempt to cast Struct to NestedDType
                 df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
-            except TypeError as err:
+            except ValueError as err:
                 # If cast fails, the struct likely does not fit nested-pandas
                 # criteria for a valid nested column
                 raise ValueError(
-                    f"""Column {col} is a Struct, but an attempt to cast it to
-                    a NestedDType failed. This is likely due to the struct
-                    not meeting the requirements for a nested column (all
-                    fields should be equal length). To proceed, you may add the
-                    column to the `reject_nesting` argument of the read_parquet
-                    function to skip the cast attempt.
-                    """
+                    f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
+                    "This is likely due to the struct not meeting the requirements for a nested column "
+                    "(all fields should be equal length). To proceed, you may add the column to the "
+                    "`reject_nesting` argument of the read_parquet function to skip the cast attempt."
                 ) from err
     return df
