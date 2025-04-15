@@ -299,7 +299,7 @@ class NestedFrame(pd.DataFrame):
         res = new_df.join(packed, how=how, on=on)
         return res
 
-    def nest_lists(self, name: str, columns: list[str], drop: bool = True, **kwargs) -> Self:
+    def nest_lists(self, name: str, columns: list[str]) -> NestedFrame:
         """Packs the specified columns into a nested column.
 
         Parameters
@@ -308,37 +308,13 @@ class NestedFrame(pd.DataFrame):
             The name of the nested column to be added to the NestedFrame.
         columns : list[str]
             The columns to be packed into the nested column fr lists.
-        drop : bool, default: False
-            If True, the original columns will be dropped from the
-            NestedFrame after packing. If False, the original columns
-            will be kept in the NestedFrame.
 
         Returns
         -------
         NestedFrame
             A new NestedFrame with the added nested columns
         """
-        if not columns:
-            return self
-        # Raise an error if any of the columns are not found in the top layer
-        # of the NestedFrame
-        missing_cols = set(columns) - set(self.columns)
-        if missing_cols:
-            raise ValueError(f"Columns {missing_cols} not found in the NestedFrame")
-        new_df = self.copy()
-        if len(new_df) > 0:
-            # Check that each column has iterable elements
-            for col in columns:
-                if not hasattr(new_df[col].iloc[0], "__iter__"):
-                    raise ValueError(f"Cannot pack column {col} which does not contain iterable elements.")
-            packed = pack_lists(new_df[columns], name=name)
-        else:
-            # Packed should be an empty nested frame with the requested columns
-            empty_nf = NestedFrame()
-            packed = empty_nf.add_nested(new_df[columns], name=name)
-        if drop:
-            new_df.drop(columns=columns, inplace=True)
-        return new_df.join(packed)
+        return NestedFrame.from_lists(self.copy(), list_columns=columns, name=name)
 
     @classmethod
     def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
@@ -461,8 +437,17 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("No columns were assigned as list columns.")
 
         # Pack list columns into a nested column
-        packed_df = pack_lists(df[list_columns])
-        packed_df.name = name
+        if len(df) == 0:
+            # if the dataframe is empty, just return an empty nested column
+            # since there are no iterable values to pack
+            packed_df = NestedFrame().add_nested(df[list_columns], name=name)
+        else:
+            # Check that each column has iterable elements
+            for col in list_columns:
+                if not hasattr(df[col].iloc[0], "__iter__"):
+                    raise ValueError(f"Cannot pack column {col} which does not contain iterable elements.")
+            packed_df = pack_lists(df[list_columns])
+            packed_df.name = name
 
         # join the nested column to the base_column df
         if base_columns is not None:
