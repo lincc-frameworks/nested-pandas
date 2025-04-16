@@ -299,6 +299,40 @@ class NestedFrame(pd.DataFrame):
         res = new_df.join(packed, how=how, on=on)
         return res
 
+    def nest_lists(self, name: str, columns: list[str]) -> NestedFrame:
+        """Creates a new NestedFrame where the specified list-value columns are packed into a
+        nested column.
+
+        Parameters
+        ----------
+        name : str
+            The column name of the new nested column which we will pack the list-value
+            columns into. This column will be added to the NestedFrame.
+        columns : list[str]
+            The list-value columns that should be packed into a nested column.
+            All columns in the list will attempt to be packed into a single
+            nested column with the name provided in `nested_name`.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with the added nested columns
+
+        Examples
+        --------
+
+        >>> nf = npd.NestedFrame({"c":[1,2,3], "d":[2,4,6],
+        ...                   "e":[[1,2,3], [4,5,6], [7,8,9]]},
+        ...                   index=[0,1,2])
+
+        >>> nf.nest_lists(columns=["c","d"], name="nested")
+           c  d                nested
+        0  1  2  [{e: 1}; …] (3 rows)
+        1  2  4  [{e: 4}; …] (3 rows)
+        2  3  6  [{e: 7}; …] (3 rows)
+        """
+        return NestedFrame.from_lists(self.copy(), list_columns=columns, name=name)
+
     @classmethod
     def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
         """Creates a NestedFrame with base and nested columns from a flat
@@ -420,8 +454,24 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("No columns were assigned as list columns.")
 
         # Pack list columns into a nested column
-        packed_df = pack_lists(df[list_columns])
-        packed_df.name = name
+        if len(df) == 0:
+            # if the dataframe is empty, just return an empty nested column
+            # since there are no iterable values to pack
+            packed_df = NestedFrame().add_nested(df[list_columns], name=name)
+        else:
+            # Check that each column has iterable elements
+            for col in list_columns:
+                # Check if the column is iterable based on its first value.
+                # This is a simple heuristic but infers more than its dtype
+                # which will probably be an object.
+                sample_val = df[col].iloc[0]
+                if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, (str, bytes)):
+                    raise ValueError(
+                        f"Cannot pack column {col} which does not contain an iterable list based "
+                        "on its first value, {sample_val}."
+                    )
+            packed_df = pack_lists(df[list_columns])
+            packed_df.name = name
 
         # join the nested column to the base_column df
         if base_columns is not None:

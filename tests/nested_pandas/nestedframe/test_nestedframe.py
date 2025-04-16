@@ -5,6 +5,7 @@ import pytest
 from nested_pandas import NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
+from nested_pandas.series.packer import pack_lists
 from pandas.testing import assert_frame_equal
 
 
@@ -568,6 +569,13 @@ def test_from_flat_omitting_columns():
 
 def test_from_lists():
     """Test NestedFrame.from_lists behavior"""
+    # Test a dataframe with no rows
+    empty_nf = NestedFrame({"c": [], "d": [], "e": []}, index=[], columns=["c", "d", "e"])
+    res = NestedFrame.from_lists(empty_nf, base_columns=["c", "d"], list_columns=["e"])
+    assert list(res.columns) == ["c", "d", "nested"]
+    assert list(res.nested_columns) == ["nested"]
+    assert res.shape == (0, 3)
+
     nf = NestedFrame(
         {"c": [1, 2, 3], "d": [2, 4, 6], "e": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}, index=[0, 1, 2]
     )
@@ -584,6 +592,10 @@ def test_from_lists():
     res = NestedFrame.from_lists(nf, list_columns=["e"])
     assert list(res.columns) == ["c", "d", "nested"]
     assert list(res.nested_columns) == ["nested"]
+
+    # Test a using a non-iterable base column as a list column
+    with pytest.raises(ValueError):
+        res = NestedFrame.from_lists(nf, base_columns=["d"], list_columns=["e", "c"])
 
     # Check for the no list columns error
     with pytest.raises(ValueError):
@@ -1283,3 +1295,52 @@ def test_issue235():
     """https://github.com/lincc-frameworks/nested-pandas/issues/235"""
     nf = generate_data(3, 10).iloc[:0]
     nf["nested.x"] = []
+
+
+def test_nest_lists():
+    """
+    Test that we can take columns with list values and pack them into nested columns.
+    """
+    # Test that an empty dataframe we still produce a nested column, even if it has no values.
+    empty_ndf = NestedFrame({"a": [], "b": [], "c": []})
+    empty_ndf = empty_ndf.nest_lists(columns=["b", "c"], name="nested")
+    assert len(empty_ndf) == 0
+    assert empty_ndf.nested.nest.to_flat().shape == (0, 2)
+    assert empty_ndf.nested.nest.fields == ["b", "c"]
+    assert set(empty_ndf.columns) == set(["a", "nested"])
+
+    # Test packing empty lists as columns.
+    empty_list_ndf = NestedFrame({"a": [1], "b": [[]], "c": [[]]})
+    empty_list_ndf = empty_list_ndf.nest_lists(columns=["b", "c"], name="nested")
+    assert empty_list_ndf.nested.nest.to_flat().shape == (0, 2)
+    assert empty_list_ndf.nested.nest.fields == ["b", "c"]
+    assert set(empty_list_ndf.columns) == {"a", "nested"}
+
+    # Test that we raise an error if the columns are not lists
+    with pytest.raises(ValueError):
+        empty_list_ndf.nest_lists(columns=["a", "c"], name="nested")
+
+    expected = NestedFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            "c": [[10, 20, 30], [40, 50, 60], [70, 80, 90]],
+            "d": ["dog", "cat", "mouse"],
+        }
+    )
+    ndf = expected.copy()
+
+    # Generate our expected dataframe to compare to by packing
+    # the lists and dropping the original columns.
+    packed_expected = pack_lists(ndf[["b", "c"]], name="nested")
+    expected = expected.join(packed_expected, how="left")
+    expected.drop(columns=["b", "c"], inplace=True)
+
+    # Test that we can pack the lists into a nested column
+    res = ndf.nest_lists(columns=["b", "c"], name="nested")
+    assert res.equals(expected)
+
+    # Test that we will not pack in a string column as a list
+    # and that we raise an error if we try to do so.
+    with pytest.raises(ValueError):
+        ndf.nest_lists(columns=["c", "d"], name="nested")
