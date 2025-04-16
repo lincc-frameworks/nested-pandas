@@ -29,12 +29,12 @@ def read_parquet(
         Can be a local file path, HTTP/HTTPS URL, or S3 path.
     columns : list, default=None
         If not None, only these columns will be read from the file.
-reject_nesting: list or str, default=None
-    Column(s) to reject from being cast to a nested dtype. By default,
-    nested-pandas assumes that any struct column with all fields being lists
-    is castable to a nested column. However, this assumption is invalid if
-    the lists within the struct have mismatched lengths for any given item.
-    Columns specified here will be read using the corresponding pandas.ArrowDtype.
+    reject_nesting: list or str, default=None
+        Column(s) to reject from being cast to a nested dtype. By default,
+        nested-pandas assumes that any struct column with all fields being lists
+        is castable to a nested column. However, this assumption is invalid if
+        the lists within the struct have mismatched lengths for any given item.
+        Columns specified here will be read using the corresponding pandas.ArrowDtype.
 
     Returns
     -------
