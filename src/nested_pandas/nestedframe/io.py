@@ -55,7 +55,8 @@ def read_parquet(
     as a top-level column. For example, if you have a column "nested" with
     subcolumns "nested.a" and "nested.b", and also a top-level column "a". In
     these cases, keep in mind that if "nested" is in the reject_nesting list
-    the operation will fail (but nesting will still work normally).
+    the operation will fail, as is consistent with the default pandas behavior
+    (but nesting will still work normally).
 
     Examples
     --------
@@ -120,7 +121,7 @@ def read_parquet(
             # Build a struct column from the columns
             field_names = [table.column_names[i] for i in indices]
             structs[col] = pa.StructArray.from_arrays(
-                [table.column(i).chunk(0) for i in indices],  # Child arrays
+                [table.column(i).combine_chunks() for i in indices],  # Child arrays
                 field_names,  # Field names
             )
             indices_to_remove.extend(indices)
