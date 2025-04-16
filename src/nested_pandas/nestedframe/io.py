@@ -93,7 +93,7 @@ def read_parquet(
     # Use input column names and the table column names to determine if a column
     # was from a nested column.
     if columns is not None:
-        nested_structures = {}
+        nested_structures: dict[str, list[int]] = {}
         for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
             # if the column name is not the same, it was a partial load
             if col_in != col_pa:
@@ -165,7 +165,8 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
     # Attempt to cast struct columns to NestedDTypes
     for col, dtype in df.dtypes.items():
         if pa.types.is_struct(dtype.pyarrow_dtype) and col not in reject_nesting:
-            if all([pa.types.is_list(field.type) for field in dtype.pyarrow_dtype.fields]):
+            fields = dtype.pyarrow_dtype.fields
+            if all([pa.types.is_list(field.type) for field in fields]):
                 try:
                     # Attempt to cast Struct to NestedDType
                     df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
