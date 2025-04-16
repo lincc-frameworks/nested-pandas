@@ -82,14 +82,18 @@ def read_parquet(
     # Use UPath to handle the file path
     path = UPath(data)
 
+    # TODO: Support file-object loading
+
     # use upath to support remote filesystems
     with path.open("rb") as f:
         table = pq.read_table(f, columns=columns)
+
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
     # Use input column names and the table column names to determine if a column
     # was from a nested column.
+
     if columns is not None:
         nested_structures = {}
         for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
@@ -97,7 +101,18 @@ def read_parquet(
             if col_in != col_pa:
                 # get the top-level column name
                 nested_col = col_in.split(".")[0]
-                if nested_col not in reject_nesting:
+
+                # validate that the partial load columns are list type
+                # if any of the columns are not list type, reject the cast
+                # and remove the column from the list of nested structures if
+                # it was added
+                if not pa.types.is_list(table.schema[i].type):
+                    reject_nesting.append(nested_col)
+                    if nested_col in nested_structures:
+                        # remove the column from the list of nested structures
+                        nested_structures.pop(nested_col)
+                # track nesting for columns not in the reject list
+                elif nested_col not in reject_nesting:
                     if nested_col not in nested_structures:
                         nested_structures[nested_col] = [i]
                     else:
@@ -141,7 +156,6 @@ def read_parquet(
         table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), split_blocks=True, self_destruct=True)
     )
     del table
-
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
 
@@ -153,16 +167,17 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
     # Attempt to cast struct columns to NestedDTypes
     for col, dtype in df.dtypes.items():
         if pa.types.is_struct(dtype.pyarrow_dtype) and col not in reject_nesting:
-            try:
-                # Attempt to cast Struct to NestedDType
-                df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
-            except ValueError as err:
-                # If cast fails, the struct likely does not fit nested-pandas
-                # criteria for a valid nested column
-                raise ValueError(
-                    f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
-                    "This is likely due to the struct not meeting the requirements for a nested column "
-                    "(all fields should be equal length). To proceed, you may add the column to the "
-                    "`reject_nesting` argument of the read_parquet function to skip the cast attempt."
-                ) from err
+            if all([pa.types.is_list(field.type) for field in dtype.pyarrow_dtype.fields]):
+                try:
+                    # Attempt to cast Struct to NestedDType
+                    df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
+                except ValueError as err:
+                    # If cast fails, the struct likely does not fit nested-pandas
+                    # criteria for a valid nested column
+                    raise ValueError(
+                        f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
+                        "This is likely due to the struct not meeting the requirements for a nested column "
+                        "(all fields should be equal length). To proceed, you may add the column to the "
+                        "`reject_nesting` argument of the read_parquet function to skip the cast attempt."
+                    ) from err
     return df

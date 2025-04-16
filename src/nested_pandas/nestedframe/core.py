@@ -1102,9 +1102,17 @@ class NestedFrame(pd.DataFrame):
         # Note: Without pandas metadata, index writing is not as robust set
         # preserve_index=None for best behavior but index will generally
         # need to be set manually on load
+        return pq.write_table(pa.Table.from_pandas(self, preserve_index=None),
+                              path,
+                              **kwargs)
+        print("----- PANDAS DTYPES -----")
+        print(self.dtypes)
         table = pa.Table.from_pandas(self, preserve_index=None)
+        print("----- TABLE SCHEMA AFTER `from_pandas` -----")
+        print(table.schema)
 
         # Update the schema to use the pyarrow dtype for nested columns
+        """
         updated_fields = []
         for field in table.schema:
             if field.name in self.nested_columns:
@@ -1117,5 +1125,9 @@ class NestedFrame(pd.DataFrame):
 
         # Cast updated schema & write to parquet
         table = table.cast(pa.schema(updated_fields))
+        print("----- TABLE SCHEMA AFTER SCHEMA UPDATE -----")
+        print(table.schema)
+        """
+
         pq.write_table(table, path, **kwargs)
         return None
