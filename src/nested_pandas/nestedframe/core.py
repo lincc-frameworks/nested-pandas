@@ -1105,29 +1105,3 @@ class NestedFrame(pd.DataFrame):
         return pq.write_table(pa.Table.from_pandas(self, preserve_index=None),
                               path,
                               **kwargs)
-        print("----- PANDAS DTYPES -----")
-        print(self.dtypes)
-        table = pa.Table.from_pandas(self, preserve_index=None)
-        print("----- TABLE SCHEMA AFTER `from_pandas` -----")
-        print(table.schema)
-
-        # Update the schema to use the pyarrow dtype for nested columns
-        """
-        updated_fields = []
-        for field in table.schema:
-            if field.name in self.nested_columns:
-                # Update the field's type to use NestedDtype.pyarrow_dtype
-                updated_field = pa.field(field.name, self[field.name].dtype.pyarrow_dtype)
-                updated_fields.append(updated_field)
-            else:
-                # Keep the field as is
-                updated_fields.append(field)
-
-        # Cast updated schema & write to parquet
-        table = table.cast(pa.schema(updated_fields))
-        print("----- TABLE SCHEMA AFTER SCHEMA UPDATE -----")
-        print(table.schema)
-        """
-
-        pq.write_table(table, path, **kwargs)
-        return None
