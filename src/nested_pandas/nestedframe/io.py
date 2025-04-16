@@ -29,11 +29,12 @@ def read_parquet(
         Can be a local file path, HTTP/HTTPS URL, or S3 path.
     columns : list, default=None
         If not None, only these columns will be read from the file.
-    reject_nesting: list or str, default=None
-        Column(s) to reject from being cast to a nested dtype. By default,
-        nested-pandas assumes that any struct column is castable to a nested
-        column, but this is not always the case for a given struct. Any columns
-        specified here will be read as their original struct type.
+reject_nesting: list or str, default=None
+    Column(s) to reject from being cast to a nested dtype. By default,
+    nested-pandas assumes that any struct column with all fields being lists
+    is castable to a nested column. However, this assumption is invalid if
+    the lists within the struct have mismatched lengths for any given item.
+    Columns specified here will be read using the corresponding pandas.ArrowDtype.
 
     Returns
     -------
@@ -45,7 +46,7 @@ def read_parquet(
     example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
     load the "a" column of the "nested" column. Standard pandas/pyarrow
     behavior will return "a" as a list-array base column with name "a". In
-    Nested-Pandas, this behavior is changed to load the column as a sub-column
+    nested-pandas, this behavior is changed to load the column as a sub-column
     of a nested column called "nested". Be aware that this will prohibit calls
     like ```pd.read_parquet("data.parquet", columns=["nested.a", "nested"])```
     from working, as this implies both full and partial load of "nested".
