@@ -463,7 +463,7 @@ class NestedFrame(pd.DataFrame):
             for col in list_columns:
                 # Check if the column is iterable based on its first value.
                 # This is a simple heuristic but infers more than its dtype
-                # which will proabbly be
+                # which will probably be an object.
                 sample_val = df[col].iloc[0]
                 if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, (str, bytes)):
                     raise ValueError(
