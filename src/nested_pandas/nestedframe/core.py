@@ -1102,6 +1102,4 @@ class NestedFrame(pd.DataFrame):
         # Note: Without pandas metadata, index writing is not as robust set
         # preserve_index=None for best behavior but index will generally
         # need to be set manually on load
-        return pq.write_table(pa.Table.from_pandas(self, preserve_index=None),
-                              path,
-                              **kwargs)
+        return pq.write_table(pa.Table.from_pandas(self, preserve_index=None), path, **kwargs)
