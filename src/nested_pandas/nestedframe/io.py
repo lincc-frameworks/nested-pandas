@@ -88,12 +88,10 @@ def read_parquet(
     with path.open("rb") as f:
         table = pq.read_table(f, columns=columns)
 
-
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
     # Use input column names and the table column names to determine if a column
     # was from a nested column.
-
     if columns is not None:
         nested_structures = {}
         for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
