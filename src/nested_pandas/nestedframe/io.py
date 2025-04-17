@@ -133,8 +133,12 @@ def read_parquet(
         for col, indices in nested_structures.items():
             # Build a struct column from the columns
             field_names = [table.column_names[i] for i in indices]
+
+            # Use iterchunks to process chunks of each column
+            chunked_arrays = [pa.concat_arrays(list(table.column(i).iterchunks())) for i in indices]
+
             structs[col] = pa.StructArray.from_arrays(
-                [table.column(i).combine_chunks() for i in indices],  # Child arrays
+                chunked_arrays,  # Child arrays
                 field_names,  # Field names
             )
             indices_to_remove.extend(indices)
