@@ -164,19 +164,25 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
     """cast struct columns to nested dtype"""
     # Attempt to cast struct columns to NestedDTypes
     for col, dtype in df.dtypes.items():
-        if pa.types.is_struct(dtype.pyarrow_dtype) and col not in reject_nesting:
-            fields = dtype.pyarrow_dtype.fields
-            if all([pa.types.is_list(field.type) for field in fields]):
-                try:
-                    # Attempt to cast Struct to NestedDType
-                    df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
-                except ValueError as err:
-                    # If cast fails, the struct likely does not fit nested-pandas
-                    # criteria for a valid nested column
-                    raise ValueError(
-                        f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
-                        "This is likely due to the struct not meeting the requirements for a nested column "
-                        "(all fields should be equal length). To proceed, you may add the column to the "
-                        "`reject_nesting` argument of the read_parquet function to skip the cast attempt."
-                    ) from err
+        # First validate the dtype
+        # will return valueerror when not a struct-list
+        valid_dtype = True
+        try:
+            NestedDtype._validate_dtype(dtype.pyarrow_dtype)
+        except ValueError:
+            valid_dtype = False
+
+        if valid_dtype and col not in reject_nesting:
+            try:
+                # Attempt to cast Struct to NestedDType
+                df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
+            except ValueError as err:
+                # If cast fails, the struct likely does not fit nested-pandas
+                # criteria for a valid nested column
+                raise ValueError(
+                    f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
+                    "This is likely due to the struct not meeting the requirements for a nested column "
+                    "(all fields should be equal length). To proceed, you may add the column to the "
+                    "`reject_nesting` argument of the read_parquet function to skip the cast attempt."
+                ) from err
     return df
