@@ -146,6 +146,13 @@ def test_read_parquet_test_mixed_struct():
         assert nf.columns.tolist() == ["id", "struct_mix"]
         assert nf.nested_columns == ["struct_mix"]
 
+        # Test partial read with ordering to force reject pops
+        nf = read_parquet(
+            os.path.join(tmpdir, "structs.parquet"), columns=["id", "struct_mix.list3", "struct_mix.val1"]
+        )
+        assert nf.columns.tolist() == ["id", "list3", "val1"]
+        assert len(nf.nested_columns) == 0
+
 
 def test_to_parquet():
     """Test writing a parquet file with no columns specified"""
