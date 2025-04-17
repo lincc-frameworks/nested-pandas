@@ -1102,4 +1102,10 @@ class NestedFrame(pd.DataFrame):
         # Note: Without pandas metadata, index writing is not as robust set
         # preserve_index=None for best behavior but index will generally
         # need to be set manually on load
-        return pq.write_table(pa.Table.from_pandas(self, preserve_index=None), path, **kwargs)
+        table = pa.Table.from_pandas(self, preserve_index=None)
+
+        # Drop pandas metadata to make sure nesteddtypes are not preserved
+        # Do this by rebuilding the schema
+        table = table.cast(pa.schema([field for field in table.schema]))
+
+        return pq.write_table(table, path, **kwargs)
