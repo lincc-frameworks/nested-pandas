@@ -5,6 +5,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 from nested_pandas import read_parquet
+from nested_pandas.datasets import generate_data
 from pandas.testing import assert_frame_equal
 
 
@@ -124,8 +125,12 @@ def test_to_parquet():
 
 def test_pandas_read_parquet():
     """Test that pandas can read our serialized files"""
-    # Load in the example file
-    df = pd.read_parquet("tests/test_data/nested.parquet")
 
-    # Check the columns
-    assert df.columns.tolist() == ["a", "flux", "nested", "lincc"]
+    nf = generate_data(10, 100, seed=1)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        nf.to_parquet(os.path.join(tmpdir, "nested_for_pd.parquet"))
+        # Load in the example file
+        df = pd.read_parquet(os.path.join(tmpdir, "nested_for_pd.parquet"))
+
+        # Check the columns
+        assert df.columns.tolist() == ["a", "b", "nested"]
