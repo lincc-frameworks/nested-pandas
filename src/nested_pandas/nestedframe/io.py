@@ -11,7 +11,7 @@ from .core import NestedFrame
 
 
 def read_parquet(
-    data: str | UPath,
+    data: str | UPath | bytes,
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
 ) -> NestedFrame:
@@ -23,10 +23,10 @@ def read_parquet(
 
     Parameters
     ----------
-    data: str or Upath
-        Path to the data. If a string passed, can be a single file name or
-        directory name. For file-like objects, only read a single file.
-        Can be a local file path, HTTP/HTTPS URL, or S3 path.
+    data: str, Upath, or file-like object
+        Path to the data or a file-like object. If a string is passed, it can be a single file name,
+        directory name, or a remote path (e.g., HTTP/HTTPS or S3). If a file-like object is passed,
+        it must support the `read` method.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -79,14 +79,15 @@ def read_parquet(
         reject_nesting = [reject_nesting]
 
     # First load through pyarrow
-    # Use UPath to handle the file path
-    path = UPath(data)
-
-    # TODO: Support file-object loading
-
-    # use upath to support remote filesystems
-    with path.open("rb") as f:
-        table = pq.read_table(f, columns=columns)
+    # Check if `data` is a file-like object
+    if hasattr(data, "read"):
+        # If `data` is a file-like object, pass it directly to pyarrow
+        table = pq.read_table(data, columns=columns)
+    else:
+        # Otherwise, treat `data` as a file path and use UPath
+        path = UPath(data)
+        with path.open("rb") as f:
+            table = pq.read_table(f, columns=columns)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
