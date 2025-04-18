@@ -20,8 +20,9 @@ from nested_pandas.series.ext_array import NestedExtensionArray
 )
 def test_from_pyarrow_dtype(pyarrow_dtype):
     """Test that we can construct NestedDtype from pyarrow struct type."""
-    dtype = NestedDtype(pyarrow_dtype)
-    assert dtype.pyarrow_dtype == pyarrow_dtype
+    dtype1 = NestedDtype(pyarrow_dtype)
+    dtype2 = NestedDtype(pd.ArrowDtype(pyarrow_dtype))
+    assert dtype1.pyarrow_dtype == dtype2.pyarrow_dtype == pyarrow_dtype
 
 
 @pytest.mark.parametrize(
@@ -39,6 +40,8 @@ def test_from_pyarrow_dtype_raises(pyarrow_dtype):
     """Test that we raise an error when constructing NestedDtype from invalid pyarrow type."""
     with pytest.raises(ValueError):
         NestedDtype(pyarrow_dtype)
+    with pytest.raises(ValueError):
+        NestedDtype(pd.ArrowDtype(pyarrow_dtype))
 
 
 def test_to_pandas_arrow_dtype():
@@ -51,10 +54,23 @@ def test_to_pandas_arrow_dtype():
 
 def test_from_fields():
     """Test NestedDtype.from_fields()."""
-    fields = {"a": pa.int64(), "b": pa.float64()}
-    dtype = NestedDtype.from_fields(fields)
-    assert dtype.pyarrow_dtype == pa.struct(
+    fields1 = {"a": pa.int64(), "b": pd.ArrowDtype(pa.float64())}
+    dtype1 = NestedDtype.from_fields(fields1)
+    assert dtype1.pyarrow_dtype == pa.struct(
         [pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]
+    )
+
+    fields2 = {"x": pa.string(), "y": pa.bool_(), "nested": dtype1}
+    dtype2 = NestedDtype.from_fields(fields2)
+    assert dtype2 == NestedDtype(
+        pa.struct(
+            [
+                pa.field("x", pa.list_(pa.string())),
+                pa.field("y", pa.list_(pa.bool_())),
+                pa.field("nested", pa.list_(dtype1.pyarrow_dtype)),
+            ]
+        ),
+        inner_dtypes={"nested": dtype1},
     )
 
 
@@ -66,10 +82,30 @@ def test_na_value():
 
 def test_fields():
     """Test NestedDtype.fields property"""
-    dtype = NestedDtype(
+    dtype1 = NestedDtype(
         pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
     )
-    assert dtype.fields == {"a": pa.int64(), "b": pa.float64()}
+    assert dtype1.fields == {"a": pd.ArrowDtype(pa.int64()), "b": pd.ArrowDtype(pa.float64())}
+
+    dtype2 = NestedDtype(
+        pa.struct(
+            [
+                pa.field("x", pa.list_(pa.float64())),
+                pa.field("y", pa.list_(pa.string())),
+                pa.field("nested", pa.list_(dtype1.pyarrow_dtype)),
+            ]
+        ),
+        inner_dtypes={"x": pd.Float64Dtype(), "nested": dtype1},
+    )
+    assert dtype2.fields == {"x": pd.Float64Dtype(), "y": pd.ArrowDtype(pa.string()), "nested": dtype1}
+
+    # field name missmatch
+    with pytest.raises(ValueError):
+        NestedDtype(pa.struct([pa.field("a", pa.list_(pa.int64()))]), inner_dtypes={"xyz": pa.int64()})
+
+    # element type is not compatible with inner dtype
+    with pytest.raises(TypeError):
+        NestedDtype(pa.struct([pa.field("a", pa.list_(pa.int64()))]), inner_dtypes={"a": pa.bool_()})
 
 
 def test_field_names():
