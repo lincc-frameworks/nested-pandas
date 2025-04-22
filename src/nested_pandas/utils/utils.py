@@ -27,8 +27,12 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     Examples
     --------
 
+    >>> import pandas as pd
+    >>> # Show all columns
+    >>> pd.set_option("display.width", 200)
+    >>> pd.set_option("display.max_columns", None)
     >>> from nested_pandas.datasets.generation import generate_data
-    >>> nf = generate_data(5,10,seed=1)
+    >>> nf = generate_data(5, 10, seed=1)
 
     >>> from nested_pandas.utils import count_nested
     >>> count_nested(nf, "nested")

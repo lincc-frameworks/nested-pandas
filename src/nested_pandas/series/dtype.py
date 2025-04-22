@@ -56,6 +56,9 @@ class NestedDtype(ExtensionDtype):
         fields = ", ".join([f"{field}: [{dtype!s}]" for field, dtype in nice_dtypes.items()])
         return f"nested<{fields}>"
 
+    def __repr__(self) -> str:
+        return self.name
+
     @classmethod
     def construct_array_type(cls) -> Type[ExtensionArray]:
         """Corresponded array type, always NestedExtensionArray"""

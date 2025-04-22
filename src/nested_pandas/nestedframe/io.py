@@ -64,12 +64,12 @@ def read_parquet(
     Simple loading example:
 
     >>> import nested_pandas as npd
-    >>> nf = npd.read_parquet("path/to/file.parquet")
+    >>> nf = npd.read_parquet("path/to/file.parquet")  # doctest: +SKIP
 
     Partial loading:
 
     >>> #Load only the "flux" sub-column of the "nested" column
-    >>> nf = npd.read_parquet("path/to/file.parquet", columns=["a", "nested.flux"])
+    >>> nf = npd.read_parquet("path/to/file.parquet", columns=["a", "nested.flux"])  # doctest: +SKIP
     """
 
     # Type convergence for reject_nesting

@@ -24,8 +24,9 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
 
     Examples
     --------
-    >>> nested_pandas.datasets.generate_data(10,100)
-    >>> nested_pandas.datasets.generate_data(10, {"nested_a": 100, "nested_b": 200})
+    >>> from nested_pandas.datasets import generate_data
+    >>> nf1 = generate_data(10,100)
+    >>> nf2 = generate_data(10, {"nested_a": 100, "nested_b": 200})
     """
     # use provided seed, "None" acts as if no seed is provided
     randomstate = np.random.RandomState(seed=seed)
