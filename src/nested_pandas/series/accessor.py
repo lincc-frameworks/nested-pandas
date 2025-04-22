@@ -258,7 +258,7 @@ class NestSeriesAccessor(Mapping):
         ...                                                 [["g","g"],
         ...                                                  ["r","r"]])
         >>> # Look at one row of the series
-        >>> nested_with_avg[0]
+        >>> nf_new_band[0]
                   t       flux band new_band
         0  2.935118  39.676747    g        g
         1  3.725204  41.919451    r        g
