@@ -20,7 +20,14 @@ __all__ = ["NestedDtype"]
 
 @register_extension_dtype
 class NestedDtype(ExtensionDtype):
-    """Data type to handle packed time series data"""
+    """Data type to handle packed time series data
+
+    Parameters
+    ----------
+    pyarrow_dtype : pyarrow.StructType or pd.ArrowDtype
+        The pyarrow data type to use for the nested type. It must be a struct
+        type where all fields are list types.
+    """
 
     # ExtensionDtype overrides #
 
@@ -38,7 +45,12 @@ class NestedDtype(ExtensionDtype):
     @property
     def name(self) -> str:
         """The string representation of the nested type"""
-        fields = ", ".join([f"{field.name}: [{field.type.value_type!s}]" for field in self.pyarrow_dtype])
+        # Replace pd.ArrowDtype with pa.DataType, because it has nicer __str__
+        nice_dtypes = {
+            field: dtype.pyarrow_dtype if isinstance(dtype, pd.ArrowDtype) else dtype
+            for field, dtype in self.fields.items()
+        }
+        fields = ", ".join([f"{field}: [{dtype!s}]" for field, dtype in nice_dtypes.items()])
         return f"nested<{fields}>"
 
     @classmethod

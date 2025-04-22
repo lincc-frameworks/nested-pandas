@@ -755,6 +755,23 @@ class NestedExtensionArray(ExtensionArray):
             return ArrowExtensionArray(self._list_array)
         return ArrowExtensionArray(self._chunked_array)
 
+    def to_pyarrow_scalar(self, list_struct: bool = False) -> pa.ListScalar:
+        """Convert to a pyarrow scalar of a list type
+
+        Parameters
+        ----------
+        list_struct : bool, optional
+            If False (default), return list-struct-list scalar,
+            otherwise  list-list-struct scalar.
+
+        Returns
+        -------
+        pyarrow.ListScalar
+        """
+        pa_array = self._list_array if list_struct else self._chunked_array
+        pa_type = pa.list_(pa_array.type)
+        return cast(pa.ListScalar, pa.scalar(pa_array, type=pa_type))
+
     def _replace_chunked_array(self, pa_array: pa.ChunkedArray, *, validate: bool) -> None:
         if validate:
             self._validate(pa_array)
