@@ -626,6 +626,38 @@ def test_chunked_list_struct_array():
     assert ext_array.chunked_list_struct_array.type == ext_array._pyarrow_list_struct_dtype
 
 
+def test_to_pyarrow_scalar():
+    """Test .to_pyarrow_scalar is correct."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    desired_struct_list = pa.scalar(
+        [
+            {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+            {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
+        ],
+        type=pa.list_(
+            pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+        ),
+    )
+    desired_list_struct = pa.scalar(
+        [
+            [{"a": 1, "b": -4.0}, {"a": 2, "b": -5.0}, {"a": 3, "b": -6.0}],
+            [{"a": 1, "b": -3.0}, {"a": 2, "b": -4.0}, {"a": 1, "b": -5.0}],
+        ],
+        type=pa.list_(pa.list_(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.float64())]))),
+    )
+    # pyarrow returns a single bool for ==
+    assert ext_array.to_pyarrow_scalar(list_struct=False) == desired_struct_list
+    assert ext_array.to_pyarrow_scalar(list_struct=True) == desired_list_struct
+
+
 def test_list_offsets_single_chunk():
     """Test that the .list_offset property is correct for a single chunk."""
     struct_array = pa.StructArray.from_arrays(
@@ -1871,6 +1903,36 @@ def test___init___with_list_struct_array():
         names=["a", "b"],
     )
     assert pa.array(ext_array) == struct_array
+
+
+def test__struct_array():
+    """Test ._struct_array property"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    assert ext_array._struct_array.combine_chunks() == struct_array
+
+
+def test__pa_table():
+    """Test ._pa_table property"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    assert ext_array._pa_table == pa.Table.from_arrays(
+        arrays=[struct_array.field("a"), struct_array.field("b")], names=["a", "b"]
+    )
 
 
 def test__from_sequence_of_strings():

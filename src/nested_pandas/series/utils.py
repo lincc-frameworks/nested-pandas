@@ -157,6 +157,9 @@ def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
     if not is_pa_type_a_list(t):
         raise ValueError(f"Expected a ListType, got {t}")
 
+    if not pa.types.is_struct(t.value_type):
+        raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
+
     struct_type = cast(pa.StructType, t.value_type)
     fields = []
     for field in struct_type:
