@@ -13,7 +13,7 @@ from pandas.api.extensions import register_extension_dtype
 from pandas.core.arrays import ExtensionArray
 from pandas.core.dtypes.base import ExtensionDtype
 
-from nested_pandas.series.utils import is_pa_type_a_list
+from nested_pandas.series.utils import is_pa_type_a_list, transpose_struct_list_type
 
 __all__ = ["NestedDtype"]
 
@@ -149,6 +149,7 @@ class NestedDtype(ExtensionDtype):
 
     def __init__(self, pyarrow_dtype: pa.DataType) -> None:
         self.pyarrow_dtype = self._validate_dtype(pyarrow_dtype)
+        self.list_struct_pyarrow_dtype = transpose_struct_list_type(self.pyarrow_dtype)
 
     @classmethod
     def from_fields(cls, fields: Mapping[str, pa.DataType]) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -206,7 +207,7 @@ class NestedDtype(ExtensionDtype):
         return [field.name for field in self.pyarrow_dtype]
 
     @classmethod
-    def from_pandas_arrow_dtype(cls, pandas_arrow_dtype: ArrowDtype):
+    def from_pandas_arrow_dtype(cls, pandas_arrow_dtype: ArrowDtype) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Construct NestedDtype from a pandas.ArrowDtype.
 
         Parameters
@@ -226,12 +227,20 @@ class NestedDtype(ExtensionDtype):
         """
         return cls(pyarrow_dtype=pandas_arrow_dtype.pyarrow_dtype)
 
-    def to_pandas_arrow_dtype(self) -> ArrowDtype:
+    def to_pandas_arrow_dtype(self, list_struct: bool = False) -> ArrowDtype:
         """Convert NestedDtype to a pandas.ArrowDtype.
+
+        Parameters
+        ----------
+        list_struct : bool, default False
+            If False (default) use pyarrow struct-list type,
+            otherwise use pyarrow list-struct type.
 
         Returns
         -------
         ArrowDtype
             The corresponding pandas.ArrowDtype.
         """
+        if list_struct:
+            return ArrowDtype(self.list_struct_pyarrow_dtype)
         return ArrowDtype(self.pyarrow_dtype)
