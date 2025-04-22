@@ -785,7 +785,7 @@ class NestedExtensionArray(ExtensionArray):
         ----------
         list_struct : bool, optional
             If False (default), return list-struct-list scalar,
-            otherwise  list-list-struct scalar.
+            otherwise list-list-struct scalar.
 
         Returns
         -------
