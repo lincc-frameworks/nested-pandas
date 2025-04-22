@@ -56,7 +56,10 @@ write_to = "src/nested_pandas/_version.py"
 [tool.pytest.ini_options]
 testpaths = [
     "tests",
+    "src",
+    "docs",
 ]
+addopts = "--doctest-modules --doctest-glob=*.rst"
 
 [tool.black]
 line-length = 110
