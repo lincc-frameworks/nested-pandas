@@ -1873,6 +1873,36 @@ def test___init___with_list_struct_array():
     assert pa.array(ext_array) == struct_array
 
 
+def test__struct_array():
+    """Test ._struct_array property"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    assert ext_array._struct_array.combine_chunks() == struct_array
+
+
+def test__pa_table():
+    """Test ._pa_table property"""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    assert ext_array._pa_table == pa.Table.from_arrays(
+        arrays=[struct_array.field("a"), struct_array.field("b")], names=["a", "b"]
+    )
+
+
 def test__from_sequence_of_strings():
     """We do not support from_sequence_of_strings() which would apply things like pd.read_csv()"""
     with pytest.raises(NotImplementedError):

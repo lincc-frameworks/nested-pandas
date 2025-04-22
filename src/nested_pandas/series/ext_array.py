@@ -225,7 +225,7 @@ class NestedExtensionArray(ExtensionArray):
         pa_array = cls._box_pa_array(scalars, pa_type=pa_type)
         return cls(pa_array)
 
-    # Tricky to implement, but required by things like pd.read_csv
+    # Tricky to implement but required by things like pd.read_csv
     @classmethod
     def _from_sequence_of_strings(cls, strings, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined] # noqa: F821
         return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)
@@ -679,6 +679,29 @@ class NestedExtensionArray(ExtensionArray):
         for struct_chunk in self._chunked_array.iterchunks():
             list_chunks.append(transpose_struct_list_array(struct_chunk, validate=False))
         return pa.chunked_array(list_chunks)
+
+    @property
+    def _struct_array(self) -> pa.ChunkedArray:
+        """Pyarrow chunked struct-list array representation
+
+        Returns
+        -------
+        pa.ChunkedArray
+            Pyarrow chunked-array of struct-list arrays.
+        """
+        return self._chunked_array
+
+    @property
+    def _pa_table(self) -> pa.Table:
+        """Pyarrow table representation of the extension array.
+
+        Returns
+        -------
+        pa.Table
+            Pyarrow table where each column is a list array corresponding
+            to a field of the struct array.
+        """
+        return pa.Table.from_struct_array(self._struct_array)
 
     @classmethod
     def from_sequence(cls, scalars, *, dtype: NestedDtype | pd.ArrowDtype | pa.DataType = None) -> Self:  # type: ignore[name-defined] # noqa: F821
