@@ -54,8 +54,9 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.utils import (
     enumerate_chunks,
     is_pa_type_a_list,
-    transpose_list_struct_array,
-    transpose_struct_list_array,
+    transpose_list_struct_chunked,
+    transpose_list_struct_scalar,
+    transpose_struct_list_chunked,
     transpose_struct_list_type,
     validate_struct_list_array_for_equal_lengths,
 )
@@ -240,12 +241,12 @@ class NestedExtensionArray(ExtensionArray):
 
         if isinstance(item, np.ndarray):
             if len(item) == 0:
-                return type(self)(pa.chunked_array([], type=self._chunked_array.type), validate=False)
+                return type(self)(pa.chunked_array([], type=self._dtype.list_struct_pa_type), validate=False)
             pa_item = pa.array(item)
             if item.dtype.kind in "iu":
-                return type(self)(self._chunked_array.take(pa_item), validate=False)
+                return type(self)(self._list_array.take(pa_item), validate=False)
             if item.dtype.kind == "b":
-                return type(self)(self._chunked_array.filter(pa_item), validate=False)
+                return type(self)(self._list_array.filter(pa_item), validate=False)
             # It should be covered by check_array_indexer above
             raise IndexError(
                 "Only integers, slices and integer or boolean arrays are valid indices."
@@ -257,11 +258,11 @@ class NestedExtensionArray(ExtensionArray):
         if item is Ellipsis:
             item = slice(None)
 
-        scalar_or_array = self._chunked_array[item]
-        if isinstance(scalar_or_array, pa.StructScalar):
-            return self._convert_struct_scalar_to_df(scalar_or_array, copy=False)
+        list_scalar_or_array = self._list_array[item]
+        if isinstance(list_scalar_or_array, pa.ListScalar):
+            return self._convert_list_scalar_to_df(list_scalar_or_array, copy=False)
         # Logically, it must be a pa.ChunkedArray if it is not a scalar
-        pa_array = cast(pa.ChunkedArray, scalar_or_array)
+        pa_array = cast(pa.ChunkedArray, list_scalar_or_array)
         return type(self)(pa_array, validate=False)
 
     def __setitem__(self, key, value) -> None:
@@ -303,15 +304,16 @@ class NestedExtensionArray(ExtensionArray):
             value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
             # Our replace_with_mask implementation doesn't work with scalars
-            value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
+            pa_mask_count = pa.compute.sum(pa_mask).as_py() or 0
+            value = pa.array([scalar] * pa_mask_count)
 
         if argsort is not None:
             value = value.take(argsort)
 
-        # We cannot use pa.compute.replace_with_mask(), it is not implemented for struct arrays:
+        # We cannot use pa.compute.replace_with_mask(), it is not implemented for struct/list arrays:
         # https://github.com/apache/arrow/issues/29558
-        # self._chunked_array = pa.compute.replace_with_mask(self._chunked_array, pa_mask, value)
-        self._chunked_array = replace_with_mask(self._chunked_array, pa_mask, value)
+        # self._list_array = pa.compute.replace_with_mask(self._chunked_array, pa_mask, value)
+        self._list_array = replace_with_mask(self._list_array, pa_mask, value)
 
     def __len__(self) -> int:
         return len(self._chunked_array)
@@ -634,14 +636,14 @@ class NestedExtensionArray(ExtensionArray):
                 # We already copied the data into scalars
 
         # We always cast - even if the type is the same, it does not hurt
-        # If the type is different the result may still be a view, so we do not set copy=False
+        # If the type is different, the result may still be a view, so we do not set copy=False
         if pa_type is not None:
             pa_array = pa_array.cast(pa_type)
 
         return pa_array
 
-    @classmethod
-    def _convert_struct_scalar_to_df(cls, value: pa.StructScalar, *, copy: bool, na_value: Any = None) -> Any:
+    @staticmethod
+    def _convert_struct_scalar_to_df(value: pa.StructScalar, *, copy: bool, na_value: Any = None) -> Any:
         """Converts a struct scalar of equal-length list scalars to a pd.DataFrame
 
         No validation is done, so the input must be a struct scalar with all fields being list scalars
@@ -652,33 +654,33 @@ class NestedExtensionArray(ExtensionArray):
         d = {name: pd.Series(list_scalar.values, copy=copy) for name, list_scalar in value.items()}
         return pd.DataFrame(d, copy=False)
 
-    _chunked_array: pa.ChunkedArray
+    @staticmethod
+    def _convert_list_scalar_to_df(value: pa.ListScalar, *, copy: bool, na_value: Any = None) -> Any:
+        if pa.compute.is_null(value).as_py():
+            return na_value
+        struct_scalar = transpose_list_struct_scalar(value)
+        return NestedExtensionArray._convert_struct_scalar_to_df(struct_scalar, copy=copy, na_value=na_value)
+
+    _list_array: pa.ChunkedArray
     _dtype: NestedDtype
 
     def __init__(self, values: pa.Array | pa.ChunkedArray, *, validate: bool = True) -> None:
         if isinstance(values, pa.Array):
             values = pa.chunked_array([values])
 
-        # Convert list-struct array to struct-list array
-        if is_pa_type_a_list(values.type):
-            struct_chunks = []
-            for list_chunk in values.iterchunks():
-                struct_chunks.append(transpose_list_struct_array(list_chunk))
-            values = pa.chunked_array(struct_chunks)
-        # Validate struct-array with list fields
-        elif validate:
-            self._validate(values)
-
-        self._chunked_array = values
-        self._dtype = NestedDtype(values.type)
-
-    @property
-    def _list_array(self) -> pa.ChunkedArray:
-        """Pyarrow chunked list-struct array representation"""
-        list_chunks = []
-        for struct_chunk in self._chunked_array.iterchunks():
-            list_chunks.append(transpose_struct_list_array(struct_chunk, validate=False))
-        return pa.chunked_array(list_chunks)
+        if pa.types.is_list(values.type):  # LongList and FixedList are not supported
+            if not pa.types.is_struct(values.type.value_type):
+                raise ValueError(
+                    f"If input is a list array, it must has struct-values, not {values.type.value_type}"
+                )
+            self._list_array = values
+            self._dtype = NestedDtype(values.type)
+        elif pa.types.is_struct(values.type.value_type):
+            struct_chunk = cast(pa.ChunkedArray, values)
+            self._list_array = transpose_struct_list_chunked(struct_chunk, validate=validate)
+            self._dtype = NestedDtype(values.type)
+        else:
+            raise ValueError(f"Input pyarrow array must be a list array or a struct array, not {values.type}")
 
     @property
     def _struct_array(self) -> pa.ChunkedArray:
@@ -689,7 +691,7 @@ class NestedExtensionArray(ExtensionArray):
         pa.ChunkedArray
             Pyarrow chunked-array of struct-list arrays.
         """
-        return self._chunked_array
+        return transpose_list_struct_chunked(self._list_array)
 
     @property
     def _pa_table(self) -> pa.Table:
@@ -736,7 +738,7 @@ class NestedExtensionArray(ExtensionArray):
     @property
     def chunked_array(self) -> pa.ChunkedArray:
         """The underlying PyArrow ChunkedArray"""
-        return self._chunked_array
+        return self._struct_array
 
     @property
     def chunked_list_struct_array(self) -> pa.ChunkedArray:

@@ -154,7 +154,12 @@ class NestedDtype(ExtensionDtype):
     pyarrow_dtype: pa.StructType
 
     def __init__(self, pyarrow_dtype: pa.DataType) -> None:
-        self.pyarrow_dtype, self.list_struct_pyarrow_dtype = self._validate_dtype(pyarrow_dtype)
+        self.pyarrow_dtype, self.list_struct_pa_type = self._validate_dtype(pyarrow_dtype)
+
+    @property
+    def struct_list_pa_type(self) -> pa.StructType:
+        """Struct-list pyarrow type representing the nested type."""
+        return self.pyarrow_dtype
 
     @classmethod
     def from_fields(cls, fields: Mapping[str, pa.DataType]) -> Self:  # type: ignore[name-defined] # noqa: F821

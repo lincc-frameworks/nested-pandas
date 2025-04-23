@@ -136,6 +136,48 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
     return pa.ListArray.from_arrays(offsets, struct_flat_array)
 
 
+def transpose_struct_list_chunked(chunked_array: pa.ChunkedArray, validate: bool = True) -> pa.ChunkedArray:
+    """Converts a chunked array of struct-list into a chunked array of list-struct.
+
+    Parameters
+    ----------
+    chunked_array : pa.ChunkedArray
+        Input chunked array of struct-list.
+    validate : bool, default True
+        Whether to validate the input array for list lengths. Raises ValueError
+        if something is wrong.
+
+    Returns
+    -------
+    pa.ChunkedArray
+        Chunked array of list-struct.
+    """
+    return pa.chunked_array(
+        [transpose_struct_list_array(array, validate) for array in chunked_array.iterchunks()]
+    )
+
+
+def transpose_list_struct_scalar(scalar: pa.ListScalar) -> pa.StructScalar:
+    """Converts a list-scalar of structs into a struct-scalar of lists.
+
+    Parameters
+    ----------
+    scalar : pa.ListScalar
+        Input list-struct scalar.
+
+    Returns
+    -------
+    pa.StructScalar
+        Struct-list scalar.
+    """
+    struct_type = transpose_list_struct_type(scalar.type)
+    struct_scalar = pa.scalar(
+        {field: scalar.values.field(field) for field in struct_type.names},
+        type=struct_type,
+    )
+    return cast(pa.StructScalar, struct_scalar)
+
+
 def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
     """Converts a type of list-struct array into a type of struct-list array.
 
@@ -190,6 +232,22 @@ def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
         fields.append(list_array)
 
     return pa.StructArray.from_arrays(fields, names=array.type.value_type.names)
+
+
+def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
+    """Converts a chunked array of list-struct into a chunked array of struct-list.
+
+    Parameters
+    ----------
+    chunked_array : pa.ChunkedArray
+        Input chunked array of list-struct.
+
+    Returns
+    -------
+    pa.ChunkedArray
+        Chunked array of struct-list.
+    """
+    return pa.chunked_array([transpose_list_struct_array(array) for array in chunked_array.iterchunks()])
 
 
 def table_to_struct_array(table: pa.Table) -> pa.StructArray:
