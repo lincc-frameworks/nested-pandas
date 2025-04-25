@@ -86,8 +86,16 @@ def read_parquet(
     else:
         # Otherwise, treat `data` as a file path and use UPath
         path = UPath(data)
-        with path.open("rb") as f:
-            table = pq.read_table(f, columns=columns)
+
+        # Check if the path is a directory
+        if path.is_dir():
+            # Read all Parquet files in the directory
+            table = pq.read_table(path, columns=columns)
+        else:
+            # Read a single Parquet file
+            with path.open("rb") as f:
+                table = pq.read_table(f, columns=columns)
+
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
