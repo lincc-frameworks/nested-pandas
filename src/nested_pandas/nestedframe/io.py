@@ -36,6 +36,8 @@ def read_parquet(
         is castable to a nested column. However, this assumption is invalid if
         the lists within the struct have mismatched lengths for any given item.
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
+    kwargs: dict
+        Keyword arguments passed to `pyarrow.parquet.read_table`
 
     Returns
     -------
