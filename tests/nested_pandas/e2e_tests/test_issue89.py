@@ -1,5 +1,4 @@
 """Based on https://github.com/lincc-frameworks/nested-pandas/issues/89"""
-from pyarrow.dataset import partitioning
 
 import nested_pandas as npd
 import numpy as np

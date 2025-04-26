@@ -5,11 +5,10 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from upath import UPath
-
 from nested_pandas import read_parquet
 from nested_pandas.datasets import generate_data
 from pandas.testing import assert_frame_equal
+from upath import UPath
 
 
 def test_read_parquet():
