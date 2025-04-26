@@ -14,6 +14,7 @@ def read_parquet(
     data: str | UPath | bytes,
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
+    **kwargs,
 ) -> NestedFrame:
     """
     Load a parquet object from a file path into a NestedFrame.
@@ -82,12 +83,12 @@ def read_parquet(
     # Check if `data` is a file-like object
     if hasattr(data, "read"):
         # If `data` is a file-like object, pass it directly to pyarrow
-        table = pq.read_table(data, columns=columns)
+        table = pq.read_table(data, columns=columns, **kwargs)
     else:
         # Otherwise, treat `data` as a file path and use UPath
         path = UPath(data)
-        with path.open("rb") as f:
-            table = pq.read_table(f, columns=columns)
+        filesystem = kwargs.pop("filesystem", path.fs)
+        table = pq.read_table(path.path, columns=columns, filesystem=filesystem, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -148,7 +149,7 @@ def read_parquet(
     # not zero-copy, but reduce memory pressure via the self_destruct kwarg
     # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
     df = NestedFrame(
-        table.to_pandas(types_mapper=lambda ty: pd.ArrowDtype(ty), split_blocks=True, self_destruct=True)
+        table.to_pandas(types_mapper=pd.ArrowDtype, split_blocks=True, self_destruct=True)
     )
     del table
     # Attempt to cast struct columns to NestedDTypes
