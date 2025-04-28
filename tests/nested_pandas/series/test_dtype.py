@@ -42,7 +42,7 @@ def test_from_pyarrow_dtype_struct_list(pyarrow_dtype):
 def test_from_pyarrow_dtype_list_struct(pyarrow_dtype):
     """Test that we can construct NestedDtype from pyarrow list type."""
     dtype = NestedDtype(pyarrow_dtype)
-    assert dtype.list_struct_pyarrow_dtype == pyarrow_dtype
+    assert dtype.list_struct_pa_dtype == pyarrow_dtype
 
 
 @pytest.mark.parametrize(
