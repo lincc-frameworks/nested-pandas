@@ -8,12 +8,46 @@ import pytest
 from nested_pandas import read_parquet
 from nested_pandas.datasets import generate_data
 from pandas.testing import assert_frame_equal
+from upath import UPath
 
 
 def test_read_parquet():
     """Test reading a parquet file with no columns specified"""
     # Load in the example file
     nf = read_parquet("tests/test_data/nested.parquet")
+
+    # Check the columns
+    assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
+
+    # Make sure nested columns were recognized
+    assert nf.nested_columns == ["nested", "lincc"]
+
+    # Check the nested columns
+    assert nf.nested.nest.fields == ["t", "flux", "band"]
+    assert nf.lincc.nest.fields == ["band", "frameworks"]
+
+
+def test_read_parquet_directory():
+    """Test reading a parquet file with no columns specified"""
+    # Load in the example file
+    nf = read_parquet("tests/test_data")
+
+    # Check the columns
+    assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
+
+    # Make sure nested columns were recognized
+    assert nf.nested_columns == ["nested", "lincc"]
+
+    # Check the nested columns
+    assert nf.nested.nest.fields == ["t", "flux", "band"]
+    assert nf.lincc.nest.fields == ["band", "frameworks"]
+
+
+def test_read_parquet_directory_with_filesystem():
+    """Test reading a parquet file with no columns specified"""
+    # Load in the example file
+    path = UPath("tests/test_data")
+    nf = read_parquet(path.path, filesystem=path.fs)
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
