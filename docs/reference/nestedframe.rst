@@ -38,6 +38,7 @@ Extended Pandas.DataFrame Interface
     NestedFrame.dropna
     NestedFrame.sort_values
     NestedFrame.reduce
+    NestedFrame.drop
 
 I/O
 ~~~~~~~~~

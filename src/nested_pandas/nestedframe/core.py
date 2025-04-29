@@ -497,7 +497,8 @@ class NestedFrame(pd.DataFrame):
         ----------
         labels: single label or list-like
             Index or column labels to drop. A tuple will be used as a single
-            label and not treated as a list-like.
+            label and not treated as a list-like. Nested sub-columns are
+            accessed using dot notation (e.g. "nested.col1").
         axis: {0 or ‘index’, 1 or ‘columns’}, default 0
             Whether to drop labels from the index (0 or ‘index’) or
             columns (1 or ‘columns’).
@@ -520,6 +521,22 @@ class NestedFrame(pd.DataFrame):
             DataFrame or None
             Returns DataFrame or None DataFrame with the specified index or
             column labels removed or None if inplace=True.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> # drop the "t" column from "nested"
+        >>> nf = nf.drop(["nested.t"], axis=1)
+        >>> nf
+                  a         b                                      nested
+        0  0.417022  0.184677  [{flux: 31.551563, band: 'r'}; …] (5 rows)
+        1  0.720324  0.372520  [{flux: 68.650093, band: 'g'}; …] (5 rows)
+        2  0.000114  0.691121  [{flux: 83.462567, band: 'g'}; …] (5 rows)
+        3  0.302333  0.793535   [{flux: 1.828828, band: 'g'}; …] (5 rows)
+        4  0.146756  1.077633  [{flux: 75.014431, band: 'g'}; …] (5 rows)
         """
 
         # axis 1 requires special handling for nested columns
