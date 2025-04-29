@@ -966,7 +966,7 @@ def test_reduce():
         sum([7, 10, 7]) / 3.0,
     ]
 
-    result = nf.reduce(offset_avg, "b", "packed.c", ["offset_avg"])
+    result = nf.reduce(offset_avg, "b", "packed.c", column_names=["offset_avg"])
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
@@ -978,7 +978,7 @@ def test_reduce():
     def make_id(col1, prefix_str):
         return f"{prefix_str}{col1}"
 
-    result = nf.reduce(make_id, "b", "some_id_")
+    result = nf.reduce(make_id, "b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
 
 
@@ -1093,6 +1093,27 @@ def test_reduce_infer_nesting():
     result = ndf.reduce(complex_output, "nested.flux")
     assert list(result.columns) == ["lc"]
     assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
+
+
+def test_reduce_arg_errors():
+    """Test that reduce errors based on non-column args trigger as expected"""
+
+    ndf = generate_data(10, 10, seed=1)
+
+    def func(a, flux, add):
+        """a function that takes a scalar, a column, and a boolean"""
+        if add:
+            return {"nested2.flux": flux + a}
+        return {"nested2.flux": flux + a}
+
+    with pytest.raises(TypeError):
+        ndf.reduce(func, "a", "nested.flux", True)
+
+    with pytest.raises(ValueError):
+        ndf.reduce(func, "ab", "nested.flux", add=True)
+
+    # this should work
+    ndf.reduce(func, "a", "nested.flux", add=True)
 
 
 def test_scientific_notation():
