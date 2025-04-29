@@ -554,8 +554,7 @@ class NestedFrame(pd.DataFrame):
                 # drop targeted sub-columns for each nested column
                 for col in nested_cols:
                     sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
-                    kwargs = {f"{col}": self[col].nest.without_field(sub_cols)}
-                    self = self.assign(**kwargs)
+                    self = self.assign(**{f"{col}": self[col].nest.without_field(sub_cols)})
 
             # drop remaining base columns
             if len(base_labels) > 0:
