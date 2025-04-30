@@ -79,6 +79,9 @@ API-level information about nested-pandas is viewable in the
 :doc:`API Reference <reference>`
 section.
 
+The :doc:`About Nested-Pandas <about>` section provides information on the
+design and performance advantages of nested-pandas.
+
 Learn more about contributing to this repository in our :doc:`Contribution Guide <gettingstarted/contributing>`.
 
 .. toctree::
@@ -88,3 +91,4 @@ Learn more about contributing to this repository in our :doc:`Contribution Guide
    Getting Started <gettingstarted>
    Tutorials <tutorials>
    API Reference <reference>
+   About Nested-Pandas <about>
