@@ -482,6 +482,104 @@ class NestedFrame(pd.DataFrame):
         else:
             return NestedFrame(packed_df.to_frame())
 
+    def drop(
+        self, labels=None, *, axis=0, index=None, columns=None, level=None, inplace=False, errors="raise"
+    ):
+        """Drop specified labels from rows or columns.
+
+        Remove rows or columns by specifying label names and corresponding
+        axis, or by directly specifying index or column names. When using a
+        multi-index, labels on different levels can be removed by
+        specifying the level. See the user guide for more information about
+        the now unused levels.
+
+        Parameters
+        ----------
+        labels: single label or list-like
+            Index or column labels to drop. A tuple will be used as a single
+            label and not treated as a list-like. Nested sub-columns are
+            accessed using dot notation (e.g. "nested.col1").
+        axis: {0 or ‘index’, 1 or ‘columns’}, default 0
+            Whether to drop labels from the index (0 or ‘index’) or
+            columns (1 or ‘columns’).
+        index: single label or list-like
+            Alternative to specifying axis (labels, axis=0 is equivalent to
+            index=labels).
+        columns: single label or list-like
+            Alternative to specifying axis (labels, axis=1 is equivalent to
+            columns=labels).
+        level: int or level name, optional
+            For MultiIndex, level from which the labels will be removed.
+        inplace: bool, default False
+            If False, return a copy. Otherwise, do operation in place and
+            return None.
+        errors: {‘ignore’, ‘raise’}, default ‘raise’
+            If ‘ignore’, suppress error and only existing labels are dropped.
+
+        Returns
+        -------
+        DataFrame or None
+            Returns DataFrame or None DataFrame with the specified index or
+            column labels removed or None if inplace=True.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> # drop the "t" column from "nested"
+        >>> nf = nf.drop(["nested.t"], axis=1)
+        >>> nf
+                  a         b                                      nested
+        0  0.417022  0.184677  [{flux: 31.551563, band: 'r'}; …] (5 rows)
+        1  0.720324  0.372520  [{flux: 68.650093, band: 'g'}; …] (5 rows)
+        2  0.000114  0.691121  [{flux: 83.462567, band: 'g'}; …] (5 rows)
+        3  0.302333  0.793535   [{flux: 1.828828, band: 'g'}; …] (5 rows)
+        4  0.146756  1.077633  [{flux: 75.014431, band: 'g'}; …] (5 rows)
+        """
+
+        # axis 1 requires special handling for nested columns
+        if axis == 1:
+            # label convergence
+            if isinstance(labels, str):
+                labels = [labels]
+            nested_labels = [label for label in labels if self._is_known_hierarchical_column(label)]
+            base_labels = [label for label in labels if not self._is_known_hierarchical_column(label)]
+
+            # split nested_labels by nested column
+            if len(nested_labels) > 0:
+                nested_cols = set([label.split(".")[0] for label in nested_labels])
+
+                # drop targeted sub-columns for each nested column
+                for col in nested_cols:
+                    sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
+                    self = self.assign(**{f"{col}": self[col].nest.without_field(sub_cols)})
+
+            # drop remaining base columns
+            if len(base_labels) > 0:
+                return super().drop(
+                    labels=base_labels,
+                    axis=axis,
+                    index=index,
+                    columns=columns,
+                    level=level,
+                    inplace=inplace,
+                    errors=errors,
+                )
+            else:
+                return self
+        # Otherwise just drop like pandas
+        return super().drop(
+            labels=labels,
+            axis=axis,
+            index=index,
+            columns=columns,
+            level=level,
+            inplace=inplace,
+            errors=errors,
+        )
+
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """
 

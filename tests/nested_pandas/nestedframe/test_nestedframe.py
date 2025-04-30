@@ -1126,6 +1126,54 @@ def test_scientific_notation():
     assert list(selected.index) == [0, 2]
 
 
+def test_drop():
+    """Test that we can drop nested columns from a NestedFrame"""
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    nested2 = pd.DataFrame(
+        data={"e": [0, 2, 4, 1, 4, 3, 1, 4, 1], "f": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested").add_nested(nested2, "nested2")
+
+    # test axis=0 drop
+    dropped_base = base.drop(0, axis=0)
+    assert len(dropped_base) == len(base) - 1
+
+    # Test dropping a base column
+    dropped_base = base.drop("a", axis=1)
+    assert len(dropped_base.columns) == len(base.columns) - 1
+    assert "a" not in dropped_base.columns
+
+    # Test dropping a nested column
+    dropped_nested = base.drop("nested.c", axis=1)
+    assert len(dropped_nested.columns) == len(base.columns)
+    assert "c" not in dropped_nested.nested.nest.fields
+
+    # Test dropping a non-existent column
+    with pytest.raises(KeyError):
+        base.drop("not_a_column", axis=1)
+
+    # Test dropping multiple columns
+    dropped_multiple = base.drop(["a", "nested.c"], axis=1)
+    assert len(dropped_multiple.columns) == len(base.columns) - 1
+    assert "a" not in dropped_multiple.columns
+    assert "c" not in dropped_multiple.nested.nest.fields
+
+    # Test multiple nested structures
+    dropped_multiple = base.drop(["nested.c", "nested2.f"], axis=1)
+    assert len(dropped_multiple.columns) == len(base.columns)
+    assert "c" not in dropped_multiple.nested.nest.fields
+    assert "f" not in dropped_multiple.nested2.nest.fields
+
+
 def test_eval():
     """
     Test basic behavior of NestedFrame.eval, and that it can handle nested references
