@@ -12,3 +12,25 @@ data. The following diagram details the actual storage representation of
    :alt: Internal representation of nested-pandas
 
 
+The advantage of this approach is that each sub-column ("field" in pyarrow) is
+stored in a flat array, with an offset array used to slice the data into the
+respective sub-dataframes. This allows for efficient transformations to other
+data representations (dataframes, list-arrays, flat arrays, etc.) which are
+used internally to minimize overhead of operations involving nested data.
+
+Nested Serialization to Parquet
+-------------------------------
+The internal design of nested columns has valid `pyarrow` struct objects
+underneath. This allows for direct serialization of nested columns to the
+`parquet` format. `nested-pandas` will automatically write nested columns to
+`parquet` format as valid `pyarrow` dtypes, which allows for them to be read
+by other parquet readers that support complex types. Additionally, `nested-pandas`
+will attempt to cast `pyarrow` struct-list columns to it's NestedDType directly
+when reading from parquet.
+
+
+Multi-level Nesting Support
+---------------------------
+At this time, `pested-pandas`` only supports a single level of nesting. Though we
+intend to support multiple levels of nesting in the future, and would be
+additionally motivated by community use cases that would benefit from this.
