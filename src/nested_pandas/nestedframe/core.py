@@ -518,9 +518,7 @@ class NestedFrame(pd.DataFrame):
 
         Returns
         -------
-            DataFrame or None
-            Returns DataFrame or None DataFrame with the specified index or
-            column labels removed or None if inplace=True.
+        DataFrame or None
 
         Examples
         --------
