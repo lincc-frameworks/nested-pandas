@@ -1127,7 +1127,7 @@ def test_scientific_notation():
 
 
 def test_drop():
-    """Test that we can drop columns from a NestedFrame"""
+    """Test that we can drop nested columns from a NestedFrame"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
