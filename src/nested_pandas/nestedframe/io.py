@@ -1,6 +1,8 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+from typing import Sequence
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -83,7 +85,7 @@ def read_parquet(
 
     # First load through pyarrow
     # Check if `data` is a file-like object
-    if hasattr(data, "read"):
+    if hasattr(data, "read") or (isinstance(data, Sequence) and not isinstance(data, (str, bytes, bytearray))):
         # If `data` is a file-like object, pass it directly to pyarrow
         table = pq.read_table(data, columns=columns, **kwargs)
     else:
