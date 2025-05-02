@@ -84,9 +84,9 @@ def read_parquet(
         reject_nesting = [reject_nesting]
 
     # First load through pyarrow
-    # Check if `data` is a file-like object
+    # Check if `data` is a file-like object or a sequence
     if hasattr(data, "read") or (isinstance(data, Sequence) and not isinstance(data, (str, bytes, bytearray))):
-        # If `data` is a file-like object, pass it directly to pyarrow
+        # If `data` is a file-like object or a sequence, pass it directly to pyarrow
         table = pq.read_table(data, columns=columns, **kwargs)
     else:
         # Otherwise, treat `data` as a file path and use UPath
