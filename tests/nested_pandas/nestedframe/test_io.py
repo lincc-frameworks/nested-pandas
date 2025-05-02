@@ -27,6 +27,25 @@ def test_read_parquet():
     assert nf.lincc.nest.fields == ["band", "frameworks"]
 
 
+def test_read_parquet_list():
+    """Test reading a parquet file with no columns specified"""
+    # Load in the example file
+    single_file_nf = read_parquet("tests/test_data/nested.parquet")
+    nf = read_parquet(["tests/test_data/nested.parquet", "tests/test_data/nested.parquet"])
+
+    # Check the columns
+    assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
+
+    # Make sure nested columns were recognized
+    assert nf.nested_columns == ["nested", "lincc"]
+
+    # Check the nested columns
+    assert nf.nested.nest.fields == ["t", "flux", "band"]
+    assert nf.lincc.nest.fields == ["band", "frameworks"]
+
+    assert len(nf) == 2 * len(single_file_nf)
+
+
 def test_read_parquet_directory():
     """Test reading a parquet file with no columns specified"""
     # Load in the example file
