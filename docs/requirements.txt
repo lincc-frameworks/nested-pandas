@@ -11,3 +11,4 @@ sphinx-book-theme
 astroquery
 astropy
 matplotlib
+light-curve
