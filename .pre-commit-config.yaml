@@ -20,8 +20,7 @@ repos:
         stages: [pre-commit]
         language: system
         entry: jupyter nbconvert --clear-output
-        exclude: docs/pre_executed/performance.ipynb
-        #exclude: docs/about/performance.ipynb
+        exclude: docs/pre_executed
     # Prevents committing directly branches named 'main' and 'master'.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
