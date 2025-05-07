@@ -254,3 +254,28 @@ def test_pandas_read_parquet():
 
         # Check the columns
         assert df.columns.tolist() == ["a", "b", "nested"]
+
+
+def test_read_empty_parquet():
+    """Test that we can read empty parquet files"""
+    orig_nf = generate_data(1, 2).iloc[:0]
+
+    with tempfile.NamedTemporaryFile("wb", suffix="parquet") as tmpfile:
+        orig_nf.to_parquet(tmpfile.name)
+        # All columns
+        # Do not check dtype because of:
+        # https://github.com/lincc-frameworks/nested-pandas/issues/252
+        assert_frame_equal(read_parquet(tmpfile.name), orig_nf, check_dtype=False)
+        # Few columns
+        assert_frame_equal(
+            read_parquet(
+                tmpfile.name,
+                columns=[
+                    "a",
+                    "nested.flux",
+                    "nested.band",
+                ],
+            ),
+            orig_nf.drop(["b", "nested.t"], axis=1),
+            check_dtype=False,
+        )
