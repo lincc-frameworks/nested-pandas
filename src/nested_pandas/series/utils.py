@@ -109,10 +109,8 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
         validate_struct_list_array_for_equal_lengths(array)
 
     mask = array.is_null()
-    if not pa.compute.any(mask):
+    if not pa.compute.any(mask).as_py():
         mask = None
-    else:
-        assert mask.offset == 0
 
     # Since we know that all lists have the same length, we can use the first list to get offsets
     try:
@@ -233,7 +231,7 @@ def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
     """
     offsets, values = array.offsets, array.values
     mask = array.is_null()
-    if not pa.compute.any(mask):
+    if not pa.compute.any(mask).as_py():
         mask = None
 
     fields = []

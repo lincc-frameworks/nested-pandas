@@ -55,7 +55,6 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.utils import (
     is_pa_type_a_list,
     transpose_struct_list_type,
-    validate_struct_list_array_for_equal_lengths,
 )
 
 __all__ = ["NestedExtensionArray"]
@@ -754,23 +753,6 @@ class NestedExtensionArray(ExtensionArray):
     def _pyarrow_list_struct_dtype(self) -> pa.ListType:
         """PyArrow data type of the list-struct view over the ext. array"""
         return transpose_struct_list_type(self._pyarrow_dtype)
-
-    @staticmethod
-    def _validate(array: pa.ChunkedArray) -> None:
-        """Raises ValueError if the input array is not a struct array with all fields being
-        list arrays of the same lengths.
-
-        Parameters
-        ----------
-        array : pa.ChunkedArray
-            The array to validate.
-
-        Raises
-        ------
-        ValueError
-        """
-        for chunk in array.iterchunks():
-            validate_struct_list_array_for_equal_lengths(chunk)
 
     @classmethod
     def from_arrow_ext_array(cls, array: ArrowExtensionArray) -> Self:  # type: ignore[name-defined] # noqa: F821
