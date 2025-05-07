@@ -9,6 +9,7 @@ import pyarrow.parquet as pq
 from upath import UPath
 
 from ..series.dtype import NestedDtype
+from ..series.utils import table_to_struct_array
 from .core import NestedFrame
 
 
@@ -140,7 +141,7 @@ def read_parquet(
         indices_to_remove = []
         for col, indices in nested_structures.items():
             # Build a struct column from the columns
-            structs[col] = table.select(indices).to_struct_array()
+            structs[col] = table_to_struct_array(table.select(indices))
             indices_to_remove.extend(indices)
 
         # Remove the original columns in reverse order to avoid index shifting

@@ -190,3 +190,15 @@ def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
         fields.append(list_array)
 
     return pa.StructArray.from_arrays(fields, names=array.type.value_type.names)
+
+
+def table_to_struct_array(table: pa.Table) -> pa.StructArray:
+    """pa.Table.to_struct_array
+
+    pyarrow has a bug for empty tables:
+    https://github.com/apache/arrow/issues/46355
+    """
+    if len(table) == 0:
+        array = pa.array([], type=pa.struct(table.schema))
+        return cast(pa.StructArray, array)
+    return table.to_struct_array()
