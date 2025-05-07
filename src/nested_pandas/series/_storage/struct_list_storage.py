@@ -1,17 +1,19 @@
 from __future__ import annotations  # Python 3.9 requires it for X | Y type hints
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from nested_pandas.series.utils import (
+    table_to_struct_array,
     transpose_list_struct_chunked,
     validate_struct_list_array_for_equal_lengths,
 )
 
 if TYPE_CHECKING:
-    from nested_pandas.series.storage.list_struct_storage import ListStructStorage
-    from nested_pandas.series.storage.table_storage import TableStorage
+    from nested_pandas.series._storage.list_struct_storage import ListStructStorage
+    from nested_pandas.series._storage.table_storage import TableStorage
 
 
 class StructListStorage:
@@ -26,7 +28,7 @@ class StructListStorage:
         Check that all the lists have the same lengths for each struct-value.
     """
 
-    data: pa.ChunkedArray
+    _data: pa.ChunkedArray
 
     def __init__(self, array: pa.StructArray | pa.ChunkedArray, *, validate: bool = True) -> None:
         if isinstance(array, pa.StructArray):
@@ -38,7 +40,11 @@ class StructListStorage:
             for chunk in array.chunks:
                 validate_struct_list_array_for_equal_lengths(chunk)
 
-        self.data = array
+        self._data = array
+
+    @property
+    def data(self) -> pa.ChunkedArray:
+        return self._data
 
     @classmethod
     def from_list_struct_storage(cls, list_struct_storage: ListStructStorage) -> Self:  # type: ignore # noqa: F821
@@ -61,5 +67,8 @@ class StructListStorage:
         table_storage : TableStorage
             TableStorage object.
         """
-        data = table_storage.data.to_struct_array()
+        data = table_to_struct_array(table_storage.data)
         return cls(data, validate=False)
+
+    def __iter__(self) -> Iterator[pa.StructScalar]:
+        return iter(self._data)

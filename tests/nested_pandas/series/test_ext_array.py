@@ -204,7 +204,7 @@ def test_from_sequence_with_arrow_array_and_dtype():
         type=pa_type,
     )
 
-    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type).chunked_array
+    actual = NestedExtensionArray.from_sequence(pa_array, dtype=new_pa_type).struct_array
     desired = pa.chunked_array([pa_array.cast(new_pa_type)])
     # pyarrow doesn't convert pandas boxed missing values to nulls in nested arrays
     assert actual == desired
@@ -525,7 +525,7 @@ def test___setitem___series_of_dfs():
     )
     desired = NestedExtensionArray(desired_struct_array)
 
-    assert ext_array.chunked_array == desired.chunked_array
+    assert ext_array.struct_array == desired.struct_array
     assert ext_array.equals(desired)
 
 
@@ -600,7 +600,7 @@ def test_chunked_array():
     ext_array = NestedExtensionArray(struct_array)
 
     # pyarrow returns a single bool for ==
-    assert ext_array.chunked_array == pa.chunked_array(struct_array)
+    assert ext_array.struct_array == pa.chunked_array(struct_array)
 
 
 def test_chunked_list_struct_array():
@@ -622,8 +622,8 @@ def test_chunked_list_struct_array():
     )
     desired = pa.chunked_array([list_array])
     # pyarrow returns a single bool for ==
-    assert ext_array.chunked_list_struct_array == desired
-    assert ext_array.chunked_list_struct_array.type == ext_array._pyarrow_list_struct_dtype
+    assert ext_array.list_array == desired
+    assert ext_array.list_array.type == ext_array._pyarrow_list_struct_dtype
 
 
 def test_to_pyarrow_scalar():
@@ -970,13 +970,9 @@ def test_nbytes():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    # Assume a typical 64-bit platform
-    a_data_size = 6 * 4
-    a_validity_buffer = 8  # cannot be smaller than 8 bytes because of alignment
-    b_data_size = 6 * 8
-    b_validity_buffer = 8  # cannot be smaller than 8 bytes because of alignment
-
-    assert ext_array.nbytes == a_data_size + a_validity_buffer + b_data_size + b_validity_buffer
+    assert ext_array.nbytes == ext_array.list_array.nbytes
+    assert ext_array.nbytes < ext_array.struct_array.nbytes
+    assert ext_array.nbytes < ext_array.pa_table.nbytes
 
 
 def test_pickability():
@@ -1916,7 +1912,7 @@ def test__struct_array():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    assert ext_array._struct_array.combine_chunks() == struct_array
+    assert ext_array.struct_array.combine_chunks() == struct_array
 
 
 def test__pa_table():
@@ -1930,7 +1926,7 @@ def test__pa_table():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    assert ext_array._pa_table == pa.Table.from_arrays(
+    assert ext_array.pa_table == pa.Table.from_arrays(
         arrays=[struct_array.field("a"), struct_array.field("b")], names=["a", "b"]
     )
 

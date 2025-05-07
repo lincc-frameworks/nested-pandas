@@ -13,6 +13,7 @@ from pandas.api.extensions import register_series_accessor
 
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack_sorted_df_into_struct
+from nested_pandas.series.utils import nested_types_mapper
 
 __all__ = ["NestSeriesAccessor"]
 
@@ -70,25 +71,10 @@ class NestSeriesAccessor(Mapping):
         if len(fields) == 0:
             raise ValueError("Cannot convert a struct with no fields to lists")
 
-        list_chunks = defaultdict(list)
-        for chunk in self._series.array._chunked_array.iterchunks():
-            struct_array = cast(pa.StructArray, chunk)
-            for field in fields:
-                list_array = cast(pa.ListArray, struct_array.field(field))
-                list_chunks[field].append(list_array)
+        list_df = self._series.array.pa_table.select(fields).to_pandas(types_mapper=nested_types_mapper)
+        list_df.index = self._series.index
 
-        list_series = {}
-        for field, chunks in list_chunks.items():
-            chunked_array = pa.chunked_array(chunks)
-            list_series[field] = pd.Series(
-                chunked_array,
-                dtype=pd.ArrowDtype(chunked_array.type),
-                index=self._series.index,
-                name=field,
-                copy=False,
-            )
-
-        return pd.DataFrame(list_series)
+        return list_df
 
     def to_flat(self, fields: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of flat arrays
@@ -130,7 +116,7 @@ class NestSeriesAccessor(Mapping):
         index = pd.Series(self.get_flat_index(), name=self._series.index.name)
 
         flat_chunks = defaultdict(list)
-        for chunk in self._series.array._chunked_array.iterchunks():
+        for chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, chunk)
             for field in fields:
                 list_array = cast(pa.ListArray, struct_array.field(field))
@@ -439,7 +425,7 @@ class NestSeriesAccessor(Mapping):
         """
 
         flat_chunks = []
-        for nested_chunk in self._series.array._chunked_array.iterchunks():
+        for nested_chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, nested_chunk)
             list_array = cast(pa.ListArray, struct_array.field(field))
             flat_array = list_array.flatten()
@@ -483,12 +469,7 @@ class NestSeriesAccessor(Mapping):
         Name: flux, dtype: list<item: double>[pyarrow]
         """
 
-        list_chunks = []
-        for nested_chunk in self._series.array._chunked_array.iterchunks():
-            struct_array = cast(pa.StructArray, nested_chunk)
-            list_array = struct_array.field(field)
-            list_chunks.append(list_array)
-        list_chunked_array = pa.chunked_array(list_chunks)
+        list_chunked_array = self._series.array.pa_table[field]
         return pd.Series(
             list_chunked_array,
             dtype=pd.ArrowDtype(list_chunked_array.type),

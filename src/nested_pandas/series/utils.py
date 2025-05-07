@@ -1,9 +1,13 @@
 from __future__ import annotations  # Python 3.9 requires it for X | Y type hints
 
 from collections.abc import Generator
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
+import pandas as pd
 import pyarrow as pa
+
+if TYPE_CHECKING:
+    from nested_pandas.series.dtype import NestedDtype
 
 
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
@@ -127,13 +131,32 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
     if validate:
         validate_struct_list_array_for_equal_lengths(array)
 
+    mask = array.is_null()
+    if not pa.compute.any(mask):
+        mask = None
+    else:
+        assert mask.offset == 0
+
     # Since we know that all lists have the same length, we can use the first list to get offsets
-    offsets = array.field(0).offsets
+    try:
+        offsets = array.field(0).offsets
+    except IndexError as e:
+        raise ValueError("Nested arrays must have at least one field") from e
+    else:
+        # Shift offsets
+        if offsets.offset != 0:
+            offsets = pa.compute.subtract(offsets, offsets[0])
+
     struct_flat_array = pa.StructArray.from_arrays(
-        [field.values for field in array.flatten()],
+        # Select values within the offsets
+        [field.values[field.offsets[0].as_py() : field.offsets[-1].as_py()] for field in array.flatten()],
         names=array.type.names,
     )
-    return pa.ListArray.from_arrays(offsets, struct_flat_array)
+    return pa.ListArray.from_arrays(
+        offsets=offsets,
+        values=struct_flat_array,
+        mask=mask,
+    )
 
 
 def transpose_struct_list_chunked(chunked_array: pa.ChunkedArray, validate: bool = True) -> pa.ChunkedArray:
@@ -152,6 +175,8 @@ def transpose_struct_list_chunked(chunked_array: pa.ChunkedArray, validate: bool
     pa.ChunkedArray
         Chunked array of list-struct.
     """
+    if chunked_array.num_chunks == 0:
+        return pa.chunked_array([], type=transpose_struct_list_type(chunked_array.type))
     return pa.chunked_array(
         [transpose_struct_list_array(array, validate) for array in chunked_array.iterchunks()]
     )
@@ -178,6 +203,15 @@ def transpose_list_struct_scalar(scalar: pa.ListScalar) -> pa.StructScalar:
     return cast(pa.StructScalar, struct_scalar)
 
 
+def validate_list_struct_type(t: pa.ListType) -> None:
+    """Raise a ValueError if not a list-struct type."""
+    if not is_pa_type_a_list(t):
+        raise ValueError(f"Expected a ListType, got {t}")
+
+    if not pa.types.is_struct(t.value_type):
+        raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
+
+
 def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
     """Converts a type of list-struct array into a type of struct-list array.
 
@@ -196,11 +230,7 @@ def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
     ValueError
         If the input type is not a list-struct type.
     """
-    if not is_pa_type_a_list(t):
-        raise ValueError(f"Expected a ListType, got {t}")
-
-    if not pa.types.is_struct(t.value_type):
-        raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
+    validate_list_struct_type(t)
 
     struct_type = cast(pa.StructType, t.value_type)
     fields = []
@@ -225,13 +255,20 @@ def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
         Struct array of lists.
     """
     offsets, values = array.offsets, array.values
+    mask = array.is_null()
+    if not pa.compute.any(mask):
+        mask = None
 
     fields = []
     for field_values in values.flatten():
         list_array = pa.ListArray.from_arrays(offsets, field_values)
         fields.append(list_array)
 
-    return pa.StructArray.from_arrays(fields, names=array.type.value_type.names)
+    return pa.StructArray.from_arrays(
+        arrays=fields,
+        names=array.type.value_type.names,
+        mask=mask,
+    )
 
 
 def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
@@ -247,16 +284,29 @@ def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray) -> pa.ChunkedA
     pa.ChunkedArray
         Chunked array of struct-list.
     """
+    if chunked_array.num_chunks == 0:
+        return pa.chunked_array([], type=transpose_list_struct_type(chunked_array.type))
     return pa.chunked_array([transpose_list_struct_array(array) for array in chunked_array.iterchunks()])
 
 
-def table_to_struct_array(table: pa.Table) -> pa.StructArray:
+def nested_types_mapper(type: pa.DataType) -> pd.ArrowDtype | NestedDtype:
+    """Type mapper for pyarrow .to_pandas(types_mapper) methods."""
+    from nested_pandas.series.dtype import NestedDtype
+
+    if pa.types.is_list(type):
+        try:
+            return NestedDtype(type)
+        except (ValueError, TypeError):
+            return pd.ArrowDtype(type)
+    return pd.ArrowDtype(type)
+
+
+def table_to_struct_array(table: pa.Table) -> pa.ChunkedArray:
     """pa.Table.to_struct_array
 
     pyarrow has a bug for empty tables:
     https://github.com/apache/arrow/issues/46355
     """
     if len(table) == 0:
-        array = pa.array([], type=pa.struct(table.schema))
-        return cast(pa.StructArray, array)
+        return pa.chunked_array([], type=pa.struct(table.schema))
     return table.to_struct_array()

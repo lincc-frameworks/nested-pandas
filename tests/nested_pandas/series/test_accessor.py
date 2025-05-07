@@ -1026,7 +1026,9 @@ def test_values():
 def test_get_list_index():
     """Test that the get_list_index() method works."""
     # First check that an empty NestedSeries returns an empty list index.
-    empty_struct_array = pa.StructArray.from_arrays(arrays=[], names=[])
+    empty_struct_array = pa.StructArray.from_arrays(
+        arrays=[pa.array([], type=pa.list_(pa.float64()))], names=["a"]
+    )
     empty_series = pd.Series(empty_struct_array, dtype=NestedDtype(empty_struct_array.type), index=[])
     assert len(empty_series) == 0
     assert len(empty_series.array.get_list_index()) == 0
