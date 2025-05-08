@@ -200,6 +200,28 @@ class NestedExtensionArray(ExtensionArray):
         a list array or if the list arrays have different lengths.
     """
 
+    # Constructor and initialized attributes #
+
+    _storage: ListStructStorage
+    _dtype: NestedDtype
+
+    def __init__(self, values: pa.Array | pa.ChunkedArray, *, validate: bool = True) -> None:
+        if isinstance(values, pa.Array):
+            values = pa.chunked_array([values])
+
+        # If list-struct
+        if is_pa_type_a_list(values.type):
+            list_struct_storage = ListStructStorage(values)
+        # If struct-list
+        else:
+            struct_list_storage = StructListStorage(values, validate=validate)
+            list_struct_storage = ListStructStorage.from_struct_list_storage(struct_list_storage)
+
+        self._storage = list_struct_storage
+        self._dtype = NestedDtype(values.type)
+
+    # End of Constructor and initialized attributes #
+
     # ExtensionArray overrides #
 
     @classmethod
@@ -646,24 +668,6 @@ class NestedExtensionArray(ExtensionArray):
             return na_value
         d = {name: pd.Series(list_scalar.values, copy=copy) for name, list_scalar in value.items()}
         return pd.DataFrame(d, copy=False)
-
-    _storage: ListStructStorage
-    _dtype: NestedDtype
-
-    def __init__(self, values: pa.Array | pa.ChunkedArray, *, validate: bool = True) -> None:
-        if isinstance(values, pa.Array):
-            values = pa.chunked_array([values])
-
-        # If list-struct
-        if is_pa_type_a_list(values.type):
-            list_struct_storage = ListStructStorage(values)
-        # If struct-list
-        else:
-            struct_list_storage = StructListStorage(values, validate=validate)
-            list_struct_storage = ListStructStorage.from_struct_list_storage(struct_list_storage)
-
-        self._storage = list_struct_storage
-        self._dtype = NestedDtype(values.type)
 
     @property
     def _list_storage(self):
