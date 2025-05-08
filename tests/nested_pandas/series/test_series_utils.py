@@ -1,7 +1,11 @@
+import pandas as pd
 import pyarrow as pa
 import pytest
+from nested_pandas import NestedDtype
 from nested_pandas.series.utils import (
+    nested_types_mapper,
     transpose_list_struct_array,
+    transpose_list_struct_scalar,
     transpose_list_struct_type,
     transpose_struct_list_array,
     transpose_struct_list_type,
@@ -111,3 +115,30 @@ def test_transpose_list_struct_array():
     )
     actual = transpose_list_struct_array(input_array)
     assert actual == desired
+
+
+def test_transpose_list_struct_scalar():
+    """Test transpose_list_struct_scalar function."""
+    input_scalar = pa.scalar([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}])
+    desired = pa.scalar({"a": [1, 2], "b": ["x", "y"]})
+    actual = transpose_list_struct_scalar(input_scalar)
+    assert actual == desired
+
+
+@pytest.mark.parametrize(
+    "pa_type,is_nested",
+    [
+        (pa.float64(), False),
+        (pa.list_(pa.float64()), False),
+        (pa.list_(pa.struct([("a", pa.float64()), ("b", pa.float64())])), True),
+    ],
+)
+def test_nested_types_mapper(pa_type, is_nested):
+    """Test nested_types_mapper function."""
+    dtype = nested_types_mapper(pa_type)
+    if is_nested:
+        assert isinstance(dtype, NestedDtype)
+        assert dtype.list_struct_pa_dtype == pa_type
+    else:
+        assert isinstance(dtype, pd.ArrowDtype)
+        assert dtype.pyarrow_dtype == pa_type
