@@ -240,6 +240,12 @@ class NestedExtensionArray(ExtensionArray):
         """
         del copy
 
+        if isinstance(dtype, NestedDtype) and isinstance(scalars, (cls, pa.Array, pa.ChunkedArray)):
+            if is_pa_type_a_list(scalars.type):
+                return cls(scalars.cast(dtype.list_struct_pa_dtype))
+            elif pa.types.is_struct(scalars.type):
+                return cls(scalars.cast(dtype.pyarrow_dtype))
+
         pa_type = to_pyarrow_dtype(dtype)
         pa_array = cls._box_pa_array(scalars, pa_type=pa_type)
         return cls(pa_array)

@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from nested_pandas import NestedDtype
+from nested_pandas import NestedDtype, NestedFrame
+from nested_pandas.datasets import generate_data
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.packer import pack_flat, pack_seq
 from numpy.testing import assert_array_equal
@@ -255,6 +256,21 @@ def test_to_flat_with_fields():
 
     for column in flat.columns:
         assert_array_equal(flat[column], desired[column])
+
+
+def test_to_flat_multiple_nesting():
+    """Test that the .nest.to_flat() method works well with inner nested fields."""
+    nf = generate_data(10, 2)
+    nf["a"] = nf["a"].astype(pd.ArrowDtype(pa.float64()))
+    nf["b"] = nf["b"].astype(pd.ArrowDtype(pa.float64()))
+    nf = nf.rename(columns={"nested": "inner"})
+    index = pd.Index(np.repeat(np.r_[0:5], 2), name="id")
+    nf = nf.assign(id=index)
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+
+    actual = nnf["outer"].nest.to_flat()
+    desired = nf.set_index("id")
+    assert_frame_equal(desired, actual)
 
 
 def test_to_flat_fails_for_empty_input():
@@ -652,6 +668,15 @@ def test___getitem___single_field():
             name="b",
         ),
     )
+
+
+def test___getitem___nested_field():
+    """Test that the .nest["field"] works for an inner nested field."""
+    nf = generate_data(10, 2)
+    nf = nf.assign(id=np.repeat(np.r_[0:5], 2))
+    nf = nf.rename(columns={"nested": "inner"})
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+    assert_series_equal(nnf["outer"].nest["inner"], nf["inner"], check_index=False)
 
 
 def test___getitem___single_field_multiple_chunks():
