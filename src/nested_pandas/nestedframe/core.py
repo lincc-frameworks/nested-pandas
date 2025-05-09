@@ -18,6 +18,7 @@ from nested_pandas.nestedframe.expr import (
 )
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
+from nested_pandas.series.utils import is_pa_type_a_list
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -40,6 +41,32 @@ class NestedFrame(pd.DataFrame):
     # that are not identifier-like have been aliases to cleaned names, and this attribute
     # contains those aliases, keyed by the cleaned name.
     _metadata = ["_aliases"]
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._cast_cols_to_nested(struct_list=False)
+
+    def _cast_cols_to_nested(self, *, struct_list: bool) -> None:
+        """Cast arrow columns to nested.
+
+        Parameters
+        ----------
+        struct_list : bool
+            If `False` cast list-struct columns only. If `True`, also
+            try to cast struct-list columns validating if they have
+            valid nested structure.
+        """
+        for column, dtype in self.dtypes.items():
+            if not isinstance(dtype, pd.ArrowDtype):
+                continue
+            pa_type = dtype.pyarrow_dtype
+            if not is_pa_type_a_list(pa_type) and not (struct_list and pa.types.is_struct(pa_type)):
+                continue
+            try:
+                nested_dtype = NestedDtype(pa_type)
+            except (TypeError, ValueError):
+                continue
+            self[column] = self[column].astype(nested_dtype)
 
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -224,7 +251,8 @@ class NestedFrame(pd.DataFrame):
             self._update_inplace(new_df)
             return None
 
-        return super().__setitem__(key, value)
+        super().__setitem__(key, value)
+        self._cast_cols_to_nested(struct_list=False)
 
     def add_nested(
         self,
