@@ -1,6 +1,8 @@
 import pandas as pd
 import pyarrow as pa
 import pytest
+from nested_pandas.datasets import generate_data
+from nested_pandas.nestedframe import NestedFrame
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 
@@ -136,6 +138,19 @@ def test_name_vs_construct_from_string(fields):
     """Test that dtype.name is consistent with dtype.construct_from_string(dtype.name)."""
     dtype = NestedDtype.from_fields(fields)
     assert dtype == NestedDtype.construct_from_string(dtype.name)
+
+
+def test_name_multiple_nested():
+    """Check string representation of a multiple-nested dtype."""
+    nf = generate_data(10, 2)
+    # Add a column to nest on
+    nf = nf.assign(id=[0, 0, 1, 1, 2, 2, 3, 3, 4, 4])
+    nf = nf.rename(columns={"nested": "inner"})
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+    assert (
+        nnf["outer"].dtype.name
+        == "nested<a: [double], b: [double], inner: [nested<t: [double], flux: [double], band: [string]>]>"
+    )
 
 
 @pytest.mark.parametrize(

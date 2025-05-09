@@ -14,6 +14,7 @@ from pandas.core.arrays import ExtensionArray
 from pandas.core.dtypes.base import ExtensionDtype
 
 from nested_pandas.series.utils import (
+    is_pa_type_is_list_struct,
     transpose_list_struct_type,
     transpose_struct_list_type,
 )
@@ -51,7 +52,7 @@ class NestedDtype(ExtensionDtype):
         # Replace pd.ArrowDtype with pa.DataType, because it has nicer __str__
         nice_dtypes = {
             field: dtype.pyarrow_dtype if isinstance(dtype, pd.ArrowDtype) else dtype
-            for field, dtype in self.fields.items()
+            for field, dtype in self.field_dtypes.items()
         }
         fields = ", ".join([f"{field}: [{dtype!s}]" for field, dtype in nice_dtypes.items()])
         return f"nested<{fields}>"
@@ -268,3 +269,28 @@ class NestedDtype(ExtensionDtype):
         if list_struct:
             return ArrowDtype(self.list_struct_pa_dtype)
         return ArrowDtype(self.pyarrow_dtype)
+
+    def field_dtype(self, field: str) -> pd.ArrowDtype | Self:  # type: ignore[name-defined] # noqa: F821
+        """Pandas dtype of a field, pd.ArrowDType or NestedDtype.
+
+        Parameters
+        ----------
+        field : str
+            Field name
+
+        Returns
+        -------
+        pd.ArrowDtype | NestedDtype
+            If the field is a list-struct, return NestedDtype, else wrap it
+            as a pd.ArrowDtype.
+        """
+        list_type = self.pyarrow_dtype.field(field).type
+        value_type = list_type.value_type
+        if is_pa_type_is_list_struct(value_type):
+            return type(self)(value_type)
+        return pd.ArrowDtype(value_type)
+
+    @property
+    def field_dtypes(self) -> dict[str, pd.ArrowDtype | Self]:  # type: ignore[name-defined] # noqa: F821
+        """Pandas dtypes of this dtype's fields."""
+        return {field: self.field_dtype(field) for field in self.field_names}
