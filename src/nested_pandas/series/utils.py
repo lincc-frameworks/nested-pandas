@@ -12,8 +12,13 @@ if TYPE_CHECKING:
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     """Check if the given pyarrow type is a list type.
 
-    I.e. one of the following types: ListArray, LargeListArray,
+    I.e., one of the following types: ListArray, LargeListArray,
     FixedSizeListArray.
+
+    Parameters
+    ----------
+    pa_type : pa.DataType
+        The pyarrow type to check.
 
     Returns
     -------
@@ -23,6 +28,23 @@ def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     return (
         pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type) or pa.types.is_fixed_size_list(pa_type)
     )
+
+
+def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
+    """Check if the given pyarrow type is a list-struct type.
+
+    Parameters
+    ----------
+    pa_type : pa.DataType
+        The pyarrow type to check.
+
+    Returns
+    -------
+    bool
+        True if the given type is a list-type with struct values,
+        False otherwise.
+    """
+    return is_pa_type_a_list(pa_type) and pa.types.is_struct(pa_type.value_type)
 
 
 def validate_struct_list_array_for_equal_lengths(array: pa.StructArray) -> None:
