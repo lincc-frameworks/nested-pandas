@@ -169,11 +169,6 @@ class NestedFrame(pd.DataFrame):
 
     def __getitem__(self, item):
         """Adds custom __getitem__ behavior for nested columns"""
-        custom_behavior_cases = [
-            (lambda x: isinstance(x, str), self._getitem_str),
-            (self._is_key_list, self._getitem_list),
-        ]
-
         if isinstance(item, str):
             return self._getitem_str(item)
         elif self._is_key_list(item):
