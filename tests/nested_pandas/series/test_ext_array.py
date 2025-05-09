@@ -1063,17 +1063,13 @@ def test_dropna():
 
 def test___arrow_array__():
     """Test that the extension array can be converted to a pyarrow array."""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
-        ],
-        names=["a", "b"],
+    list_array = pa.array(
+        [[{"a": 1, "b": 2}, {"a": 3, "b": 4}], [{"a": 5, "b": 6}], [{"a": -1, "b": -2}], []]
     )
-    ext_array = NestedExtensionArray(struct_array)
+    ext_array = NestedExtensionArray(list_array)
 
     arrow_array = pa.array(ext_array)
-    assert arrow_array == struct_array
+    assert arrow_array == list_array
 
 
 def test___arrow_array___with_type_cast():
@@ -1891,14 +1887,7 @@ def test___init___with_list_struct_array():
     ext_array = NestedExtensionArray(list_array)
     assert ext_array.field_names == ["a", "b"]
     assert ext_array.flat_length == 4
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([[1, 3], [5], [-1], []]),
-            pa.array([[2, 4], [6], [-2], []]),
-        ],
-        names=["a", "b"],
-    )
-    assert pa.array(ext_array) == struct_array
+    assert pa.array(ext_array) == list_array
 
 
 def test__struct_array():
