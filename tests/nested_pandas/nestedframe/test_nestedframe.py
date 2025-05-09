@@ -160,6 +160,62 @@ def test_get_nested_column():
     assert np.array_equal(np.array([0, 2, 4, 1, 4, 3, 1, 4, 1]), base_c.values.to_numpy())
 
 
+def test_get_nested_columns():
+    """Test that __getitem__ can retrieve a list including nested columns"""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    df = base[["a", "b", "nested.c"]]
+    assert np.all(df.columns == ["a", "b", "nested"])
+    assert df.dtypes["nested"].field_names == ["c"]
+    assert np.all(df["nested"].iloc[0].columns == ["c"])
+
+    df = base[["a", "b", "nested.c", "nested.d"]]
+    assert np.all(df.columns == ["a", "b", "nested"])
+    assert df.dtypes["nested"].field_names == ["c", "d"]
+    assert np.all(df["nested"].iloc[0].columns == ["c", "d"])
+
+    df = base[["nested.c"]]
+    assert np.all(df.columns == ["nested"])
+    assert df.dtypes["nested"].field_names == ["c"]
+    assert np.all(df["nested"].iloc[0].columns == ["c"])
+
+    df = base[["a", "b"]]
+    assert np.all(df.columns == ["a", "b"])
+
+    df = base[["a", "b", "nested"]]
+    assert np.all(df.columns == ["a", "b", "nested"])
+    assert df.dtypes["nested"].field_names == ["c", "d"]
+    assert np.all(df["nested"].iloc[0].columns == ["c", "d"])
+
+
+def test_get_nested_columns_errors():
+    """Test that __getitem__ errors with missing columns"""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    with pytest.raises(KeyError):
+        base[["a", "c"]]
+
+    with pytest.raises(KeyError):
+        base[["a", "nested.g"]]
+
+    with pytest.raises(KeyError):
+        base[["a", "nested.a", "wrong.b"]]
+
+
 def test_set_or_replace_nested_col():
     """Test that __setitem__ can set or replace a column in an existing nested structure"""
 
