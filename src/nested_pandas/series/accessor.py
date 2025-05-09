@@ -128,10 +128,10 @@ class NestSeriesAccessor(Mapping):
             chunked_array = pa.chunked_array(chunks)
             flat_series[field] = pd.Series(
                 chunked_array,
-                index=pd.Series(index, name=self._series.index.name),
+                index=index,
                 name=field,
                 copy=False,
-                dtype=pd.ArrowDtype(chunked_array.type),
+                dtype=self._series.dtype.field_dtype(field),
             )
 
         return pd.DataFrame(flat_series)
@@ -435,7 +435,7 @@ class NestSeriesAccessor(Mapping):
 
         return pd.Series(
             flat_chunked_array,
-            dtype=pd.ArrowDtype(flat_chunked_array.type),
+            dtype=self._series.dtype.field_dtype(field),
             index=self.get_flat_index(),
             name=field,
             copy=False,
