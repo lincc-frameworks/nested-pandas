@@ -240,11 +240,11 @@ class NestedExtensionArray(ExtensionArray):
         """
         del copy
 
-        if isinstance(dtype, NestedDtype) and isinstance(scalars, (cls, pa.Array, pa.ChunkedArray)):
-            if is_pa_type_a_list(scalars.type):
-                return cls(scalars.cast(dtype.list_struct_pa_dtype))
-            elif pa.types.is_struct(scalars.type):
-                return cls(scalars.cast(dtype.pyarrow_dtype))
+        if isinstance(dtype, NestedDtype):
+            try:
+                return cls._from_arrow_like(scalars, dtype=dtype)
+            except ValueError:
+                pass
 
         pa_type = to_pyarrow_dtype(dtype)
         pa_array = cls._box_pa_array(scalars, pa_type=pa_type)
@@ -662,6 +662,29 @@ class NestedExtensionArray(ExtensionArray):
             pa_array = pa_array.cast(pa_type)
 
         return pa_array
+
+    @classmethod
+    def _from_arrow_like(cls, arraylike, dtype: NestedDtype | None = None) -> Self:  # type: ignore[name-defined] # noqa: F821
+        if isinstance(arraylike, cls):
+            if dtype is None or dtype == arraylike.dtype:
+                return arraylike
+            array = arraylike.list_array
+        elif isinstance(arraylike, (pa.Array, pa.ChunkedArray)):
+            array = arraylike
+        else:
+            array = pa.array(arraylike)
+
+        if dtype is None:
+            return cls(array)
+
+        try:
+            cast_array = array.cast(dtype.pyarrow_dtype)
+        except (ValueError, TypeError, KeyError, pa.ArrowNotImplementedError):
+            try:
+                cast_array = array.cast(dtype.list_struct_pa_dtype)
+            except (ValueError, TypeError, KeyError, pa.ArrowNotImplementedError):
+                raise ValueError(f"Cannot cast input to {dtype}") from None
+        return cls(cast_array)
 
     @classmethod
     def _convert_struct_scalar_to_df(cls, value: pa.StructScalar, *, copy: bool, na_value: Any = None) -> Any:

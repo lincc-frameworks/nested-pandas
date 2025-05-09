@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from nested_pandas import NestedFrame
+from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
 from nested_pandas.series.packer import pack_lists
@@ -14,6 +14,17 @@ def test_nestedframe_construction():
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
     assert isinstance(base, NestedFrame)
+    assert_frame_equal(base, pd.DataFrame({"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2]))
+
+    list_struct_array = pa.array(
+        [[{"x": 1, "y": 1.0}], [{"x": 2, "y": 2.0}], [{"x": 3, "y": 3.0}, {"x": 4, "y": 4.0}]]
+    )
+    list_struct_series = pd.Series(list_struct_array, dtype=pd.ArrowDtype(list_struct_array.type))
+    nested_series = pd.Series(list_struct_series, dtype=NestedDtype(list_struct_array.type))
+
+    nf = NestedFrame(base.to_dict(orient="series") | {"list_struct": list_struct_series})
+    # Test auto-cast to nested
+    assert_frame_equal(nf, base.assign(list_struct=nested_series))
 
 
 def test_nestedseries_construction():
@@ -221,6 +232,22 @@ def test_set_new_nested_col():
         base["new_nested.cd"].values.to_numpy(),
         base["nested.c"].values.to_numpy() + base["nested.d"].values.to_numpy(),
     )
+
+
+def test_set_list_struct_col():
+    """Test that __setitem__ would cast list-struct columns to nested."""
+    nf = generate_data(10, 3)
+    nf["a"] = nf["a"].astype(pd.ArrowDtype(pa.float64()))
+    nf["b"] = nf["b"].astype(pd.ArrowDtype(pa.float64()))
+
+    list_struct_array = pa.array(nf.nested)
+    list_struct_series = pd.Series(list_struct_array, dtype=pd.ArrowDtype(list_struct_array.type))
+
+    nf["nested2"] = list_struct_series
+    assert_frame_equal(nf.nested.nest.to_flat(), nf.nested2.nest.to_flat())
+
+    nf = nf.assign(nested3=list_struct_series)
+    assert_frame_equal(nf.nested.nest.to_flat(), nf.nested3.nest.to_flat())
 
 
 def test_get_dot_names():
