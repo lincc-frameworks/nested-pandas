@@ -1242,6 +1242,28 @@ class NestedFrame(pd.DataFrame):
 
         return results_nf
 
+    def to_pandas(self, list_struct=False) -> pd.DataFrame:
+        """Convert to an ordinal pandas DataFrame, with no NestedDtype series.
+
+        NestedDtype is cast to pd.ArrowDtype
+
+        Parameters
+        ----------
+        list_struct: bool
+            If True, cast nested columns to pandas struct-list arrow extension
+            array columns. If False (default), cast nested columns to
+            list-struct array columns.
+
+        Returns
+        -------
+        pd.DataFrame
+            Ordinal pandas DataFrame.
+        """
+        df = pd.DataFrame(self)
+        for col in self.nested_columns:
+            df[col] = df[col].array.to_arrow_ext_array(list_struct=list_struct)
+        return df
+
     def to_parquet(self, path, **kwargs) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
         as a single parquet file where each nested dataset is packed into its
@@ -1269,13 +1291,14 @@ class NestedFrame(pd.DataFrame):
         >>> nf = generate_data(5,5, seed=1)
         >>> nf.to_parquet("nestedframe.parquet")
         """
+        df = self.to_pandas(list_struct=False)
 
         # Write through pyarrow
         # This is potentially not zero-copy
         # Note: Without pandas metadata, index writing is not as robust set
         # preserve_index=None for best behavior but index will generally
         # need to be set manually on load
-        table = pa.Table.from_pandas(self, preserve_index=None)
+        table = pa.Table.from_pandas(df, preserve_index=None)
 
         # Drop pandas metadata to make sure nesteddtypes are not preserved
         # Do this by rebuilding the schema
