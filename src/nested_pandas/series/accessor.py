@@ -12,7 +12,7 @@ from numpy.typing import ArrayLike
 from pandas.api.extensions import register_series_accessor
 
 from nested_pandas.series.dtype import NestedDtype
-from nested_pandas.series.packer import pack_sorted_df_into_struct
+from nested_pandas.series.packer import pack_flat, pack_sorted_df_into_struct
 from nested_pandas.series.utils import nested_types_mapper
 
 __all__ = ["NestSeriesAccessor"]
@@ -540,3 +540,94 @@ class NestSeriesAccessor(Mapping):
         The reason is that we cannot delete all nested fields from the nested series.
         """
         raise NotImplementedError("Cannot delete fields from nested series")
+
+    def to_flatten_inner(self, field: str) -> pd.Series:
+        """Explode the nested inner field and return as a pd.Series
+
+        Works for the case of multiple nesting only, the field must represent
+        a nested series.
+
+        Each row of this Series is changed in the following way:
+        1. Each nested item in the given field is converted to a "flat" frame.
+        2. All items of other fields are repeated as many times as that frame
+          length.
+
+        Parameters
+        ----------
+        field : str
+            Inner field, must have NestedDtype.
+
+        Returns
+        -------
+        pd.Series
+            This series object, but with inner field exploded.
+
+        Examples
+        --------
+        >>> from nested_pandas import NestedFrame
+        >>> from nested_pandas.datasets import generate_data
+        >>> nf = generate_data(5, 2, seed=1).rename(columns={"nested": "inner"})
+        >>> # Assign a repeated ID to double-nest on
+        >>> nf["id"] = [0, 0, 0, 1, 1]
+        >>> nf
+                  a         b                                              inner  id
+        0  0.417022  0.184677  [{t: 8.38389, flux: 80.074457, band: 'r'}; …] ...   0
+        1  0.720324  0.372520  [{t: 13.70439, flux: 96.826158, band: 'g'}; …]...   0
+        2  0.000114  0.691121  [{t: 4.089045, flux: 31.342418, band: 'g'}; …]...   0
+        3  0.302333  0.793535  [{t: 17.562349, flux: 69.232262, band: 'r'}; …...   1
+        4  0.146756  1.077633  [{t: 0.547752, flux: 87.638915, band: 'g'}; …]...   1
+        >>> nf.inner.nest.to_flat()
+                   t       flux band
+        0    8.38389  80.074457    r
+        0   13.40935  89.460666    g
+        1   13.70439  96.826158    g
+        1   8.346096   8.504421    g
+        2   4.089045  31.342418    g
+        2  11.173797   3.905478    g
+        3  17.562349  69.232262    r
+        3   2.807739  16.983042    r
+        4   0.547752  87.638915    g
+        4    3.96203   87.81425    r
+        >>> # Create a dataframe with double-nested column "outer"
+        >>> dnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+        >>> # Flat "inner" nested column.
+        >>> # This is like "concatenation" of the initial nf frame on duplicated `id` rows
+        >>> concated_nf_series = dnf["outer"].nest.to_flatten_inner("inner")
+        >>> concated_nf_series
+        id
+        0    [{t: 8.38389, flux: 80.074457, band: 'r', a: 0...
+        1    [{t: 17.562349, flux: 69.232262, band: 'r', a:...
+        Name: inner, dtype: nested<t: [double], flux: [double], band: [string], a: [double], b: [double]>
+        >>> concated_nf_series.nest.to_flat()  # doctest: +NORMALIZE_WHITESPACE
+                    t       flux band         a         b
+        id
+        0     8.38389  80.074457    r  0.417022  0.184677
+        0    13.40935  89.460666    g  0.417022  0.184677
+        0    13.70439  96.826158    g  0.720324   0.37252
+        0    8.346096   8.504421    g  0.720324   0.37252
+        0    4.089045  31.342418    g  0.000114  0.691121
+        0   11.173797   3.905478    g  0.000114  0.691121
+        1   17.562349  69.232262    r  0.302333  0.793535
+        1    2.807739  16.983042    r  0.302333  0.793535
+        1    0.547752  87.638915    g  0.146756  1.077633
+        1     3.96203   87.81425    r  0.146756  1.077633
+        """
+        if not isinstance(self._series.dtype.field_dtype(field), NestedDtype):
+            raise ValueError(
+                f"Field '{field}' dtype must be NestedDtype, got '{self._series.dtype.field_dtype(field)}'"
+            )
+
+        # Copy series and make an "ordinal" index
+        series = self._series.reset_index(drop=True)
+        # Get a flat representation of the field
+        inner = self[field]
+        # Embed all other fields into the nested inner field, so the only field is left
+        for other_field in self.fields:
+            if other_field == field:
+                continue
+            inner = inner.nest.with_filled_field(other_field, series.nest[other_field])
+        # Repack flat inner back to nested series
+        result = pack_flat(inner.nest.to_flat(), name=field)
+        # Restore index
+        result.index = self._series.index
+        return result

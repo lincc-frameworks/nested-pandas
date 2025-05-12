@@ -17,6 +17,7 @@ Functions
 
     NestSeriesAccessor.to_lists
     NestSeriesAccessor.to_flat
+    NestSeriesAccessor.to_flatten_inner
     NestSeriesAccessor.with_field
     NestSeriesAccessor.with_flat_field
     NestSeriesAccessor.with_list_field
@@ -26,4 +27,3 @@ Functions
     NestSeriesAccessor.get_flat_index
     NestSeriesAccessor.get_flat_series
     NestSeriesAccessor.get_list_series
-

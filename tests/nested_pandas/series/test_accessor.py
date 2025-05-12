@@ -1073,3 +1073,30 @@ def test_get_list_index():
     list_index = series.array.get_list_index()
     assert len(list_index) == series.nest.flat_length
     assert np.equal(list_index, [0, 0, 0, 0, 1, 1, 1, 1]).all()
+
+
+def test_to_flatten_inner():
+    """Test .nest.to_flatten_inner()"""
+    nf = generate_data(10, 2)
+    nf["a"] = nf["a"].astype(pd.ArrowDtype(pa.float64()))
+    nf["b"] = nf["b"].astype(pd.ArrowDtype(pa.float64()))
+    nf = nf.assign(id=np.repeat(np.r_[0:5], 2))
+    nf = nf.rename(columns={"nested": "inner"})
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+
+    # outer = nnf["outer"]
+    # inner = outer.nest["inner"]
+    # for field, dtype in outer.dtype.field_dtypes.items():
+    #     if isinstance(dtype, NestedDtype):
+    #         continue
+    #     inner = inner.nest.with_filled_field(field, outer.nest[field])
+    #     outer = outer.nest.without_field(field)
+    #
+    # nnf = nnf.drop("outer", axis=1).add_nested(inner.nest.to_flat(), "outer_flatten")
+    outer_flatten = nnf["outer"].nest.to_flatten_inner("inner")
+
+    assert_frame_equal(
+        nf.drop("inner", axis=1).join(nf["inner"].nest.to_flat()).set_index("id"),
+        outer_flatten.nest.to_flat(),
+        check_like=True,
+    )
