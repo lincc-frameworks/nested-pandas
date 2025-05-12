@@ -1100,3 +1100,10 @@ def test_to_flatten_inner():
         outer_flatten.nest.to_flat(),
         check_like=True,
     )
+
+
+def test_to_flatten_outer_wrong_field():
+    """Test an exception is raised when .nest.to_flatten_inner() called for a wrong field."""
+    nf = generate_data(10, 2)
+    with pytest.raises(ValueError):
+        nf.nested.nest.to_flatten_inner("t")
