@@ -1084,15 +1084,6 @@ def test_to_flatten_inner():
     nf = nf.rename(columns={"nested": "inner"})
     nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
 
-    # outer = nnf["outer"]
-    # inner = outer.nest["inner"]
-    # for field, dtype in outer.dtype.field_dtypes.items():
-    #     if isinstance(dtype, NestedDtype):
-    #         continue
-    #     inner = inner.nest.with_filled_field(field, outer.nest[field])
-    #     outer = outer.nest.without_field(field)
-    #
-    # nnf = nnf.drop("outer", axis=1).add_nested(inner.nest.to_flat(), "outer_flatten")
     outer_flatten = nnf["outer"].nest.to_flatten_inner("inner")
 
     assert_frame_equal(
