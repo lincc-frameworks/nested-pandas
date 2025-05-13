@@ -160,7 +160,7 @@ class NestedFrame(pd.DataFrame):
         # Recover some truncation formatting, limited to head truncation
         if pd.get_option("display.max_rows") is None:
             return repr.to_html(max_rows=0)
-        elif repr.data.shape[0] > pd.get_option("display.max_rows"):
+        elif df_shape[0] > pd.get_option("display.max_rows"):
             html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows"))
         else:
             # when under the max_rows threshold, display all rows (behavior of 0 here)
