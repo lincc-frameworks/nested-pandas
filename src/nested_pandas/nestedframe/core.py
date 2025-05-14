@@ -132,7 +132,7 @@ class NestedFrame(pd.DataFrame):
             return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
         # Handle sizing, trim html dataframe if output will be truncated
-        df_shape = self.shape
+        df_shape = self.shape  # grab original shape information for later
         if pd.get_option("display.max_rows") is None or df_shape[0] > pd.get_option("display.max_rows"):
             html_df = self.head(pd.get_option("display.min_rows") + 1)
         else:
@@ -159,8 +159,10 @@ class NestedFrame(pd.DataFrame):
 
         # Recover some truncation formatting, limited to head truncation
         if pd.get_option("display.max_rows") is None:
+            # Just display header
             return repr.to_html(max_rows=0)
         elif df_shape[0] > pd.get_option("display.max_rows"):
+            # when over the max_rows threshold, display with truncation ("..." row at the end)
             html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows"))
         else:
             # when under the max_rows threshold, display all rows (behavior of 0 here)
