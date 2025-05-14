@@ -548,7 +548,10 @@ class NestSeriesAccessor(Mapping):
         a nested series.
 
         Each row of this Series is changed in the following way:
-        1. Each nested item in the given field is converted to a "flat" frame. If a nested item contains fields that are also nested, those are brought up as their own nested structures in the resulting "flat" frame.
+        1. Each nested item in the given field is converted to a "flat" frame.
+          If a nested item contains fields that are also nested, those are
+          brought up as their own nested structures in the resulting "flat"
+          frame.
         2. All items of other fields are repeated as many times as that frame
           length.
 
