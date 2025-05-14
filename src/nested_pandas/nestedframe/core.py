@@ -131,9 +131,16 @@ class NestedFrame(pd.DataFrame):
                 return None
             return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
 
+        # Handle sizing, trim html dataframe if output will be truncated
+        df_shape = self.shape  # grab original shape information for later
+        if pd.get_option("display.max_rows") is None or df_shape[0] > pd.get_option("display.max_rows"):
+            html_df = self.head(pd.get_option("display.min_rows") + 1)
+        else:
+            html_df = self.copy()
+
         # replace index to ensure proper behavior for duplicate index values
-        index_values = self.index
-        html_df = self.reset_index(drop=True)
+        index_values = html_df.index
+        html_df = html_df.reset_index(drop=True)
 
         # Apply repacking to all nested columns
         repr = html_df.style.format(
@@ -152,15 +159,17 @@ class NestedFrame(pd.DataFrame):
 
         # Recover some truncation formatting, limited to head truncation
         if pd.get_option("display.max_rows") is None:
+            # Just display header
             return repr.to_html(max_rows=0)
-        elif repr.data.shape[0] > pd.get_option("display.max_rows"):
+        elif df_shape[0] > pd.get_option("display.max_rows"):
+            # when over the max_rows threshold, display with truncation ("..." row at the end)
             html_repr = repr.to_html(max_rows=pd.get_option("display.min_rows"))
         else:
             # when under the max_rows threshold, display all rows (behavior of 0 here)
             html_repr = repr.to_html(max_rows=0)
 
         # Manually append dimensionality to a styler output
-        html_repr += f"{repr.data.shape[0]} rows x {repr.data.shape[1]} columns"
+        html_repr += f"{df_shape[0]} rows x {df_shape[1]} columns"
 
         return html_repr
 
