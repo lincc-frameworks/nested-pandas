@@ -97,6 +97,79 @@ def read_parquet(
         filesystem = kwargs.pop("filesystem", path.fs)
         table = pq.read_table(path.path, columns=columns, filesystem=filesystem, **kwargs)
 
+    return from_pyarrow(table, columns=columns, reject_nesting=reject_nesting)
+
+
+def from_pyarrow(
+    table: pa.Table,
+    columns: list[str] | None = None,
+    reject_nesting: list[str] | str | None = None,
+) -> NestedFrame:
+    """
+    Load a parquet object from a file path into a NestedFrame.
+
+    As a deviation from `pandas`, this function loads via
+    `pyarrow.parquet.read_table`, and then converts to a NestedFrame.
+
+    Parameters
+    ----------
+    data: str, Upath, or file-like object
+        Path to the data or a file-like object. If a string is passed, it can be a single file name,
+        directory name, or a remote path (e.g., HTTP/HTTPS or S3). If a file-like object is passed,
+        it must support the `read` method.
+    columns : list, default=None
+        If not None, only these columns will be read from the file.
+    reject_nesting: list or str, default=None
+        Column(s) to reject from being cast to a nested dtype. By default,
+        nested-pandas assumes that any struct column with all fields being lists
+        is castable to a nested column. However, this assumption is invalid if
+        the lists within the struct have mismatched lengths for any given item.
+        Columns specified here will be read using the corresponding pandas.ArrowDtype.
+    kwargs: dict
+        Keyword arguments passed to `pyarrow.parquet.read_table`
+
+    Returns
+    -------
+    NestedFrame
+
+    Notes
+    -----
+    pyarrow supports partial loading of nested structures from parquet, for
+    example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
+    load the "a" column of the "nested" column. Standard pandas/pyarrow
+    behavior will return "a" as a list-array base column with name "a". In
+    nested-pandas, this behavior is changed to load the column as a sub-column
+    of a nested column called "nested". Be aware that this will prohibit calls
+    like ```pd.read_parquet("data.parquet", columns=["nested.a", "nested"])```
+    from working, as this implies both full and partial load of "nested".
+
+    Furthermore, there are some cases where subcolumns will have the same name
+    as a top-level column. For example, if you have a column "nested" with
+    subcolumns "nested.a" and "nested.b", and also a top-level column "a". In
+    these cases, keep in mind that if "nested" is in the reject_nesting list
+    the operation will fail, as is consistent with the default pandas behavior
+    (but nesting will still work normally).
+
+    Examples
+    --------
+
+    Simple loading example:
+
+    >>> import nested_pandas as npd
+    >>> nf = npd.read_parquet("path/to/file.parquet")  # doctest: +SKIP
+
+    Partial loading:
+
+    >>> #Load only the "flux" sub-column of the "nested" column
+    >>> nf = npd.read_parquet("path/to/file.parquet", columns=["a", "nested.flux"])  # doctest: +SKIP
+    """
+
+    # Type convergence for reject_nesting
+    if reject_nesting is None:
+        reject_nesting = []
+    elif isinstance(reject_nesting, str):
+        reject_nesting = [reject_nesting]
+
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
     # Use input column names and the table column names to determine if a column
