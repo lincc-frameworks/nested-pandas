@@ -1098,3 +1098,23 @@ def test_to_flatten_outer_wrong_field():
     nf = generate_data(10, 2)
     with pytest.raises(ValueError):
         nf.nested.nest.to_flatten_inner("t")
+
+
+def test_issue266():
+    """Test .nest.to_flatten_inner() with empty series.
+
+    https://github.com/lincc-frameworks/nested-pandas/issues/266
+    """
+
+    nf = generate_data(10, 2)
+    nf = nf.assign(id=np.repeat(np.r_[0:5], 2))
+    nf = nf.rename(columns={"nested": "inner"})
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+
+    empty_nnf = nnf.iloc[0:0]
+
+    empty_outer_flatten = empty_nnf["outer"].nest.to_flatten_inner("inner")
+
+    assert empty_outer_flatten.dtype == NestedDtype.from_fields(
+        {"t": pa.float64(), "flux": pa.float64(), "band": pa.string(), "a": pa.float64(), "b": pa.float64()}
+    )

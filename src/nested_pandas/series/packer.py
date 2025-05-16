@@ -209,8 +209,8 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
     if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
         chunks = []
-        numpy_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
-        for i in range(numpy_chunks):
+        num_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
+        for i in range(num_chunks):
             chunks.append(
                 pa.StructArray.from_arrays(
                     [arr.chunk(i) for arr in pa_chunked_arrays.values()],

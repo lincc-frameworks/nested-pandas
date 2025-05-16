@@ -307,3 +307,10 @@ def table_to_struct_array(table: pa.Table) -> pa.ChunkedArray:
     if len(table) == 0:
         return pa.chunked_array([], type=pa.struct(table.schema))
     return table.to_struct_array()
+
+
+def table_from_struct_array(array: pa.ChunkedArray | pa.array) -> pa.Table:
+    """pa.Table.from_struct_array, but working with chunkless input"""
+    if isinstance(array, pa.ChunkedArray) and array.num_chunks == 0:
+        array = pa.array([], type=array.type)
+    return pa.Table.from_struct_array(array)
