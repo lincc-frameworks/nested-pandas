@@ -4,7 +4,11 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from nested_pandas.series.utils import table_to_struct_array, validate_struct_list_array_for_equal_lengths
+from nested_pandas.series.utils import (
+    table_from_struct_array,
+    table_to_struct_array,
+    validate_struct_list_array_for_equal_lengths,
+)
 
 if TYPE_CHECKING:
     from nested_pandas.series._storage.list_struct_storage import ListStructStorage
@@ -58,5 +62,5 @@ class TableStorage:
         struct_list_storage : StructListStorage
             StructListStorage object.
         """
-        table = pa.Table.from_struct_array(struct_list_storage.data)
+        table = table_from_struct_array(struct_list_storage.data)
         return cls(table, validate=False)

@@ -1,7 +1,6 @@
 # Python 3.9 doesn't support "|" for types
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Generator, Mapping
 from typing import cast
 
@@ -115,7 +114,7 @@ class NestSeriesAccessor(Mapping):
 
         index = pd.Series(self.get_flat_index(), name=self._series.index.name)
 
-        flat_chunks = defaultdict(list)
+        flat_chunks: dict[str, list[pa.Array]] = {field: [] for field in fields}
         for chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, chunk)
             for field in fields:
@@ -125,13 +124,16 @@ class NestSeriesAccessor(Mapping):
 
         flat_series = {}
         for field, chunks in flat_chunks.items():
+            dtype = self._series.dtype.field_dtype(field)
+            if len(chunks) == 0:
+                chunks = [pa.array([])]
             chunked_array = pa.chunked_array(chunks)
             flat_series[field] = pd.Series(
                 chunked_array,
                 index=index,
                 name=field,
                 copy=False,
-                dtype=self._series.dtype.field_dtype(field),
+                dtype=dtype,
             )
 
         return pd.DataFrame(flat_series)
