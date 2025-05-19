@@ -293,6 +293,10 @@ class NestedFrame(pd.DataFrame):
         super().__setitem__(key, value)
         self._cast_cols_to_nested(struct_list=False)
 
+    def __delitem__(self, key):
+        """Delete a column or a nested field using dot notation (e.g., del nf['nested.x'])"""
+        self.drop([key], axis=1, inplace=True)
+
     def add_nested(
         self,
         obj,
@@ -621,7 +625,10 @@ class NestedFrame(pd.DataFrame):
                 # drop targeted sub-columns for each nested column
                 for col in nested_cols:
                     sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
-                    self = self.assign(**{f"{col}": self[col].nest.without_field(sub_cols)})
+                    if inplace:
+                        self[col] = self[col].nest.without_field(sub_cols)
+                    else:
+                        self = self.assign(**{f"{col}": self[col].nest.without_field(sub_cols)})
 
             # drop remaining base columns
             if len(base_labels) > 0:
@@ -635,7 +642,7 @@ class NestedFrame(pd.DataFrame):
                     errors=errors,
                 )
             else:
-                return self
+                return self if not inplace else None
         # Otherwise just drop like pandas
         return super().drop(
             labels=labels,
