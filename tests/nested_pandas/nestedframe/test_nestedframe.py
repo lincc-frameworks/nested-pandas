@@ -1520,6 +1520,7 @@ def test_nest_lists():
 
 
 def test_delitem_base_and_nested():
+    """Test that __delitem__ works for both base and nested columns."""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
     nested = pd.DataFrame(
         data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
