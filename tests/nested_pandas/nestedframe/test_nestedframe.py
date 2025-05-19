@@ -1211,19 +1211,15 @@ def test_scientific_notation():
 
 def test_drop():
     """Test that we can drop nested columns from a NestedFrame"""
-
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
-
     nested = pd.DataFrame(
         data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-
     nested2 = pd.DataFrame(
         data={"e": [0, 2, 4, 1, 4, 3, 1, 4, 1], "f": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-
     base = base.add_nested(nested, "nested").add_nested(nested2, "nested2")
 
     # test axis=0 drop
@@ -1255,6 +1251,31 @@ def test_drop():
     assert len(dropped_multiple.columns) == len(base.columns)
     assert "c" not in dropped_multiple.nested.nest.fields
     assert "f" not in dropped_multiple.nested2.nest.fields
+
+    # Test inplace=True for both base and nested columns
+    base2 = base.copy()
+    base2.drop(["a", "nested.c"], axis=1, inplace=True)
+    assert "a" not in base2.columns
+    assert "c" not in base2["nested"].nest.fields
+    assert "b" in base2.columns
+    assert "d" in base2["nested"].nest.fields
+
+    # Test inplace=False for both base and nested columns
+    base3 = base.copy()
+    dropped = base3.drop(["a", "nested.c"], axis=1, inplace=False)
+    assert "a" not in dropped.columns
+    assert "c" not in dropped["nested"].nest.fields
+    assert "b" in dropped.columns
+    assert "d" in dropped["nested"].nest.fields
+    # Original is unchanged
+    assert "a" in base3.columns
+    assert "c" in base3["nested"].nest.fields
+
+    # Test error for missing columns in multi-drop
+    with pytest.raises(KeyError):
+        base.drop(["not_a_column", "nested.c"], axis=1)
+    with pytest.raises(KeyError):
+        base.drop(["a", "nested.not_a_field"], axis=1)
 
 
 def test_eval():
@@ -1496,3 +1517,25 @@ def test_nest_lists():
     # and that we raise an error if we try to do so.
     with pytest.raises(ValueError):
         ndf.nest_lists(columns=["c", "d"], name="nested")
+
+
+def test_delitem_base_and_nested():
+    """Test that __delitem__ works for both base and nested columns."""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    base = base.add_nested(nested, "nested")
+
+    # Delete a nested field
+    del base["nested.c"]
+    assert "c" not in base["nested"].nest.fields
+    # Delete a base column
+    del base["a"]
+    assert "a" not in base.columns
+    # Deleting a missing column should raise KeyError
+    with pytest.raises(KeyError):
+        del base["not_a_column"]
+    with pytest.raises(KeyError):
+        del base["nested.not_a_field"]
