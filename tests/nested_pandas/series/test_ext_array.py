@@ -299,6 +299,17 @@ def test_convert_df_to_pa_from_scalar():
     )
 
 
+def test_convert_df_to_pa_scalar_from_pyarrow_dtyped_df():
+    """Test that we can convert a frame with pd.ArrowDtype series to pyarrow struct_scalar."""
+    df = pd.DataFrame({"a": pd.Series([1, 2, 3], dtype=pd.ArrowDtype(pa.int32())), "b": [-4.0, -5.0, -6.0]})
+    pa_scalar = convert_df_to_pa_scalar(df, pa_type=None)
+
+    assert pa_scalar == pa.scalar(
+        {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+        type=pa.struct([pa.field("a", pa.list_(pa.int32())), pa.field("b", pa.list_(pa.float64()))]),
+    )
+
+
 def test__box_pa_array_from_series_of_df():
     """Test that we can convert a DataFrame to a pyarrow scalar."""
     series = pd.Series(

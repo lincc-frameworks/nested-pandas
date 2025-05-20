@@ -176,15 +176,28 @@ def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.A
     return pa.compute.if_else(mask, broadcast_value, array)
 
 
-def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.DataType | None) -> pa.Scalar:
+def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) -> pa.Scalar:
     d = {}
-    for column, series in df.to_dict("series").items():
+    types = {}
+    columns = df.columns
+    if pa_type is not None:
+        names = pa_type.names
+        columns = names + list(set(columns) - set(names))
+    for column in columns:
+        series = df[column]
         if isinstance(series.dtype, NestedDtype):
-            values = series.array.to_pyarrow_scalar(list_struct=True)
+            scalar = series.array.to_pyarrow_scalar(list_struct=True)
+            ty = scalar.type
         else:
-            values = series.values
-        d[column] = values
-    return pa.scalar(d, type=pa_type, from_pandas=True)
+            array = pa.array(series)
+            ty = pa.list_(array.type)
+            scalar = pa.scalar(array, type=ty)
+        d[column] = scalar
+        types[column] = ty
+    result = pa.scalar(d, type=pa.struct(types), from_pandas=True)
+    if pa_type is not None:
+        result = result.cast(pa_type)
+    return result
 
 
 class NestedExtensionArray(ExtensionArray):
