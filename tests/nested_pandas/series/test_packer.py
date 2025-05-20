@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from nested_pandas import NestedDtype
+from nested_pandas import NestedDtype, NestedFrame
+from nested_pandas.datasets import generate_data
 from nested_pandas.series import packer
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
@@ -439,6 +440,17 @@ def test_pack_seq_with_series_of_dfs():
     )
     offsets_reused(series)
     assert_series_equal(series, desired)
+
+
+def test_pack_seq_with_double_nested():
+    """Test pack_seq works nice for frames with nested columns."""
+    nf = generate_data(10, 3)
+    nf["id"] = [0, 0, 1, 2, 2, 3, 4, 4, 5, 5]
+    desired = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")["outer"].reset_index(
+        drop=True,
+    )
+    actual = packer.pack_seq(list(desired))
+    assert_frame_equal(actual.nest.to_flat(), desired.nest.to_flat())
 
 
 def test_view_sorted_df_as_list_arrays():

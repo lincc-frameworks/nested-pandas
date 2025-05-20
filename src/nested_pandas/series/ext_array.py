@@ -177,7 +177,13 @@ def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.A
 
 
 def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.DataType | None) -> pa.Scalar:
-    d = {column: series.values for column, series in df.to_dict("series").items()}
+    d = {}
+    for column, series in df.to_dict("series").items():
+        if isinstance(series.dtype, NestedDtype):
+            values = series.array.to_pyarrow_scalar(list_struct=True)
+        else:
+            values = series.values
+        d[column] = values
     return pa.scalar(d, type=pa_type, from_pandas=True)
 
 
