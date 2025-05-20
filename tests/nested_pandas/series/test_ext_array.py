@@ -6,6 +6,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
 from nested_pandas import NestedDtype
+from nested_pandas.datasets import generate_data
+from nested_pandas.nestedframe.core import NestedFrame
 from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar, replace_with_mask
 from numpy.testing import assert_array_equal
 from pandas.core.arrays import ArrowExtensionArray
@@ -294,6 +296,17 @@ def test_convert_df_to_pa_from_scalar():
     assert pa_scalar == pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
         type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+    )
+
+
+def test_convert_df_to_pa_scalar_from_pyarrow_dtyped_df():
+    """Test that we can convert a frame with pd.ArrowDtype series to pyarrow struct_scalar."""
+    df = pd.DataFrame({"a": pd.Series([1, 2, 3], dtype=pd.ArrowDtype(pa.int32())), "b": [-4.0, -5.0, -6.0]})
+    pa_scalar = convert_df_to_pa_scalar(df, pa_type=None)
+
+    assert pa_scalar == pa.scalar(
+        {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
+        type=pa.struct([pa.field("a", pa.list_(pa.int32())), pa.field("b", pa.list_(pa.float64()))]),
     )
 
 
@@ -692,20 +705,17 @@ def test_list_offsets_multiple_chunks():
 
 
 def test___getitem___with_integer():
-    """Test [i] is a valid DataFrame."""
-    struct_array = pa.StructArray.from_arrays(
-        arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
-        ],
-        names=["a", "b"],
-    )
-    ext_array = NestedExtensionArray(struct_array)
+    """Test [i] is a valid DataFrame with NestedDtype propagated"""
+    nf = generate_data(10, 3)
+    # repeat index 3 and nest on it
+    nf["id"] = [0, 1, 2, 3, 3, 4, 5, 6, 7, 8]
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+    ext_array = nnf["outer"].array
 
-    second_row_as_df = ext_array[1]
-    assert_frame_equal(
-        second_row_as_df, pd.DataFrame({"a": np.array([1.0, 2.0, 1.0]), "b": -np.array([3.0, 4.0, 5.0])})
-    )
+    actual = ext_array[3]
+    desired = pd.DataFrame(nf.query("id == 3").drop("id", axis=1)).reset_index(drop=True)
+
+    assert_frame_equal(actual, desired)
 
 
 def test___getitem___with_integer_ndarray():
