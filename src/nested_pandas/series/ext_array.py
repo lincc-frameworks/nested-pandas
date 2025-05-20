@@ -686,17 +686,37 @@ class NestedExtensionArray(ExtensionArray):
                 raise ValueError(f"Cannot cast input to {dtype}") from None
         return cls(cast_array)
 
-    @classmethod
-    def _convert_struct_scalar_to_df(cls, value: pa.StructScalar, *, copy: bool, na_value: Any = None) -> Any:
+    def _convert_struct_scalar_to_df(
+        self, value: pa.StructScalar, *, copy: bool, na_value: Any = None, pyarrow_dtypes: bool = False
+    ) -> Any:
         """Converts a struct scalar of equal-length list scalars to a pd.DataFrame
 
         No validation is done, so the input must be a struct scalar with all fields being list scalars
         of the same lengths.
+
+        Parameters
+        ----------
+        value : pa.StructScalar
+            The struct scalar to convert.
+        copy : bool
+            Whether to copy the data.
+        na_value : Any, optional
+            The value to use for nulls.
+        pyarrow_dtypes : bool, optional
+            Whether to use pd.ArrowDtype. Nested fields will always
+            have NestedDtype.
         """
         if pa.compute.is_null(value).as_py():
             return na_value
-        d = {name: pd.Series(list_scalar.values, copy=copy) for name, list_scalar in value.items()}
-        return pd.DataFrame(d, copy=False)
+        series = {}
+        for name, list_scalar in value.items():
+            dtype = self.dtype.field_dtype(name)
+            # It gave pd.ArrowDtype for non-NestedDtype fields,
+            # make it None if we'd like to use pandas "ordinary" dtypes.
+            if not pyarrow_dtypes and not isinstance(dtype, NestedDtype):
+                dtype = None
+            series[name] = pd.Series(list_scalar.values, dtype=dtype, copy=copy, name=name)
+        return pd.DataFrame(series, copy=False)
 
     @property
     def _list_storage(self):
