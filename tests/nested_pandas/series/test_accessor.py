@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from nested_pandas import NestedDtype, NestedFrame
+from nested_pandas import NestedDtype, NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.packer import pack_flat, pack_seq
@@ -1100,7 +1100,24 @@ def test_to_flatten_inner():
     assert_frame_equal(actual.nest.to_flat(), desired.nest.to_flat(), check_like=True)
 
 
-def test_to_flatten_outer_wrong_field():
+def test_to_flatten_inner_empty_inner():
+    """Test .nest.to_flatten_inner for the case when inner frames are empty"""
+    nf = generate_data(10, 2)
+    nf["nested"][2:4] = [pd.DataFrame({"t": [], "flux": [], "band": []})] * 2
+    nf = nf.assign(id=np.repeat(np.r_[0:5], 2))
+    nf = nf.rename(columns={"nested": "inner"})
+    nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+
+    _actual = nnf["outer"].nest.to_flatten_inner("inner")
+
+
+def test_to_flatten_inner_none_nested():
+    """Test .nest.to_flatten_inner with vsx-x-ztfdr22_lc-m31.parquet file"""
+    nnf = read_parquet("tests/test_data/vsx-x-ztfdr22_lc-m31.parquet")
+    _actual = nnf["ztf"].nest.to_flatten_inner("lc")
+
+
+def test_to_flatten_inner_wrong_field():
     """Test an exception is raised when .nest.to_flatten_inner() called for a wrong field."""
     nf = generate_data(10, 2)
     with pytest.raises(ValueError):

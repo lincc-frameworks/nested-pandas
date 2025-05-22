@@ -653,6 +653,12 @@ class NestSeriesAccessor(Mapping):
         # Assign back the "outer" ordinal index and pack on it
         result = pack_flat(inner_flatten, name=self._series.name)
 
+        # Some indexes may be missed if the original series had some NULLs
+        if len(result) < len(series):
+            nulls = pd.Series(None, index=series.index, dtype=result.dtype)
+            nulls[result.index] = result
+            result = nulls
+
         # And put back the original index
         result.index = self._series.index
         return result
