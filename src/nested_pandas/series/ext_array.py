@@ -607,10 +607,22 @@ class NestedExtensionArray(ExtensionArray):
             return self.struct_array.cast(type)
         return self.list_array.cast(type)
 
-    def __array__(self, dtype=None):
-        """Convert the extension array to a numpy array."""
+    def __array__(self, dtype=None, copy=True):
+        """Convert the extension array to a numpy array.
 
-        array = self.to_numpy(dtype=dtype, copy=False)
+        Parameters
+        ----------
+        dtype : numpy.dtype, optional
+            The dtype of the resulting array
+        copy : bool, default True
+            Whether to return a copy of the data
+
+        Returns
+        -------
+        numpy.ndarray
+            The numpy array representation of the extension array
+        """
+        array = self.to_numpy(dtype=dtype, copy=copy)
 
         # Check if called inside _ExtensionArrayFormatter._format_strings
         # If yes, repack nested data-frames into a wrapper object, so
