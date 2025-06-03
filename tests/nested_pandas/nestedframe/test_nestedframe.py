@@ -1539,3 +1539,34 @@ def test_delitem_base_and_nested():
         del base["not_a_column"]
     with pytest.raises(KeyError):
         del base["nested.not_a_field"]
+
+def test_auto_nest_on_dataframe_assignment():
+    """Test that assigning a DataFrame to a new column auto-nests it."""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    base["nested"] = nested
+    # Should be a nested column
+    assert "nested" in base.nested_columns
+    # The flat representation should match the original DataFrame (ignoring dtype)
+    flat = base["nested"].nest.to_flat()
+    assert (flat.values == nested.values).all()
+    assert list(flat.columns) == list(nested.columns)
+    assert list(flat.index) == list(nested.index)
+
+
+def test_auto_flat_getitem_for_nested_column():
+    """Test that __getitem__ for a nested column returns its flat DataFrame."""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    base["nested"] = nested
+    # __getitem__ for 'nested' should return the flat DataFrame
+    flat = base["nested"]
+    assert (flat.values == nested.values).all()
+    assert list(flat.columns) == list(nested.columns)
+    assert list(flat.index) == list(nested.index)

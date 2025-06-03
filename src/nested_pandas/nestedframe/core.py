@@ -204,9 +204,13 @@ class NestedFrame(pd.DataFrame):
         return self._is_known_hierarchical_column(components)
 
     def __getitem__(self, item):
-        """Adds custom __getitem__ behavior for nested columns"""
+        """Custom __getitem__ for NestedFrame: if item is a nested column, return its flat DataFrame."""
         if isinstance(item, str):
-            return self._getitem_str(item)
+            if item in self.nested_columns:
+                # Use super() to avoid recursion
+                return super().__getitem__(item).nest.to_flat()
+            else:
+                return self._getitem_str(item)
         elif self._is_key_list(item):
             return self._getitem_list(item)
 
@@ -258,7 +262,26 @@ class NestedFrame(pd.DataFrame):
         return result
 
     def __setitem__(self, key, value):
-        """Adds custom __setitem__ behavior for nested columns"""
+        """Custom __setitem__ for NestedFrame: auto-nest DataFrame assignment to new columns."""
+        # If assigning a DataFrame to a new column, auto-nest it
+        if (
+            isinstance(key, str)
+            and key not in self.columns
+            and isinstance(value, pd.DataFrame)
+        ):
+            new_df = self.add_nested(value, name=key)
+            self._update_inplace(new_df)
+            return
+
+        # Support dot-prefix for flat assignment: ndf["nested."] = flat_df
+        if isinstance(key, str) and key.endswith(".") and key[:-1] in self.nested_columns:
+            from nested_pandas.series.packer import pack_flat
+
+            nested_col = key[:-1]
+            # value must be a DataFrame with index matching the nested index
+            packed = pack_flat(value, name=nested_col)
+            super().__setitem__(nested_col, packed)
+            return
         components = self._parse_hierarchical_components(key)
         # Replacing or adding columns to a nested structure
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
