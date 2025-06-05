@@ -87,7 +87,7 @@ def read_parquet(
     # First load through pyarrow
     # Check if `data` is a file-like object or a sequence
     if hasattr(data, "read") or (
-        isinstance(data, Sequence) and not isinstance(data, (str, bytes, bytearray))
+        isinstance(data, Sequence) and not isinstance(data, str | bytes | bytearray)
     ):
         # If `data` is a file-like object or a sequence, pass it directly to pyarrow
         table = pq.read_table(data, columns=columns, **kwargs)
@@ -103,7 +103,7 @@ def read_parquet(
     # was from a nested column.
     if columns is not None:
         nested_structures: dict[str, list[int]] = {}
-        for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
+        for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names, strict=True)):
             # if the column name is not the same, it was a partial load
             if col_in != col_pa:
                 # get the top-level column name
