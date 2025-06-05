@@ -538,7 +538,7 @@ class NestedFrame(pd.DataFrame):
                 # This is a simple heuristic but infers more than its dtype
                 # which will probably be an object.
                 sample_val = df[col].iloc[0]
-                if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, (str, bytes)):
+                if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, str | bytes):
                     raise ValueError(
                         f"Cannot pack column {col} which does not contain an iterable list based "
                         "on its first value, {sample_val}."
@@ -1290,7 +1290,7 @@ class NestedFrame(pd.DataFrame):
             else:
                 iterators.append(self[layer].array.iter_field_lists(col))
 
-        results = [func(*cols, *extra_args, **kwargs) for cols in zip(*iterators)]
+        results = [func(*cols, *extra_args, **kwargs) for cols in zip(*iterators, strict=True)]
         results_nf = NestedFrame(results, index=self.index)
 
         if infer_nesting:

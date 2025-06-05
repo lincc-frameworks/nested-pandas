@@ -1375,9 +1375,9 @@ def test_iter_field_lists():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    for actual, desired in zip(ext_array.iter_field_lists("a"), a):
+    for actual, desired in zip(ext_array.iter_field_lists("a"), a, strict=True):
         assert_array_equal(actual, desired)
-    for actual, desired in zip(ext_array.iter_field_lists("b"), b):
+    for actual, desired in zip(ext_array.iter_field_lists("b"), b, strict=True):
         assert_array_equal(actual, desired)
 
 
