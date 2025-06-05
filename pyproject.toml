@@ -20,7 +20,7 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
-    "pandas>=2.2.3,<2.3",
+    "pandas>=2.2.3,<2.4",
     "pyarrow>=18",
     "universal_pathlib>=0.2",
 ]
