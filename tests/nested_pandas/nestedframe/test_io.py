@@ -5,10 +5,12 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from nested_pandas import read_parquet
-from nested_pandas.datasets import generate_data
 from pandas.testing import assert_frame_equal
 from upath import UPath
+
+from nested_pandas import read_parquet
+from nested_pandas.datasets import generate_data
+from nested_pandas.nestedframe.io import from_pyarrow
 
 
 def test_read_parquet():
@@ -219,6 +221,42 @@ def test_read_parquet_test_mixed_struct():
         )
         assert nf.columns.tolist() == ["id", "list3", "val1"]
         assert len(nf.nested_columns) == 0
+
+
+def test_from_pyarrow_test_mixed_struct():
+    """Test reading a pyarrow table with mixed struct types"""
+    # Create the pure-list StructArray
+    field1 = pa.array([[1, 2], [3, 4], [5, 6]])
+    field2 = pa.array([["a", "b"], ["b", "c"], ["c", "d"]])
+    field3 = pa.array([[True, False], [True, False], [True, False]])
+    struct_array_list = pa.StructArray.from_arrays([field1, field2, field3], ["list1", "list2", "list3"])
+
+    # Create the value StructArray
+    field1 = pa.array([1, 2, 3])
+    field2 = pa.array(["a", "b", "c"])
+    field3 = pa.array([True, False, True])
+    struct_array_val = pa.StructArray.from_arrays([field1, field2, field3], ["val1", "va12", "val3"])
+
+    # Create the mixed-list StructArray
+    field1 = pa.array([1, 2, 3])
+    field2 = pa.array(["a", "b", "c"])
+    field3 = pa.array([[True, False], [True, False], [True, False]])
+    struct_array_mix = pa.StructArray.from_arrays([field1, field2, field3], ["val1", "va12", "list3"])
+
+    # Create a PyArrow Table with the StructArray as one of the columns
+    table = pa.table(
+        {
+            "id": pa.array([100, 101, 102]),  # Another column
+            "struct_list": struct_array_list,  # Struct column
+            "struct_value": struct_array_val,
+            "struct_mix": struct_array_mix,
+        }
+    )
+
+    # Test full read
+    nf = from_pyarrow(table)
+    assert nf.columns.tolist() == ["id", "struct_list", "struct_value", "struct_mix"]
+    assert nf.nested_columns == ["struct_list"]
 
 
 def test_to_parquet():
