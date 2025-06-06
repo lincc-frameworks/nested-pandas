@@ -97,12 +97,6 @@ def read_parquet(
         filesystem = kwargs.pop("filesystem", path.fs)
         table = pq.read_table(path.path, columns=columns, filesystem=filesystem, **kwargs)
 
-        # Type convergence for reject_nesting
-    if reject_nesting is None:
-        reject_nesting = []
-    elif isinstance(reject_nesting, str):
-        reject_nesting = [reject_nesting]
-
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
     # Use input column names and the table column names to determine if a column
