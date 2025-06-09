@@ -260,11 +260,7 @@ class NestedFrame(pd.DataFrame):
     def __setitem__(self, key, value):
         """Custom __setitem__ for NestedFrame: auto-nest DataFrame assignment to new columns."""
         # If assigning a DataFrame to a new column, auto-nest it
-        if (
-            isinstance(key, str)
-            and key not in self.columns
-            and isinstance(value, pd.DataFrame)
-        ):
+        if isinstance(key, str) and key not in self.columns and isinstance(value, pd.DataFrame):
             new_df = self.add_nested(value, name=key)
             self._update_inplace(new_df)
             return
