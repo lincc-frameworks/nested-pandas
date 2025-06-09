@@ -1542,17 +1542,22 @@ def test_delitem_base_and_nested():
 
 
 def test_auto_nest_on_dataframe_assignment():
-    """Test that assigning a DataFrame to a new column auto-nests it."""
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
-    nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
-        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
-    )
-    base["nested"] = nested
-    # Should be a nested column
-    assert "nested" in base.nested_columns
-    # The flat representation should match the original DataFrame (ignoring dtype)
-    flat = base["nested"].nest.to_flat()
-    assert (flat.values == nested.values).all()
-    assert list(flat.columns) == list(nested.columns)
-    assert list(flat.index) == list(nested.index)
+    """Test that assigning a DataFrame via __setitem__ to a new column auto-nests it."""
+    nested_data = {"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]}
+    nested_index = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+    # Create pandas and nested frames which we will nest to our base layer
+    pd_nested = pd.DataFrame(data=nested_data, index=nested_index)
+    nf_nested = NestedFrame(data=nested_data, index=nested_index)
+    for nested in [pd_nested, nf_nested]:
+        # Create a base NestedFrame and assign the nested DataFrame using __setitem__
+        base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+        base["nested"] = nested
+
+        # Validate we added the nested column
+        assert "nested" in base.nested_columns
+
+        # The flat representation should match the original DataFrame (ignoring dtype)
+        flat = base["nested"].nest.to_flat()
+        assert (flat.values == nested.values).all()
+        assert list(flat.columns) == list(nested.columns)
+        assert list(flat.index) == list(nested.index)

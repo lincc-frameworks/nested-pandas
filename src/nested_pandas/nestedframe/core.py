@@ -260,20 +260,15 @@ class NestedFrame(pd.DataFrame):
     def __setitem__(self, key, value):
         """Custom __setitem__ for NestedFrame: auto-nest DataFrame assignment to new columns."""
         # If assigning a DataFrame to a new column, auto-nest it
-        if isinstance(key, str) and key not in self.columns and isinstance(value, pd.DataFrame):
+        if (
+            isinstance(key, str)
+            and key not in self.columns
+            and (isinstance(value, pd.DataFrame) or isinstance(value, NestedFrame))
+        ):
             new_df = self.add_nested(value, name=key)
             self._update_inplace(new_df)
             return
 
-        # Support dot-prefix for flat assignment: ndf["nested."] = flat_df
-        if isinstance(key, str) and key.endswith(".") and key[:-1] in self.nested_columns:
-            from nested_pandas.series.packer import pack_flat
-
-            nested_col = key[:-1]
-            # value must be a DataFrame with index matching the nested index
-            packed = pack_flat(value, name=nested_col)
-            super().__setitem__(nested_col, packed)
-            return
         components = self._parse_hierarchical_components(key)
         # Replacing or adding columns to a nested structure
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
