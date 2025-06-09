@@ -263,7 +263,7 @@ class NestedFrame(pd.DataFrame):
         if (
             isinstance(key, str)
             and key not in self.columns
-            and (isinstance(value, pd.DataFrame) or isinstance(value, NestedFrame))
+            and isinstance(value, (pd.DataFrame, NestedFrame))
         ):
             new_df = self.add_nested(value, name=key)
             self._update_inplace(new_df)
