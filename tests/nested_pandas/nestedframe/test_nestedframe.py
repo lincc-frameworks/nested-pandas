@@ -1540,6 +1540,7 @@ def test_delitem_base_and_nested():
     with pytest.raises(KeyError):
         del base["nested.not_a_field"]
 
+
 def test_auto_nest_on_dataframe_assignment():
     """Test that assigning a DataFrame to a new column auto-nests it."""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
