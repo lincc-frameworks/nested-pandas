@@ -1555,18 +1555,3 @@ def test_auto_nest_on_dataframe_assignment():
     assert (flat.values == nested.values).all()
     assert list(flat.columns) == list(nested.columns)
     assert list(flat.index) == list(nested.index)
-
-
-def test_auto_flat_getitem_for_nested_column():
-    """Test that __getitem__ for a nested column returns its flat DataFrame."""
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
-    nested = pd.DataFrame(
-        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
-        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
-    )
-    base["nested"] = nested
-    # __getitem__ for 'nested' should return the flat DataFrame
-    flat = base["nested"]
-    assert (flat.values == nested.values).all()
-    assert list(flat.columns) == list(nested.columns)
-    assert list(flat.index) == list(nested.index)

@@ -204,13 +204,9 @@ class NestedFrame(pd.DataFrame):
         return self._is_known_hierarchical_column(components)
 
     def __getitem__(self, item):
-        """Custom __getitem__ for NestedFrame: if item is a nested column, return its flat DataFrame."""
+        """Adds custom __getitem__ behavior for nested columns"""
         if isinstance(item, str):
-            if item in self.nested_columns:
-                # Use super() to avoid recursion
-                return super().__getitem__(item).nest.to_flat()
-            else:
-                return self._getitem_str(item)
+            return self._getitem_str(item)
         elif self._is_key_list(item):
             return self._getitem_list(item)
 
