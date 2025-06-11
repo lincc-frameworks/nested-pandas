@@ -289,7 +289,22 @@ class NestedFrame(pd.DataFrame):
             new_df = self.add_nested(value, name=new_nested)
             self._update_inplace(new_df)
             return None
-
+        
+        # Allow combination of nested columns into a single nested column
+        if isinstance(value, NestedFrame):
+            # if all columns are nesteddtype, allow assignment of a nested column
+            if np.array([isinstance(dtype, NestedDtype) for dtype in value.dtypes]).all():
+                for i, col in enumerate(value.columns):
+                    if i==0:
+                        new_nested = value[col]
+                    else:
+                        # there must be a better way than through list fields
+                        for field in value[col].nest.fields:
+                            new_nested = new_nested.nest.with_list_field(
+                                field, value[col].nest.get_list_series(field)
+                            )
+                value = new_nested
+                
         super().__setitem__(key, value)
         self._cast_cols_to_nested(struct_list=False)
 
