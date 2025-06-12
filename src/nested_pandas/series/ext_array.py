@@ -35,8 +35,8 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from collections.abc import Generator, Iterable, Iterator, Sequence
-from typing import Any, Callable, cast
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -551,7 +551,7 @@ class NestedExtensionArray(ExtensionArray):
                     return series.apply(repr)
 
                 def format_row(row):
-                    return ", ".join(f"{name}: {value}" for name, value in zip(row.index, row))
+                    return ", ".join(f"{name}: {value}" for name, value in zip(row.index, row, strict=True))
 
                 # Format series to strings
                 df = df.apply(format_series, axis=0)
@@ -665,7 +665,7 @@ class NestedExtensionArray(ExtensionArray):
         """Convert a value to a PyArrow array with the specified type."""
         if isinstance(value, cls):
             pa_array = value.struct_array
-        elif isinstance(value, (pa.Array, pa.ChunkedArray)):
+        elif isinstance(value, pa.Array | pa.ChunkedArray):
             pa_array = value
         else:
             try:
@@ -700,7 +700,7 @@ class NestedExtensionArray(ExtensionArray):
             if dtype is None or dtype == arraylike.dtype:
                 return arraylike
             array = arraylike.list_array
-        elif isinstance(arraylike, (pa.Array, pa.ChunkedArray)):
+        elif isinstance(arraylike, pa.Array | pa.ChunkedArray):
             array = arraylike
         else:
             array = pa.array(arraylike)
@@ -1112,7 +1112,7 @@ class NestedExtensionArray(ExtensionArray):
             )
         if np.size(value) != len(self):
             raise ValueError("The length of the input array must be equal to the length of the series")
-        if isinstance(value, (pa.ChunkedArray, pa.Array)):
+        if isinstance(value, pa.ChunkedArray | pa.Array):
             value = pa.compute.take(value, self.get_list_index())
         else:
             value = np.repeat(value, self.list_lengths)

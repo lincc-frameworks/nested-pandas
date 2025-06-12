@@ -87,7 +87,7 @@ def read_parquet(
     # First load through pyarrow
     # Check if `data` is a file-like object or a sequence
     if hasattr(data, "read") or (
-        isinstance(data, Sequence) and not isinstance(data, (str, bytes, bytearray))
+        isinstance(data, Sequence) and not isinstance(data, str | bytes | bytearray)
     ):
         # If `data` is a file-like object or a sequence, pass it directly to pyarrow
         table = pq.read_table(data, columns=columns, **kwargs)
@@ -103,7 +103,7 @@ def read_parquet(
     # was from a nested column.
     if columns is not None:
         nested_structures: dict[str, list[int]] = {}
-        for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names)):
+        for i, (col_in, col_pa) in enumerate(zip(columns, table.column_names, strict=True)):
             # if the column name is not the same, it was a partial load
             if col_in != col_pa:
                 # get the top-level column name
@@ -152,11 +152,42 @@ def read_parquet(
         for col, struct in structs.items():
             table = table.append_column(col, struct)
 
+    return from_pyarrow(table, reject_nesting=reject_nesting)
+
+
+def from_pyarrow(
+    table: pa.Table,
+    reject_nesting: list[str] | str | None = None,
+) -> NestedFrame:
+    """
+    Load a pyarrow Table object into a NestedFrame.
+
+    Parameters
+    ----------
+    table: pa.Table
+        PyArrow Table object to load NestedFrame from
+    reject_nesting: list or str, default=None
+        Column(s) to reject from being cast to a nested dtype. By default,
+        nested-pandas assumes that any struct column with all fields being lists
+        is castable to a nested column. However, this assumption is invalid if
+        the lists within the struct have mismatched lengths for any given item.
+        Columns specified here will be read using the corresponding pandas.ArrowDtype.
+
+    Returns
+    -------
+    NestedFrame
+
+    """
+
+    if reject_nesting is None:
+        reject_nesting = []
+    elif isinstance(reject_nesting, str):
+        reject_nesting = [reject_nesting]
+
     # Convert to NestedFrame
     # not zero-copy, but reduce memory pressure via the self_destruct kwarg
     # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
     df = NestedFrame(table.to_pandas(types_mapper=pd.ArrowDtype, split_blocks=True, self_destruct=True))
-    del table
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
 
