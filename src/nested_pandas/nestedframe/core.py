@@ -258,7 +258,18 @@ class NestedFrame(pd.DataFrame):
         return result
 
     def __setitem__(self, key, value):
-        """Adds custom __setitem__ behavior for nested columns"""
+        """Custom __setitem__ for NestedFrame: auto-nest DataFrame assignment to new columns."""
+        # If assigning a DataFrame to a new column, auto-nest it
+        if (
+            isinstance(key, str)
+            and key not in self.columns
+            and isinstance(value, (pd.DataFrame | NestedFrame))
+        ):
+            # Note this uses the default approach for add_nested, which is a left join on index
+            new_df = self.add_nested(value, name=key)
+            self._update_inplace(new_df)
+            return
+
         components = self._parse_hierarchical_components(key)
         # Replacing or adding columns to a nested structure
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
