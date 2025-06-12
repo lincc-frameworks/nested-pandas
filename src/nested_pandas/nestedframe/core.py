@@ -262,7 +262,7 @@ class NestedFrame(pd.DataFrame):
         # If assigning a DataFrame to a new column, auto-nest it
         if (
             isinstance(key, str)
-            and key not in self.columnss
+            and key not in self.columns
             and isinstance(value, (pd.DataFrame | NestedFrame))
         ):
             # Note this uses the default approach for add_nested, which is a left join on index
