@@ -110,26 +110,23 @@ class NestedFrame(pd.DataFrame):
                 return super().to_html(max_rows=pd.get_option("display.max_rows"), show_dimensions=True)
 
         # Nested Column Formatting
-        # first cell shows the nested df header and a preview row
-        def repack_first_cell(chunk):
-            # If the chunk is None, just return None
-            # Means that the column labels will not be shown
-            if chunk is None:
-                return None
-            # Render header separately to keep data aligned
-            output = chunk.head(0).to_html(
-                max_rows=0, max_cols=5, show_dimensions=False, index=False, header=True
-            )
-            # Then add a preview row
-            output += repack_row(chunk)
-            return output
 
-        # remaining cells show only a preview row
-        def repack_row(chunk):
+        # Display nested columns as small html dataframes with a single row
+        def repack_row(chunk, header=True):
             # If the chunk is None, just return None
             if chunk is None:
                 return None
-            return chunk.to_html(max_rows=1, max_cols=5, show_dimensions=True, index=False, header=False)
+            # Grab length, then truncate to one row for display
+            n_rows = len(chunk)
+            chunk = chunk.head(1).astype({col: "str" for col in chunk.columns})  # only show the first row          
+
+            # Add a row that shows the number of additional rows not shown
+            len_row = pd.DataFrame({col: [f"<i>+{n_rows-1} rows</i>"] if i == 0 else ["..."] for i, col in enumerate(chunk.columns)})
+            chunk = pd.concat([chunk, len_row], ignore_index=True)
+
+            # Estimate width and resize
+            html_res = chunk.to_html(max_rows=2, max_cols=5, show_dimensions=False, index=False, header=header, escape=False)
+            return html_res
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
@@ -141,15 +138,7 @@ class NestedFrame(pd.DataFrame):
         # replace index to ensure proper behavior for duplicate index values
         index_values = html_df.index
         html_df = html_df.reset_index(drop=True)
-
-        # Apply repacking to all nested columns
-        repr = html_df.style.format(
-            {col: repack_first_cell for col in self.nested_columns}, subset=html_df.index[0]
-        )
-        if len(self) > 1:
-            repr = repr.format(
-                {col: repack_row for col in self.nested_columns}, subset=pd.IndexSlice[html_df.index[1] :]
-            )
+        repr = html_df.style.format({col: repack_row for col in self.nested_columns})
 
         # Create a mapping function to retrieve original index
         def map_true_index(index):
