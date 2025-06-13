@@ -118,14 +118,21 @@ class NestedFrame(pd.DataFrame):
                 return None
             # Grab length, then truncate to one row for display
             n_rows = len(chunk)
-            chunk = chunk.head(1).astype({col: "str" for col in chunk.columns})  # only show the first row          
+            chunk = chunk.head(1).astype({col: "str" for col in chunk.columns})  # only show the first row
 
             # Add a row that shows the number of additional rows not shown
-            len_row = pd.DataFrame({col: [f"<i>+{n_rows-1} rows</i>"] if i == 0 else ["..."] for i, col in enumerate(chunk.columns)})
+            len_row = pd.DataFrame(
+                {
+                    col: [f"<i>+{n_rows-1} rows</i>"] if i == 0 else ["..."]
+                    for i, col in enumerate(chunk.columns)
+                }
+            )
             chunk = pd.concat([chunk, len_row], ignore_index=True)
 
             # Estimate width and resize
-            html_res = chunk.to_html(max_rows=2, max_cols=5, show_dimensions=False, index=False, header=header, escape=False)
+            html_res = chunk.to_html(
+                max_rows=2, max_cols=5, show_dimensions=False, index=False, header=header, escape=False
+            )
             return html_res
 
         # Handle sizing, trim html dataframe if output will be truncated
