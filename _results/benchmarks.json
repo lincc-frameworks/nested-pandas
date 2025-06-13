@@ -23,6 +23,30 @@
         "version": "561679277ad2275813ce0c17ad97dbe31f41b12cdb6533009f12ae1f7b057caf",
         "warmup_time": -1
     },
+    "benchmarks.CountNestedBy.peakmem_run": {
+        "code": "class CountNestedBy:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of count_nested(nf, by=...)\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "name": "benchmarks.CountNestedBy.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "8207b08e838d3e5646768d48d48c944106815fd344695080785984773a77d655"
+    },
+    "benchmarks.CountNestedBy.time_run": {
+        "code": "class CountNestedBy:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of count_nested(nf, by=...)\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "min_run_count": 2,
+        "name": "benchmarks.CountNestedBy.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "0d5c1cf352c469d4d142234ea6e4c464b76caf509b0893ff39d7224f50b9fd43",
+        "warmup_time": -1
+    },
     "benchmarks.NestedFrameAddNested.peakmem_run": {
         "code": "class NestedFrameAddNested:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of adding a nested layer\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        # use provided seed, \"None\" acts as if no seed is provided\n        randomstate = np.random.RandomState(seed=1)\n    \n        # Generate base data\n        base_data = {\"a\": randomstate.random(self.n_base), \"b\": randomstate.random(self.n_base) * 2}\n        self.base_nf = NestedFrame(data=base_data)\n    \n        layer_data = {\n            \"t\": randomstate.random(self.layer_size * self.n_base) * 20,\n            \"flux\": randomstate.random(self.layer_size * self.n_base) * 100,\n            \"band\": randomstate.choice([\"r\", \"g\"], size=self.layer_size * self.n_base),\n            \"index\": np.arange(self.layer_size * self.n_base) % self.n_base,\n        }\n        self.layer_nf = NestedFrame(data=layer_data).set_index(\"index\")",
         "name": "benchmarks.NestedFrameAddNested.peakmem_run",
