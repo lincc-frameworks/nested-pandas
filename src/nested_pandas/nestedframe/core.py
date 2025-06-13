@@ -12,7 +12,6 @@ from pandas._typing import Any, AnyAll, Axis, IndexLabel
 from pandas.api.extensions import no_default
 from pandas.core.computation.eval import Expr, ensure_scope
 from pandas.core.dtypes.inference import is_list_like
-from pandas.api.types import is_float_dtype
 
 from nested_pandas.nestedframe.expr import (
     _identify_aliases,
@@ -119,8 +118,8 @@ class NestedFrame(pd.DataFrame):
                 return None
             # Grab length, then truncate to one row for display
             n_rows = len(chunk)
-            chunk = chunk.head(1).round(8)
-            chunk.astype({col: "str" for col in chunk.columns})  # only show the first row
+            chunk = chunk.head(1).round(8)  # only show first row
+            chunk.astype({col: "str" for col in chunk.columns})  # cast to string for info row
 
             # Add a row that shows the number of additional rows not shown
             len_row = pd.DataFrame(
