@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from nested_pandas import NestedFrame
@@ -48,21 +49,20 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
 
     >>> # join=False, allows the result to be kept separate from the original nf
     >>> count_nested(nf, "nested", by="band", join=False)
-    band  n_nested_g  n_nested_r
-    0              8           2
-    1              5           5
-    2              5           5
-    3              6           4
-    4              6           4
+       n_nested_g  n_nested_r
+    0           8           2
+    1           5           5
+    2           5           5
+    3           6           4
+    4           6           4
     """
 
     if by is None:
-        field_to_len = df[nested].nest.fields[0]
-        counts = df[nested].nest.to_lists().apply(lambda x: len(x[field_to_len]), axis=1)
-        counts.name = f"n_{nested}"  # update name directly (rename causes issues downstream)
+        counts = pd.Series(df[nested].nest.list_lengths, name=f"n_{nested}")
     else:
-        # this may be able to be sped up using tolists() as well
-        counts = df[nested].apply(lambda x: x[by].value_counts(sort=False))
+        counts = df.reduce(
+            lambda x: dict(zip(*np.unique(x, return_counts=True), strict=False)), f"{nested}.{by}"
+        )
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
         counts = counts.reindex(sorted(counts.columns), axis=1)
     if join:

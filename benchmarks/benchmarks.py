@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 from nested_pandas import NestedDtype, NestedFrame, datasets
+from nested_pandas.utils import count_nested
 
 
 class AssignSingleDfToNestedSeries:
@@ -105,8 +106,8 @@ class NestedFrameAddNested:
 
     n_base = 100
     layer_size = 1000
-    base_nf = NestedFrame
-    layer_nf = NestedFrame
+    base_nf: NestedFrame
+    layer_nf: NestedFrame
 
     def setup(self):
         """Set up the benchmark environment"""
@@ -143,7 +144,7 @@ class NestedFrameReduce:
 
     n_base = 100
     n_nested = 1000
-    nf = NestedFrame
+    nf: NestedFrame
 
     def setup(self):
         """Set up the benchmark environment"""
@@ -167,7 +168,7 @@ class NestedFrameQuery:
 
     n_base = 100
     n_nested = 1000
-    nf = NestedFrame
+    nf: NestedFrame
 
     def setup(self):
         """Set up the benchmark environment"""
@@ -185,4 +186,28 @@ class NestedFrameQuery:
 
     def peakmem_run(self):
         """Benchmark the memory usage of applying the two queries"""
+        self.run()
+
+
+class CountNestedBy:
+    """Benchmark count_nested(nf, by=...)"""
+
+    n_base = 1000
+    n_nested = 300
+    nf: NestedFrame
+
+    def setup(self):
+        """Set up the benchmark environment"""
+        self.nf = datasets.generate_data(self.n_base, self.n_nested)
+
+    def run(self):
+        """Run the benchmark."""
+        _ = count_nested(self.nf, nested="nested", by="band")
+
+    def time_run(self):
+        """Benchmark the runtime of count_nested(nf, by=...)"""
+        self.run()
+
+    def peakmem_run(self):
+        """Benchmark the memory usage of count_nested(nf, by=...)"""
         self.run()
