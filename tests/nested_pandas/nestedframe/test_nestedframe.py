@@ -290,6 +290,27 @@ def test_set_new_nested_col():
     )
 
 
+def test_set_item_combine_nested():
+    """Test that operations like nf['new'] = nf[['c', 'd']] work as expected"""
+    list_nf = NestedFrame(
+        {
+            "a": ["cat", "dog", "bird"],
+            "b": [1, 2, 3],
+            "c": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            "d": [[10, 20, 30], [40, 50, 60], [70, 80, 90]],
+        }
+    )
+
+    list_nf = list_nf.nest_lists("c", ["c"])
+    list_nf = list_nf.nest_lists("d", ["d"])
+
+    list_nf["nested"] = list_nf[["c", "d"]]
+
+    assert "nested" in list_nf.columns
+    assert list_nf.nested.nest.fields == ["c", "d"]
+    assert len(list_nf.nested.nest.to_flat()) == 9
+
+
 def test_set_list_struct_col():
     """Test that __setitem__ would cast list-struct columns to nested."""
     nf = generate_data(10, 3)
