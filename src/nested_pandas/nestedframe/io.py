@@ -18,7 +18,7 @@ def read_parquet(
     data: str | UPath | bytes,
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
-    autocast_list: bool = True,
+    autocast_list: bool = False,
     **kwargs,
 ) -> NestedFrame:
     """
