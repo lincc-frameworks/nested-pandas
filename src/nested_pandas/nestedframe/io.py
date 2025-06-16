@@ -9,6 +9,7 @@ import pyarrow.parquet as pq
 from upath import UPath
 
 from ..series.dtype import NestedDtype
+from ..series.packer import pack_lists
 from ..series.utils import table_to_struct_array
 from .core import NestedFrame
 
@@ -17,6 +18,7 @@ def read_parquet(
     data: str | UPath | bytes,
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
+    autocast_list: bool = False,
     **kwargs,
 ) -> NestedFrame:
     """
@@ -39,6 +41,8 @@ def read_parquet(
         is castable to a nested column. However, this assumption is invalid if
         the lists within the struct have mismatched lengths for any given item.
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
+    autocast_list: bool, default=True
+        If True, automatically cast list columns to nested columns with NestedDType.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
@@ -152,12 +156,13 @@ def read_parquet(
         for col, struct in structs.items():
             table = table.append_column(col, struct)
 
-    return from_pyarrow(table, reject_nesting=reject_nesting)
+    return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
 
 
 def from_pyarrow(
     table: pa.Table,
     reject_nesting: list[str] | str | None = None,
+    autocast_list: bool = False,
 ) -> NestedFrame:
     """
     Load a pyarrow Table object into a NestedFrame.
@@ -172,6 +177,8 @@ def from_pyarrow(
         is castable to a nested column. However, this assumption is invalid if
         the lists within the struct have mismatched lengths for any given item.
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
+    autocast_list: bool, default=False
+        If True, automatically cast list columns to nested columns with NestedDType.
 
     Returns
     -------
@@ -190,6 +197,10 @@ def from_pyarrow(
     df = NestedFrame(table.to_pandas(types_mapper=pd.ArrowDtype, split_blocks=True, self_destruct=True))
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
+
+    # If autocast_list is True, cast list columns to NestedDTypes
+    if autocast_list:
+        df = _cast_list_cols_to_nested(df)
 
     return df
 
@@ -220,4 +231,12 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
                     "`reject_nesting` argument of the read_parquet function to skip the cast attempt:"
                     f" read_parquet(..., reject_nesting=['{col}'])"
                 ) from err
+    return df
+
+
+def _cast_list_cols_to_nested(df):
+    """cast list columns to nested dtype"""
+    for col, dtype in df.dtypes.items():
+        if pa.types.is_list(dtype.pyarrow_dtype):
+            df[col] = pack_lists(df[[col]])
     return df

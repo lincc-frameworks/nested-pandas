@@ -5,7 +5,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from nested_pandas import read_parquet
+from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import from_pyarrow
 from pandas.testing import assert_frame_equal
@@ -316,3 +316,25 @@ def test_read_empty_parquet():
             orig_nf.drop(["b", "nested.t"], axis=1),
             check_dtype=False,
         )
+
+
+def test_read_parquet_list_autocast():
+    """Test reading a parquet file with list autocasting"""
+    list_nf = NestedFrame(
+        {
+            "a": ["cat", "dog", "bird"],
+            "b": [1, 2, 3],
+            "c": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            "d": [[10, 20, 30], [40, 50, 60], [70, 80, 90]],
+        }
+    )
+    with tempfile.NamedTemporaryFile("wb", suffix="parquet") as tmpfile:
+        list_nf.to_parquet(tmpfile.name)
+
+        nf = read_parquet(tmpfile.name, autocast_list=True)
+
+        assert nf.nested_columns == ["c", "d"]
+        assert nf["c"].nest.fields == ["c"]
+        assert len(nf["c"].nest.to_flat()) == 9
+        assert nf["d"].nest.fields == ["d"]
+        assert len(nf["d"].nest.to_flat()) == 9
