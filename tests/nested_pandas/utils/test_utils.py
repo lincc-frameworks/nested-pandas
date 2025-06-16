@@ -3,6 +3,8 @@ import pandas as pd
 import pytest
 from nested_pandas import NestedFrame
 from nested_pandas.utils import count_nested
+from numpy.testing import assert_array_equal
+from pandas.testing import assert_index_equal
 
 
 @pytest.mark.parametrize("join", [True, False])
@@ -10,26 +12,28 @@ def test_count_nested(join):
     """Test the functionality of count nested"""
 
     # Initialize test data
-    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.nan, 6]}, index=[0, 1, 2])
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, np.nan, 6]}, index=[100, 101, 102])
     nested = pd.DataFrame(
         data={
             "c": [0, 2, 4, 1, np.nan, 3, 1, 4, 1],
             "d": [5, 4, 7, 5, 3, 1, 9, 3, 4],
             "label": ["b", "a", "b", "b", "a", "a", "b", "a", "b"],
         },
-        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+        index=[100, 100, 100, 101, 101, 101, 102, 102, 102],
     )
     base = base.add_nested(nested, "nested")
 
     # Test general count
     total_counts = count_nested(base, "nested", join=join)
-    assert all(total_counts["n_nested"].values == 3)
+    assert_array_equal(total_counts["n_nested"].values, 3)
+    assert_index_equal(total_counts.index, base.index)
 
     # Test count by
     label_counts = count_nested(base, "nested", by="label", join=join)
 
-    assert all(label_counts["n_nested_a"].values == [1, 2, 1])
-    assert all(label_counts["n_nested_b"].values == [2, 1, 2])
+    assert_array_equal(label_counts["n_nested_a"].values, [1, 2, 1])
+    assert_array_equal(label_counts["n_nested_b"].values, [2, 1, 2])
+    assert_index_equal(label_counts.index, base.index)
 
     # Make sure the ordering is alphabetical
     # https://github.com/lincc-frameworks/nested-pandas/issues/109
