@@ -162,7 +162,7 @@ def read_parquet(
 def from_pyarrow(
     table: pa.Table,
     reject_nesting: list[str] | str | None = None,
-    autocast_list: bool = True,
+    autocast_list: bool = False,
 ) -> NestedFrame:
     """
     Load a pyarrow Table object into a NestedFrame.
@@ -177,7 +177,7 @@ def from_pyarrow(
         is castable to a nested column. However, this assumption is invalid if
         the lists within the struct have mismatched lengths for any given item.
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
-    autocast_list: bool, default=True
+    autocast_list: bool, default=False
         If True, automatically cast list columns to nested columns with NestedDType.
 
     Returns
