@@ -119,7 +119,7 @@ class NestedFrame(pd.DataFrame):
             # Grab length, then truncate to one row for display
             n_rows = len(chunk)
             chunk = chunk.head(1).round(8)  # only show first row
-            chunk.astype({col: "str" for col in chunk.columns})  # cast to string for info row
+            chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
 
             # Add a row that shows the number of additional rows not shown
             len_row = pd.DataFrame(
@@ -257,15 +257,27 @@ class NestedFrame(pd.DataFrame):
     def __setitem__(self, key, value):
         """Custom __setitem__ for NestedFrame: auto-nest DataFrame assignment to new columns."""
         # If assigning a DataFrame to a new column, auto-nest it
-        if (
-            isinstance(key, str)
-            and key not in self.columns
-            and isinstance(value, (pd.DataFrame | NestedFrame))
-        ):
-            # Note this uses the default approach for add_nested, which is a left join on index
-            new_df = self.add_nested(value, name=key)
-            self._update_inplace(new_df)
-            return
+
+        # Special handling paths for assignment of dataframes to nested columns
+        if isinstance(key, str) and isinstance(value, pd.DataFrame | NestedFrame):
+            # if all columns are NestedDtype, combine them into a single nested column
+            if np.array([isinstance(dtype, NestedDtype) for dtype in value.dtypes]).all():
+                for i, col in enumerate(value.columns):
+                    if i == 0:
+                        new_nested = value[col]
+                    else:
+                        # there must be a better way than through list fields
+                        for field in value[col].nest.fields:
+                            new_nested = new_nested.nest.with_list_field(
+                                field, value[col].nest.get_list_series(field)
+                            )
+                value = new_nested
+            # Assign a DataFrame as a new column, auto-nesting it
+            elif key not in self.columns:
+                # Note this uses the default approach for add_nested, which is a left join on index
+                new_df = self.add_nested(value, name=key)
+                self._update_inplace(new_df)
+                return
 
         components = self._parse_hierarchical_components(key)
         # Replacing or adding columns to a nested structure
