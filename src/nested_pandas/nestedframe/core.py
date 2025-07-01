@@ -246,12 +246,11 @@ class NestedFrame(pd.DataFrame):
         result = super().__getitem__(non_nested_keys)
         components = [self._parse_hierarchical_components(k) for k in item]
         nested_components = [c for c in components if self._is_known_hierarchical_column(c)]
-        nested_columns = defaultdict(set)
+        nested_columns = defaultdict(list)
         for comps in nested_components:
-            nested_columns[comps[0]].add(".".join(comps[1:]))
+            nested_columns[comps[0]].append(".".join(comps[1:]))
         for c in nested_columns:
-            unselected_columns = [f for f in self.dtypes[c].field_names if f not in nested_columns[c]]
-            result[c] = self[c].nest.without_field(unselected_columns)
+            result[c] = self[c].nest[nested_columns[c]]
         return result
 
     def __setitem__(self, key, value):

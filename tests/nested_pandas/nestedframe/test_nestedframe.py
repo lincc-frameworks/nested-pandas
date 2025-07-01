@@ -192,6 +192,11 @@ def test_get_nested_columns():
     assert df.dtypes["nested"].field_names == ["c", "d"]
     assert np.all(df["nested"].iloc[0].columns == ["c", "d"])
 
+    df = base[["a", "b", "nested.d", "nested.c"]]
+    assert np.all(df.columns == ["a", "b", "nested"])
+    assert df.dtypes["nested"].field_names == ["d", "c"]
+    assert np.all(df["nested"].iloc[0].columns == ["d", "c"])
+
     df = base[["nested.c"]]
     assert np.all(df.columns == ["nested"])
     assert df.dtypes["nested"].field_names == ["c"]
