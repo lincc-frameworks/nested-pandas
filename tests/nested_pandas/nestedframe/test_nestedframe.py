@@ -1092,8 +1092,8 @@ def test_reduce():
     result_c = list(result.columns)
     nf_c = list(nf.columns)
     # The result should have the original columns plus the new max columns
-    assert result_c[:len(nf_c)] == nf_c
-    assert result_c[len(nf_c):] == ["max_col1", "max_col2"]
+    assert result_c[: len(nf_c)] == nf_c
+    assert result_c[len(nf_c) :] == ["max_col1", "max_col2"]
     assert result.index.name == "idx"
     for i in range(len(result)):
         assert result["max_col1"].values[i] == expected_max_c[i]
