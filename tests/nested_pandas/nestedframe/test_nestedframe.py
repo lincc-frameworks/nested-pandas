@@ -1090,6 +1090,23 @@ def test_reduce():
     result = nf.reduce(make_id, "b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
 
+    # Verify that append_columns=True works as expected
+    result = nf.reduce(get_max, "packed.c", "packed.d", append_columns=True)
+    assert len(result) == len(nf)
+    assert isinstance(result, NestedFrame)
+    result_c = list(result.columns)
+    nf_c = list(nf.columns)
+    # The result should have the original columns plus the new max columns
+    assert result_c[: len(nf_c)] == nf_c
+    assert result_c[len(nf_c) :] == ["max_col1", "max_col2"]
+    assert result.index.name == "idx"
+    for i in range(len(result)):
+        assert result["max_col1"].values[i] == expected_max_c[i]
+        assert result["max_col2"].values[i] == expected_max_d[i]
+        # The original columns should still be present
+        assert result["packed.c"].values[i] == to_pack["c"].values[i]
+        assert result["packed.d"].values[i] == to_pack["d"].values[i]
+
 
 def test_reduce_duplicated_cols():
     """Tests nf.reduce() to correctly handle duplicated column names."""

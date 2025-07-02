@@ -1183,7 +1183,7 @@ class NestedFrame(pd.DataFrame):
                 return None
             return new_df
 
-    def reduce(self, func, *args, infer_nesting=True, **kwargs) -> NestedFrame:  # type: ignore[override]
+    def reduce(self, func, *args, infer_nesting=True, append_columns=False, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
 
@@ -1207,6 +1207,8 @@ class NestedFrame(pd.DataFrame):
             scheme. E.g. "nested.b" and "nested.c" will be packed into a column
             called "nested" with columns "b" and "c". If False, all outputs
             will be returned as base columns.
+        append_columns : bool, default False
+            if True, the output columns should be appended to those in the original NestedFrame.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -1333,6 +1335,11 @@ class NestedFrame(pd.DataFrame):
                     [col for col in results_nf.columns if not col.startswith(f"{layer}.")]
                 ].join(nested_col)
 
+        if append_columns:
+            # Append the results to the original NestedFrame
+            return self.join(results_nf)
+
+        # Otherwise, return the results as a new NestedFrame
         return results_nf
 
     def to_pandas(self, list_struct=False) -> pd.DataFrame:
