@@ -1090,7 +1090,10 @@ def test_reduce():
     result = nf.reduce(make_id, "b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
 
-    # Verify that append_columns=True works as expected
+    # Verify that append_columns=True works as expected.
+    # Ensure that even with non-unique indexes, the final result retains
+    # the original index (nested-pandas#301)
+    nf.index = pd.Index([0, 1, 1], name="non-unique")
     result = nf.reduce(get_max, "packed.c", "packed.d", append_columns=True)
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
@@ -1099,7 +1102,8 @@ def test_reduce():
     # The result should have the original columns plus the new max columns
     assert result_c[: len(nf_c)] == nf_c
     assert result_c[len(nf_c) :] == ["max_col1", "max_col2"]
-    assert result.index.name == "idx"
+    assert result.index.name == "non-unique"
+    assert list(result.index) == [0, 1, 1]
     for i in range(len(result)):
         assert result["max_col1"].values[i] == expected_max_c[i]
         assert result["max_col2"].values[i] == expected_max_d[i]

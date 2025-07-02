@@ -1337,7 +1337,7 @@ class NestedFrame(pd.DataFrame):
 
         if append_columns:
             # Append the results to the original NestedFrame
-            return self.join(results_nf)
+            return pd.concat([self, results_nf], axis=1)
 
         # Otherwise, return the results as a new NestedFrame
         return results_nf
