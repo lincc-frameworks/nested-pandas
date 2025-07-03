@@ -80,5 +80,5 @@ class ListStructStorage:
 
     @property
     def num_chunks(self) -> int:
-        """Number of chunks in the underlying array."""
+        """Number of chunk_lens in the underlying array."""
         return self._data.num_chunks
