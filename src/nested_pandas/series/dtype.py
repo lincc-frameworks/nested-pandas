@@ -1,5 +1,4 @@
-# Use Self, which is not available until Python 3.11
-from __future__ import annotations
+from __future__ import annotations  # Self is not available in python 3.10
 
 from collections.abc import Mapping
 
@@ -39,9 +38,9 @@ class NestedDtype(ExtensionDtype):
     """Attributes to use as metadata for __eq__ and __hash__"""
 
     @property
-    def na_value(self) -> Type[pd.NA]:
+    def na_value(self) -> Type[pd.NA]:  # type: ignore[valid-type]
         """The missing value for this dtype"""
-        return pd.NA
+        return pd.NA  # type: ignore[return-value]
 
     type = pd.DataFrame
     """The type of the array's elements, always pd.DataFrame"""
@@ -56,6 +55,10 @@ class NestedDtype(ExtensionDtype):
         }
         fields = ", ".join([f"{field}: [{dtype!s}]" for field, dtype in nice_dtypes.items()])
         return f"nested<{fields}>"
+
+    @name.setter
+    def name(self, value: str):
+        raise TypeError("name cannot be changed")
 
     def __repr__(self) -> str:
         return self.name

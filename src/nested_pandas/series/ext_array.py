@@ -32,8 +32,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# typing.Self and "|" union syntax don't exist in Python 3.9
-from __future__ import annotations
+from __future__ import annotations  # Self in Python 3.10
 
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from typing import Any, cast
@@ -41,19 +40,25 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, DTypeLike
 from pandas import Index
-from pandas._typing import InterpolateOptions, Self
+from pandas._typing import InterpolateOptions
 from pandas.api.extensions import no_default
-from pandas.core.arrays import ArrowExtensionArray, ExtensionArray
+from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
 from pandas.core.dtypes.common import is_float_dtype
-from pandas.core.indexers import check_array_indexer, unpack_tuple_and_ellipses, validate_indices
-from pandas.io.formats.format import format_array
+from pandas.core.indexers import (  # type: ignore[attr-defined]
+    check_array_indexer,
+    unpack_tuple_and_ellipses,
+    validate_indices,
+)
+from pandas.io.formats.format import format_array  # type: ignore[attr-defined]
 
 from nested_pandas.series._storage import ListStructStorage, StructListStorage, TableStorage  # noqa
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.utils import (
+    chunk_lengths,
     is_pa_type_a_list,
+    rechunk,
     transpose_struct_list_type,
 )
 
@@ -82,7 +87,7 @@ instead of returning a numpy array of data-frames, we return an array of
 purposes only and should never be used for anything else.
 """
 try:
-    from pandas.io.formats.format import _ExtensionArrayFormatter
+    from pandas.io.formats.format import _ExtensionArrayFormatter  # type: ignore[attr-defined]
 except ImportError:
     BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK = False
 
@@ -186,7 +191,8 @@ def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) 
     for column in columns:
         series = df[column]
         if isinstance(series.dtype, NestedDtype):
-            scalar = series.array.to_pyarrow_scalar(list_struct=True)
+            # We do know that array is NestedExtensionArray and does have .to_pyarrow_scalar
+            scalar = series.array.to_pyarrow_scalar(list_struct=True)  # type: ignore[attr-defined]
             ty = scalar.type
         else:
             array = pa.array(series)
@@ -271,15 +277,16 @@ class NestedExtensionArray(ExtensionArray):
 
     # Tricky to implement but required by things like pd.read_csv
     @classmethod
-    def _from_sequence_of_strings(cls, strings, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined] # noqa: F821
-        return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)
+    def _from_sequence_of_strings(cls, strings, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined, misc] # noqa: F821
+        # I don't know why mypy complains, the method IS in the base class
+        return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)  # type: ignore[misc]
 
     # We do not implement it. ArrowExtensionArray does not implement it for struct arrays
     @classmethod
     def _from_factorized(cls, values, original):
         return super()._from_factorized(values, original)
 
-    def __getitem__(self, item) -> Self | pd.DataFrame:  # type: ignore[name-defined] # noqa: F821
+    def __getitem__(self, item: ScalarIndexer) -> Self | pd.DataFrame:  # type: ignore[name-defined, override] # noqa: F821
         item = check_array_indexer(self, item)
 
         if isinstance(item, np.ndarray):
@@ -309,7 +316,7 @@ class NestedExtensionArray(ExtensionArray):
         return type(self)(pa_array, validate=False)
 
     def __setitem__(self, key, value) -> None:
-        # TODO: optimize for many chunks
+        # TODO: optimize for many chunk_lens
         # https://github.com/lincc-frameworks/nested-pandas/issues/53
 
         key = check_array_indexer(self, key)
@@ -369,7 +376,9 @@ class NestedExtensionArray(ExtensionArray):
     def __eq__(self, other):
         return super().__eq__(other)
 
-    def to_numpy(self, dtype: None = None, copy: bool = False, na_value: Any = no_default) -> np.ndarray:
+    def to_numpy(
+        self, dtype: DTypeLike | None = None, copy: bool = False, na_value: Any = no_default
+    ) -> np.ndarray:
         """Convert the extension array to a numpy array.
 
         Parameters
@@ -441,7 +450,7 @@ class NestedExtensionArray(ExtensionArray):
         **kwargs,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Interpolate missing values, not implemented yet."""
-        super().interpolate(
+        return super().interpolate(  # type: ignore[misc]
             method=method,
             axis=axis,
             index=index,
@@ -587,7 +596,7 @@ class NestedExtensionArray(ExtensionArray):
             return False
         return self._storage == other._storage
 
-    def dropna(self) -> Self:
+    def dropna(self) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Return a new ExtensionArray with missing values removed.
 
         Note that this applies to the top-level struct array, not to the list arrays.
@@ -741,12 +750,18 @@ class NestedExtensionArray(ExtensionArray):
             return na_value
         series = {}
         for name, list_scalar in value.items():
-            dtype = self.dtype.field_dtype(name)
+            dtype: pd.ArrowDtype | NestedDtype | None = self.dtype.field_dtype(name)
             # It gave pd.ArrowDtype for non-NestedDtype fields,
             # make it None if we'd like to use pandas "ordinary" dtypes.
             if not pyarrow_dtypes and not isinstance(dtype, NestedDtype):
                 dtype = None
-            series[name] = pd.Series(list_scalar.values, dtype=dtype, copy=copy, name=name)
+            series[name] = pd.Series(
+                list_scalar.values,
+                # mypy doesn't understand that dtype is ExtensionDtype | None
+                dtype=dtype,  # type: ignore[arg-type]
+                copy=copy,
+                name=name,
+            )
         return pd.DataFrame(series, copy=False)
 
     @property
@@ -917,7 +932,7 @@ class NestedExtensionArray(ExtensionArray):
 
     @property
     def num_chunks(self) -> int:
-        """Number of chunks in underlying pyarrow.ChunkedArray"""
+        """Number of chunk_lens in underlying pyarrow.ChunkedArray"""
         return self._storage.num_chunks
 
     def get_list_index(self) -> np.ndarray:
@@ -1075,6 +1090,8 @@ class NestedExtensionArray(ExtensionArray):
 
         if len(pa_array) != len(self):
             raise ValueError("The length of the list-array must be equal to the length of the series")
+
+        pa_array = rechunk(pa_array, chunk_lengths(self.pa_table.column(0)))
 
         if field in self.field_names:
             field_idx = self.field_names.index(field)

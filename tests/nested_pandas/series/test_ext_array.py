@@ -10,7 +10,7 @@ from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import NestedFrame
 from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar, replace_with_mask
 from numpy.testing import assert_array_equal
-from pandas.core.arrays import ArrowExtensionArray
+from pandas.core.arrays import ArrowExtensionArray  # type: ignore[attr-defined]
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 
@@ -688,7 +688,7 @@ def test_list_offsets_single_chunk():
 
 
 def test_list_offsets_multiple_chunks():
-    """Test that the .list_offset property is correct for multiple chunks."""
+    """Test that the .list_offset property is correct for multiple chunk_lens."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint8())),

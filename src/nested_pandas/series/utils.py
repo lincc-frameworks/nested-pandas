@@ -1,9 +1,11 @@
-from __future__ import annotations  # Python 3.9 requires it for X | Y type hints
+from __future__ import annotations  # TYPE_CHECKING
 
 from typing import TYPE_CHECKING, cast
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
+from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
     from nested_pandas.series.dtype import NestedDtype
@@ -314,3 +316,41 @@ def table_from_struct_array(array: pa.ChunkedArray | pa.array) -> pa.Table:
     if isinstance(array, pa.ChunkedArray) and array.num_chunks == 0:
         array = pa.array([], type=array.type)
     return pa.Table.from_struct_array(array)
+
+
+def chunk_lengths(array: pa.ChunkedArray) -> list[int]:
+    """Get the length of each chunk in an array."""
+    return [len(chunk) for chunk in array.iterchunks()]
+
+
+def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.ChunkedArray:
+    """Rechunk array to the same chunks a given chunked array.
+
+    If no rechunk is needed the original chunked array is returned.
+
+    Parameters
+    ----------
+    array : pa.Array | pa.ChunkedArray
+        Input chunked or non-chunked array to rechunk.
+    chunk_lens : array-like of int
+        Lengths of chunks.
+
+    Returns
+    -------
+    pa.ChunkedArray
+        Rechunked `array`.
+    """
+    if len(array) != np.sum(chunk_lens):
+        raise ValueError("Input array must have the same length as the total chunk lengths")
+    if isinstance(array, pa.Array):
+        array = pa.chunked_array([array])
+
+    # Shortcut if no rechunk is needed:
+    if chunk_lengths(array) == chunk_lens:
+        return array
+    chunk_indices = np.r_[0, np.cumsum(chunk_lens)]
+    chunks = []
+    for idx_start, idx_end in zip(chunk_indices[:-1], chunk_indices[1:], strict=True):
+        chunk = array[idx_start:idx_end].combine_chunks()
+        chunks.append(chunk)
+    return pa.chunked_array(chunks)

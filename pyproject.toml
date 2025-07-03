@@ -49,6 +49,9 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+[tool.mypy]
+python_version = "3.10"
+
 [tool.setuptools_scm]
 write_to = "src/nested_pandas/_version.py"
 
