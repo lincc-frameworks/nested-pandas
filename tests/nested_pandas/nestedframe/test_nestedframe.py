@@ -1565,6 +1565,10 @@ def test_nest_lists():
     with pytest.raises(ValueError):
         ndf.nest_lists(columns=["c", "d"], name="nested")
 
+    # Test nest_lists ordering deprecation warning
+    with pytest.warns(DeprecationWarning):
+        res = ndf.nest_lists("nested", ["c", "b"])
+
 
 def test_delitem_base_and_nested():
     """Test that __delitem__ works for both base and nested columns."""

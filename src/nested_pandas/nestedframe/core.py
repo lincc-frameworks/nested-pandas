@@ -1,7 +1,9 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -421,6 +423,19 @@ class NestedFrame(pd.DataFrame):
         1  2  4  [{e: 4}; …] (3 rows)
         2  3  6  [{e: 7}; …] (3 rows)
         """
+
+        # Check if `name` is actually a list and `columns` is a string
+        if isinstance(name, Sequence) and not isinstance(name, str) and isinstance(columns, str):
+            warnings.warn(
+                "DeprecationWarning: The argument order for `nest_lists` has changed: "
+                "`nest_lists(name, columns)` is now `nest_lists(columns, name)`. "
+                "Please update your code.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Swap the arguments
+            name, columns = columns, name
+
         return NestedFrame.from_lists(self.copy(), list_columns=columns, name=name)
 
     @classmethod
