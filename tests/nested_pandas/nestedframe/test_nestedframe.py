@@ -306,8 +306,8 @@ def test_set_item_combine_nested():
         }
     )
 
-    list_nf = list_nf.nest_lists("c", ["c"])
-    list_nf = list_nf.nest_lists("d", ["d"])
+    list_nf = list_nf.nest_lists(["c"], "c")
+    list_nf = list_nf.nest_lists(["d"], "d")
 
     list_nf["nested"] = list_nf[["c", "d"]]
 
@@ -1564,6 +1564,10 @@ def test_nest_lists():
     # and that we raise an error if we try to do so.
     with pytest.raises(ValueError):
         ndf.nest_lists(columns=["c", "d"], name="nested")
+
+    # Test nest_lists ordering deprecation warning
+    with pytest.warns(DeprecationWarning):
+        res = ndf.nest_lists("nested", ["c", "b"])
 
 
 def test_delitem_base_and_nested():
