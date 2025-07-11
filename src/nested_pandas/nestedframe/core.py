@@ -388,19 +388,19 @@ class NestedFrame(pd.DataFrame):
         res = new_df.join(packed, how=how, on=on)
         return res
 
-    def nest_lists(self, name: str, columns: list[str]) -> NestedFrame:
+    def nest_lists(self, columns: list[str], name: str) -> NestedFrame:
         """Creates a new NestedFrame where the specified list-value columns are packed into a
         nested column.
 
         Parameters
         ----------
-        name : str
-            The column name of the new nested column which we will pack the list-value
-            columns into. This column will be added to the NestedFrame.
         columns : list[str]
             The list-value columns that should be packed into a nested column.
             All columns in the list will attempt to be packed into a single
             nested column with the name provided in `nested_name`.
+        name : str
+            The column name of the new nested column which we will pack the list-value
+            columns into. This column will be added to the NestedFrame.
 
         Returns
         -------

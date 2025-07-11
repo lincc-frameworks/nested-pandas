@@ -306,8 +306,8 @@ def test_set_item_combine_nested():
         }
     )
 
-    list_nf = list_nf.nest_lists("c", ["c"])
-    list_nf = list_nf.nest_lists("d", ["d"])
+    list_nf = list_nf.nest_lists(["c"], "c")
+    list_nf = list_nf.nest_lists(["d"], "d")
 
     list_nf["nested"] = list_nf[["c", "d"]]
 
