@@ -106,6 +106,9 @@ class NestedFrame(pd.DataFrame):
         # Without nested columns (or empty), just do representation as normal
         if len(self.nested_columns) == 0 or len(self) == 0:
             # This mimics pandas behavior
+            if pd.get_option("display.max_rows") is None:
+                # If max_rows is None, just show the header
+                return super().to_html(max_rows=None, show_dimensions=True)
             if self.shape[0] > pd.get_option("display.max_rows"):
                 return super().to_html(max_rows=pd.get_option("display.min_rows"), show_dimensions=True)
             else:
@@ -140,7 +143,9 @@ class NestedFrame(pd.DataFrame):
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
-        if pd.get_option("display.max_rows") is None or df_shape[0] > pd.get_option("display.max_rows"):
+        if pd.get_option("display.max_rows") is None:
+            html_df = self.copy()
+        elif df_shape[0] > pd.get_option("display.max_rows"):
             html_df = self.head(pd.get_option("display.min_rows") + 1)
         else:
             html_df = self.copy()
