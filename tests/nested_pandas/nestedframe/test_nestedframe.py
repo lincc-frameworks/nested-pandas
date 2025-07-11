@@ -1324,6 +1324,10 @@ def test_drop():
     with pytest.raises(KeyError):
         base.drop(["a", "nested.not_a_field"], axis=1)
 
+def test_min():
+    """
+    Test min function return correct series with and without the nested columns
+    """
 
 def test_eval():
     """
