@@ -673,12 +673,7 @@ class NestedFrame(pd.DataFrame):
             errors=errors,
         )
 
-    def min(
-        self, 
-        exclude_nest: bool = False,
-        numeric_only: bool = False,
-        **kwargs
-    ):
+    def min(self, exclude_nest: bool = False, numeric_only: bool = False, **kwargs):
         """
 
         Return the minimum value of each column as a series, including nested columns
@@ -704,18 +699,33 @@ class NestedFrame(pd.DataFrame):
 
         Returns
         -------
-        pd.Series 
+        pd.Series
 
         Examples
         --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> nf_min = nf.min()
+        >>> nf_min
+        a              0.000114
+        b              0.184677
+        nested.t       0.547752
+        nested.flux    1.828828
+        nested.band           g
+        dtype: object
 
         """
 
+        # if no nested columns, directly call super min
+        if not self.nested_columns:
+            return super().min(numeric_only=numeric_only, **kwargs)
+    
         # get base column names
         base_col = [col for col in self.columns if col not in self.nested_columns]
-
-        # call min on only the base columns
-        base_min = self[base_col].min(numeric_only, **kwargs)
+        # create a shallow copy of the base col as df
+        base_df = pd.DataFrame(self[base_col])
+        base_min = base_df.min(numeric_only=numeric_only, **kwargs)
 
         if exclude_nest:
             return base_min
@@ -724,18 +734,16 @@ class NestedFrame(pd.DataFrame):
         # collect mins for all nested columns as a list, each is a series
         nested_mins = []
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()  # returns a DataFrame
-
+            nested_df = self[nest_col].nest.to_flat()
             # prefix column to indicate source
             nested_df.columns = [f"{nest_col}." + col for col in nested_df.columns]
 
-            # compute min on falt DataFrame
-            nested_min = nested_df.min(numeric_only, **kwargs)
-
+            # compute min on flat DataFrame
+            nested_min = nested_df.min(numeric_only=numeric_only, **kwargs)
             nested_mins.append(nested_min)
 
         # concat base min and all nested mins
-        return pd.concat( [base_min] + nested_mins )
+        return pd.concat([base_min] + nested_mins)
 
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
