@@ -688,7 +688,7 @@ class NestedFrame(pd.DataFrame):
         Parameters
         ----------
         exclude_nest : bool, default False
-            If set to True,  will exclude the nested structure and
+            If set to True, will exclude the nested structure and
             only computes the minimum over the base columns
         numeric_only : bool, default False
             Include only float, int, boolean columns.
@@ -721,29 +721,29 @@ class NestedFrame(pd.DataFrame):
         if not self.nested_columns:
             return super().min(numeric_only=numeric_only, **kwargs)
     
-        # get base column names
+        # handle base columns
         base_col = [col for col in self.columns if col not in self.nested_columns]
-        # create a shallow copy of the base col as df
-        base_df = pd.DataFrame(self[base_col])
-        base_min = base_df.min(numeric_only=numeric_only, **kwargs)
+        # need to check that base column is not empty???
+        if base_col:
+            base_min = super().__getitem__(base_col).min(numeric_only=numeric_only, **kwargs)
+        else:
+            base_min = pd.Series(dtype='float64')
 
         if exclude_nest:
             return base_min
         
-        # handle the nested columns:
-        # collect mins for all nested columns as a list, each is a series
+        # handle nested columns
         nested_mins = []
         for nest_col in self.nested_columns:
             nested_df = self[nest_col].nest.to_flat()
-            # prefix column to indicate source
             nested_df.columns = [f"{nest_col}." + col for col in nested_df.columns]
+            nested_mins.append(nested_df.min(numeric_only=numeric_only, **kwargs))
 
-            # compute min on flat DataFrame
-            nested_min = nested_df.min(numeric_only=numeric_only, **kwargs)
-            nested_mins.append(nested_min)
-
-        # concat base min and all nested mins
-        return pd.concat([base_min] + nested_mins)
+        # Combine base and nested min values into a single Series and return
+        if base_min.empty:
+            return pd.concat(nested_mins)
+        else:
+            return pd.concat([base_min] + nested_mins)
 
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
