@@ -685,6 +685,9 @@ class NestedFrame(pd.DataFrame):
 
         By default, missing values (NaNs) will be skipped in the computation.
 
+        For non-numeric columns (e.g., strings), the method returns the
+        lexicographically smallest value when `numeric_only=False` (default).
+
         Parameters
         ----------
         exclude_nest : bool, default False
@@ -723,11 +726,7 @@ class NestedFrame(pd.DataFrame):
     
         # handle base columns
         base_col = [col for col in self.columns if col not in self.nested_columns]
-        # need to check that base column is not empty???
-        if base_col:
-            base_min = super().__getitem__(base_col).min(numeric_only=numeric_only, **kwargs)
-        else:
-            base_min = pd.Series(dtype='float64')
+        base_min = super().__getitem__(base_col).min(numeric_only=numeric_only, **kwargs)
 
         if exclude_nest:
             return base_min
@@ -736,10 +735,10 @@ class NestedFrame(pd.DataFrame):
         nested_mins = []
         for nest_col in self.nested_columns:
             nested_df = self[nest_col].nest.to_flat()
-            nested_df.columns = [f"{nest_col}." + col for col in nested_df.columns]
+            nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
             nested_mins.append(nested_df.min(numeric_only=numeric_only, **kwargs))
 
-        # Combine base and nested min values into a single Series and return
+        # Combine base and nested min values into a single Series if applicable and return
         if base_min.empty:
             return pd.concat(nested_mins)
         else:
