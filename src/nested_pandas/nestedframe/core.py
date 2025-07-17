@@ -148,7 +148,7 @@ class NestedFrame(pd.DataFrame):
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
-        
+
         if pd.get_option("display.max_rows") is None:
             html_df = self.copy()
         elif df_shape[0] > pd.get_option("display.max_rows"):
