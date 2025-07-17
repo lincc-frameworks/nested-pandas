@@ -1,7 +1,9 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -106,6 +108,9 @@ class NestedFrame(pd.DataFrame):
         # Without nested columns (or empty), just do representation as normal
         if len(self.nested_columns) == 0 or len(self) == 0:
             # This mimics pandas behavior
+            if pd.get_option("display.max_rows") is None:
+                # If max_rows is None, just show the header
+                return super().to_html(max_rows=None, show_dimensions=True)
             if self.shape[0] > pd.get_option("display.max_rows"):
                 return super().to_html(
                     max_rows=pd.get_option("display.min_rows"), show_dimensions=True
@@ -151,9 +156,10 @@ class NestedFrame(pd.DataFrame):
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
-        if pd.get_option("display.max_rows") is None or df_shape[0] > pd.get_option(
-            "display.max_rows"
-        ):
+        
+        if pd.get_option("display.max_rows") is None:
+            html_df = self.copy()
+        elif df_shape[0] > pd.get_option("display.max_rows"):
             html_df = self.head(pd.get_option("display.min_rows") + 1)
         else:
             html_df = self.copy()
@@ -411,19 +417,19 @@ class NestedFrame(pd.DataFrame):
         res = new_df.join(packed, how=how, on=on)
         return res
 
-    def nest_lists(self, name: str, columns: list[str]) -> NestedFrame:
+    def nest_lists(self, columns: list[str], name: str) -> NestedFrame:
         """Creates a new NestedFrame where the specified list-value columns are packed into a
         nested column.
 
         Parameters
         ----------
-        name : str
-            The column name of the new nested column which we will pack the list-value
-            columns into. This column will be added to the NestedFrame.
         columns : list[str]
             The list-value columns that should be packed into a nested column.
             All columns in the list will attempt to be packed into a single
             nested column with the name provided in `nested_name`.
+        name : str
+            The column name of the new nested column which we will pack the list-value
+            columns into. This column will be added to the NestedFrame.
 
         Returns
         -------
@@ -444,6 +450,19 @@ class NestedFrame(pd.DataFrame):
         1  2  4  [{e: 4}; …] (3 rows)
         2  3  6  [{e: 7}; …] (3 rows)
         """
+
+        # Check if `name` is actually a list and `columns` is a string
+        if isinstance(name, Sequence) and not isinstance(name, str) and isinstance(columns, str):
+            warnings.warn(
+                "DeprecationWarning: The argument order for `nest_lists` has changed: "
+                "`nest_lists(name, columns)` is now `nest_lists(columns, name)`. "
+                "Please update your code.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Swap the arguments
+            name, columns = columns, name
+
         return NestedFrame.from_lists(self.copy(), list_columns=columns, name=name)
 
     @classmethod
