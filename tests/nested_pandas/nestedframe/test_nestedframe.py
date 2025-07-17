@@ -1327,13 +1327,9 @@ def test_drop():
 
 def test_min():
     """Test min function return correct result with and without the nested columns"""
-    base = NestedFrame(
-        data={"a": [1, 2, 3], "b": [2, 4, 6], "c": ["x", "y", "z"]},
-        index=[0, 1, 2]
-    )
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "c": ["x", "y", "z"]}, index=[0, 1, 2])
     nested = pd.DataFrame(
-        data={"d": [10, 11, 20, 21, 3, 31, 32], "y": [1, 10, 20, 30, 40, 50, 60]},
-        index=[0, 0, 1, 1, 1, 2, 2]
+        data={"d": [10, 11, 20, 21, 3, 31, 32], "y": [1, 10, 20, 30, 40, 50, 60]}, index=[0, 0, 1, 1, 1, 2, 2]
     )
     nested2 = pd.DataFrame(
         data={"e": [0, 2, 4, 1, 4, 1, 4, 1], "f": [5, 4, 7, 5, 1, 9, 3, 4]},
@@ -1348,34 +1344,20 @@ def test_min():
 
     # nan tests
     nested_clean = pd.DataFrame(
-        data={"g": [1, 0, 3, 4, 5, 6], "h": [1, 2, 3, 4, 5, 6]},
-        index=[0, 0, 1, 1, 2, 2]
+        data={"g": [1, 0, 3, 4, 5, 6], "h": [1, 2, 3, 4, 5, 6]}, index=[0, 0, 1, 1, 2, 2]
     )
     base_clean = base.add_nested(nested_clean, "nested_clean")
     min_clean = base_clean.min()
-    expected_clean = pd.Series({
-        "a": 1,
-        "b": 2,
-        "c": "x",
-        "nested_clean.g": 0,
-        "nested_clean.h": 1
-    })
+    expected_clean = pd.Series({"a": 1, "b": 2, "c": "x", "nested_clean.g": 0, "nested_clean.h": 1})
     assert (min_clean == expected_clean).all()
 
     nested_nan = pd.DataFrame(
-        data={"g": [1, np.nan, 3, 4, 5, 6], "h": [np.nan, np.nan, 3, 4, np.nan, 6]},
-        index=[0, 0, 1, 1, 2, 2]
+        data={"g": [1, np.nan, 3, 4, 5, 6], "h": [np.nan, np.nan, 3, 4, np.nan, 6]}, index=[0, 0, 1, 1, 2, 2]
     )
     base_nan = base.add_nested(nested_nan, "nested_nan")
     min_nan = base_nan.min()
     assert isinstance(min_nan, pd.Series)
-    expected_nan = pd.Series({
-        "a": 1,
-        "b": 2,
-        "c": "x",
-        "nested_nan.g": 1,
-        "nested_nan.h": 3
-    })
+    expected_nan = pd.Series({"a": 1, "b": 2, "c": "x", "nested_nan.g": 1, "nested_nan.h": 3})
     assert (min_nan == expected_nan).all()
 
     # 1 nested column
@@ -1385,13 +1367,7 @@ def test_min():
     r3 = base.min(exclude_nest=True)
     assert (r3 == pd.Series({"a": 1, "b": 2, "c": "x"})).all()
     r4 = base.min()
-    expected4 = pd.Series({
-        "a": 1,
-        "b": 2,
-        "c": "x",
-        "nested.d": 3,
-        "nested.y": 1
-    })
+    expected4 = pd.Series({"a": 1, "b": 2, "c": "x", "nested.d": 3, "nested.y": 1})
     assert (r4 == expected4).all()
 
     # 2 nested columns
@@ -1401,26 +1377,22 @@ def test_min():
     r6 = base.min(exclude_nest=True)
     assert (r6 == pd.Series({"a": 1, "b": 2, "c": "x"})).all()
     r7 = base.min()
-    expected7 = pd.Series({
-        "a": 1,
-        "b": 2,
-        "c": "x",
-        "nested.d": 3,
-        "nested.y": 1,
-        "nested2.e": 0,
-        "nested2.f": 1,
-    })
+    expected7 = pd.Series(
+        {
+            "a": 1,
+            "b": 2,
+            "c": "x",
+            "nested.d": 3,
+            "nested.y": 1,
+            "nested2.e": 0,
+            "nested2.f": 1,
+        }
+    )
     assert (r7 == expected7).all()
 
     # only nested column
-    base2 = NestedFrame(
-        data={"x": [0, 1, 2]},
-        index=[0, 1, 2]
-    )
-    nested3 = NestedFrame(
-            data={"a": [1, 2, 3, 4, 5, 6], "b": [2, 4, 6, 8, 9, 0]},
-            index=[0, 0, 1, 1, 1, 2]
-        )
+    base2 = NestedFrame(data={"x": [0, 1, 2]}, index=[0, 1, 2])
+    nested3 = NestedFrame(data={"a": [1, 2, 3, 4, 5, 6], "b": [2, 4, 6, 8, 9, 0]}, index=[0, 0, 1, 1, 1, 2])
     base2 = base2.add_nested(nested3, "nested3")
     base2 = base2.drop(["x"], axis=1)
     r8 = base2.min(exclude_nest=True)
