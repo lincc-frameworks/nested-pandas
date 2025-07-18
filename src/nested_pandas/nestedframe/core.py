@@ -754,7 +754,6 @@ class NestedFrame(pd.DataFrame):
 
         """
 
-        # if no nested columns, directly call super min
         if not self.nested_columns:
             return super().min(numeric_only=numeric_only, **kwargs)
 
