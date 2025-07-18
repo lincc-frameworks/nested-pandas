@@ -137,12 +137,18 @@ class NestedFrame(pd.DataFrame):
 
             # Estimate width and resize
             html_res = chunk.to_html(
-                max_rows=2, max_cols=5, show_dimensions=False, index=False, header=header, escape=False
+                max_rows=2,
+                max_cols=5,
+                show_dimensions=False,
+                index=False,
+                header=header,
+                escape=False,
             )
             return html_res
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
+
         if pd.get_option("display.max_rows") is None:
             html_df = self.copy()
         elif df_shape[0] > pd.get_option("display.max_rows"):
@@ -593,7 +599,15 @@ class NestedFrame(pd.DataFrame):
             return NestedFrame(packed_df.to_frame())
 
     def drop(
-        self, labels=None, *, axis=0, index=None, columns=None, level=None, inplace=False, errors="raise"
+        self,
+        labels=None,
+        *,
+        axis=0,
+        index=None,
+        columns=None,
+        level=None,
+        inplace=False,
+        errors="raise",
     ):
         """Drop specified labels from rows or columns.
 
@@ -692,6 +706,76 @@ class NestedFrame(pd.DataFrame):
             inplace=inplace,
             errors=errors,
         )
+
+    def min(self, exclude_nest: bool = False, numeric_only: bool = False, **kwargs):
+        """
+
+        Return the minimum value of each column as a series, including nested columns
+        with prefix to indicate the source column.
+
+        This computes the column-wise minimum (axis=0) across base and nested columns.
+        Row-wise minimum (axis=1) are not supported, as reductions along columns
+        are the primary intended behavior for NestedFrame.
+
+        By default, missing values (NaNs) will be skipped in the computation.
+
+        For non-numeric columns (e.g., strings), the method returns the
+        lexicographically smallest value when `numeric_only=False` (default).
+
+        Parameters
+        ----------
+        exclude_nest : bool, default False
+            If set to True, will exclude the nested structure and
+            only computes the minimum over the base columns
+        numeric_only : bool, default False
+            Include only float, int, boolean columns.
+        **kwargs
+            See the documentation for :func:`min` for complete details
+            on the keyword arguments accepted by
+            :meth:`~pandas.NestedFrame.min`.
+
+        Returns
+        -------
+        pd.Series
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> nf_min = nf.min()
+        >>> nf_min
+        a              0.000114
+        b              0.184677
+        nested.t       0.547752
+        nested.flux    1.828828
+        nested.band           g
+        dtype: object
+
+        """
+
+        if not self.nested_columns:
+            return super().min(numeric_only=numeric_only, **kwargs)
+
+        # handle base columns
+        base_col = [col for col in self.columns if col not in self.nested_columns]
+        base_min = super().__getitem__(base_col).min(numeric_only=numeric_only, **kwargs)
+
+        if exclude_nest:
+            return base_min
+
+        # handle nested columns
+        nested_mins = []
+        for nest_col in self.nested_columns:
+            nested_df = self[nest_col].nest.to_flat()
+            nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
+            nested_mins.append(nested_df.min(numeric_only=numeric_only, **kwargs))
+
+        # Combine base and nested min values into a single Series if applicable and return
+        if base_min.empty:
+            return pd.concat(nested_mins)
+        else:
+            return pd.concat([base_min] + nested_mins)
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """
@@ -1047,7 +1131,12 @@ class NestedFrame(pd.DataFrame):
 
         if target == "base":
             return super().dropna(
-                axis=axis, how=how, thresh=thresh, subset=subset, inplace=inplace, ignore_index=ignore_index
+                axis=axis,
+                how=how,
+                thresh=thresh,
+                subset=subset,
+                inplace=inplace,
+                ignore_index=ignore_index,
             )
         if ignore_index:
             raise ValueError("ignore_index is not supported for nested columns")
