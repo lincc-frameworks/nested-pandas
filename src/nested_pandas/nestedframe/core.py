@@ -778,9 +778,7 @@ class NestedFrame(pd.DataFrame):
             return pd.concat([base_min] + nested_mins)
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
-        """
-
-        Evaluate a string describing operations on NestedFrame columns.
+        """Evaluate a string describing operations on NestedFrame columns.
 
         Operates on columns only, not specific rows or elements.  This allows
         `eval` to run arbitrary code, which can make you vulnerable to code
@@ -800,9 +798,8 @@ class NestedFrame(pd.DataFrame):
             operation inplace and mutate the existing NestedFrame. Otherwise,
             a new NestedFrame is returned.
         **kwargs
-            See the documentation for :func:`eval` for complete details
-            on the keyword arguments accepted by
-            :meth:`~pandas.NestedFrame.eval`.
+            See the documentation for :meth:`pandas.DataFrame.eval` for
+            complete details on the keyword arguments accepted by :meth:`eval`.
 
         Returns
         -------
@@ -811,7 +808,8 @@ class NestedFrame(pd.DataFrame):
 
         See Also
         --------
-        https://pandas.pydata.org/docs/reference/api/pandas.eval.html
+        :meth:`pandas.DataFrame.eval`
+
         """
         _, aliases = _identify_aliases(expr)
         self._aliases: dict[str, str] | None = aliases
@@ -857,8 +855,7 @@ class NestedFrame(pd.DataFrame):
         return set(separable.keys())
 
     def query(self, expr: str, *, inplace: bool = False, **kwargs) -> NestedFrame | None:
-        """
-        Query the columns of a NestedFrame with a boolean expression. Specified
+        """Query the columns of a NestedFrame with a boolean expression. Specified
         queries can target nested columns in addition to the typical column set
 
         Parameters
@@ -887,8 +884,9 @@ class NestedFrame(pd.DataFrame):
         inplace : bool
             Whether to modify the DataFrame rather than creating a new one.
         **kwargs
-            See the documentation for :func:`eval` for complete details
-            on the keyword arguments accepted by :meth:`DataFrame.query`.
+                    See the documentation for :meth:`pandas.DataFrame.query`
+            for complete details on the keyword arguments accepted by
+            :meth:`query`.
 
         Returns
         -------
@@ -911,6 +909,10 @@ class NestedFrame(pd.DataFrame):
         4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …...
 
 
+        See Also
+        --------
+        :meth:`pandas.DataFrame.query`
+
         Notes
         -----
         Queries that target a particular nested structure return a dataframe
@@ -918,6 +920,7 @@ class NestedFrame(pd.DataFrame):
         querying the NestedFrame "df" with nested structure "my_nested" as
         below will return all rows of df, but with mynested filtered by the
         condition: `nf.query("mynested.a > 2")`
+
         """
         if not isinstance(expr, str):
             msg = f"expr must be a string to be evaluated, {type(expr)} given"

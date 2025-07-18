@@ -24,7 +24,13 @@ version = ".".join(release.split(".")[:2])
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinx.ext.mathjax", "sphinx.ext.napoleon", "sphinx.ext.viewcode", "sphinx.ext.autosummary"]
+extensions = [
+    "sphinx.ext.mathjax",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",
+]
 
 extensions.append("nbsphinx")
 
@@ -51,6 +57,12 @@ add_module_names = False
 modindex_common_prefix = ["nested_pandas."]
 # Customize display of autosummary entries
 autosummary_imported_members = True
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),  # optional but handy
+}
 
 html_theme = "sphinx_book_theme"
 
