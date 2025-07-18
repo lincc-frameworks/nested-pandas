@@ -61,7 +61,6 @@ autosummary_imported_members = True
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
-    "pyarrow": ("https://arrow.apache.org/docs/python", None),
     "numpy": ("https://numpy.org/doc/stable/", None),  # optional but handy
 }
 
