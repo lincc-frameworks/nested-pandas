@@ -19,7 +19,7 @@ Functions
     series.ext_array.NestedExtensionArray.nbytes
     series.ext_array.NestedExtensionArray.list_array
     series.ext_array.NestedExtensionArray.struct_array
-    series.ext_array.NestedExtensionArray.py_table
+    series.ext_array.NestedExtensionArray.pa_table
     series.ext_array.NestedExtensionArray.list_offsets
     series.ext_array.NestedExtensionArray.field_names
     series.ext_array.NestedExtensionArray.list_lengths
