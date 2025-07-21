@@ -11,7 +11,7 @@ def test_issue89():
     """
 
     # Load some ZTF data
-    catalogs_dir = "https://epyc.astro.washington.edu/~lincc-frameworks/half_degree_surveys/ztf/"
+    catalogs_dir = "https://epyc.astro.washington.edu/~lincc-frameworks/half_degree_surveys/ztf"
 
     object_ndf = npd.read_parquet(
         f"{catalogs_dir}/ztf_object/Norder=3/Dir=0/Npix=432.parquet",
