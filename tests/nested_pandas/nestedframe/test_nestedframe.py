@@ -1402,6 +1402,84 @@ def test_min():
     assert (r9 == pd.Series({"nested3.a": 1, "nested3.b": 0})).all()
 
 
+def test_max():
+    """Test max function return correct result with an without the nested columns"""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "c": ["x", "y", "z"]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"d": [10, 11, 20, 21, 3, 31, 32], "y": [1, 10, 20, 30, 40, 50, 60]}, index=[0, 0, 1, 1, 1, 2, 2]
+    )
+    nested2 = pd.DataFrame(
+        data={"e": [0, 2, 4, 1, 4, 1, 4, 1], "f": [5, 4, 7, 5, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 2, 2, 2],
+    )
+
+    # only base columns
+    r0 = base.max(numeric_only=True)
+    assert (r0 == pd.Series({"a": 3, "b": 6})).all()
+    r1 = base.max()
+    assert (r1 == pd.Series({"a": 3, "b": 6, "c": "z"})).all()
+
+    # nan tests
+    nested_clean = pd.DataFrame(
+        data={"g": [1, 0, 3, 4, 5, 6], "h": [1, 2, 3, 4, 5, 6]}, index=[0, 0, 1, 1, 2, 2]
+    )
+    base_clean = base.add_nested(nested_clean, "nested_clean")
+    max_clean = base_clean.max()
+    expected_clean = pd.Series({"a": 3, "b": 6, "c": "z", "nested_clean.g": 6, "nested_clean.h": 6})
+    assert (max_clean == expected_clean).all()
+
+    nested_nan = pd.DataFrame(
+        data={"g": [1, np.nan, 3, 4, np.nan, np.nan], "h": [np.nan, np.nan, 3, 4, 5, np.nan]},
+        index=[0, 0, 1, 1, 2, 2],
+    )
+    base_nan = base.add_nested(nested_nan, "nested_nan")
+    max_nan = base_nan.max()
+    assert isinstance(max_nan, pd.Series)
+    expected_nan = pd.Series({"a": 3, "b": 6, "c": "z", "nested_nan.g": 4, "nested_nan.h": 5})
+    assert (max_nan == expected_nan).all()
+
+    # 1 nested column
+    base = base.add_nested(nested, "nested")
+    r2 = base.max(exclude_nest=True, numeric_only=True)
+    assert (r2 == pd.Series({"a": 3, "b": 6})).all()
+    r3 = base.max(exclude_nest=True)
+    assert (r3 == pd.Series({"a": 3, "b": 6, "c": "z"})).all()
+    r4 = base.max()
+    expected4 = pd.Series({"a": 3, "b": 6, "c": "z", "nested.d": 32, "nested.y": 60})
+    assert (r4 == expected4).all()
+
+    # 2 nested columns
+    base = base.add_nested(nested2, "nested2")
+    r5 = base.max(exclude_nest=True, numeric_only=True)
+    assert (r5 == pd.Series({"a": 3, "b": 6})).all()
+    r6 = base.max(exclude_nest=True)
+    assert (r6 == pd.Series({"a": 3, "b": 6, "c": "z"})).all()
+    r7 = base.max()
+    expected7 = pd.Series(
+        {
+            "a": 3,
+            "b": 6,
+            "c": "z",
+            "nested.d": 32,
+            "nested.y": 60,
+            "nested2.e": 4,
+            "nested2.f": 9,
+        }
+    )
+    assert (r7 == expected7).all()
+
+    # only nested column
+    base2 = NestedFrame(data={"x": [0, 1, 2]}, index=[0, 1, 2])
+    nested3 = NestedFrame(data={"a": [1, 2, 3, 4, 5, 6], "b": [2, 4, 6, 8, 9, 0]}, index=[0, 0, 1, 1, 1, 2])
+    base2 = base2.add_nested(nested3, "nested3")
+    base2 = base2.drop(["x"], axis=1)
+    r8 = base2.max(exclude_nest=True)
+    assert isinstance(r8, pd.Series)
+    assert r8.empty
+    r9 = base2.max()
+    assert (r9 == pd.Series({"nested3.a": 6, "nested3.b": 9})).all()
+
+
 def test_eval():
     """
     Test basic behavior of NestedFrame.eval, and that it can handle nested references

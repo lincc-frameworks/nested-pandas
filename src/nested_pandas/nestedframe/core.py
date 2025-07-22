@@ -777,6 +777,76 @@ class NestedFrame(pd.DataFrame):
         else:
             return pd.concat([base_min] + nested_mins)
 
+    def max(self, exclude_nest: bool = False, numeric_only: bool = False, **kwargs):
+        """
+
+        Return the maximum value of each column as a series, including nested columns
+        with prefix to indicate the source column.
+
+        This computes the column-wise maximum (axis=0) across base and nested columns.
+        Row-wise maximum (axis=1) are not supported, as reductions along columns
+        are the primary intended behavior for NestedFrame.
+
+        By default, missing values (NaNs) will be skipped in the computation.
+
+        For non-numeric columns (e.g., strings), the method returns the
+        lexicographically largest value when `numeric_only=False` (default).
+
+        Parameters
+        ----------
+        exclude_nest : bool, default False
+            If set to True, will exclude the nested structure and
+            only computes the maximum over the base columns
+        numeric_only : bool, default False
+            Include only float, int, boolean columns.
+        **kwargs
+            See the documentation for :func:`max` for complete details
+            on the keyword arguments accepted by
+            :meth:`~pandas.NestedFrame.max`.
+
+        Returns
+        -------
+        pd.Series
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> nf_max = nf.max()
+        >>> nf_max
+        a               0.720324
+        b               1.077633
+        nested.t       19.365232
+        nested.flux    98.886109
+        nested.band            r
+        dtype: object
+
+        """
+
+        if not self.nested_columns:
+            return super().max(numeric_only=numeric_only, **kwargs)
+
+        # handle base columns
+        base_col = [col for col in self.columns if col not in self.nested_columns]
+        base_max = super().__getitem__(base_col).max(numeric_only=numeric_only, **kwargs)
+
+        if exclude_nest:
+            return base_max
+
+        # handle nested columns
+        nested_maxs = []
+        for nest_col in self.nested_columns:
+            nested_df = self[nest_col].nest.to_flat()
+            nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
+            nested_maxs.append(nested_df.max(numeric_only=numeric_only, **kwargs))
+
+        # Combine base and nested max values into a single Series if applicable and return
+        if base_max.empty:
+            return pd.concat(nested_maxs)
+        else:
+            return pd.concat([base_max] + nested_maxs)
+
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """Evaluate a string describing operations on NestedFrame columns.
 
