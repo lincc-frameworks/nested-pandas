@@ -730,9 +730,9 @@ class NestedFrame(pd.DataFrame):
         numeric_only : bool, default False
             Include only float, int, boolean columns.
         **kwargs
-            See the documentation for :func:`min` for complete details
-            on the keyword arguments accepted by
-            :meth:`~pandas.NestedFrame.min`.
+            See the documentation for :meth:`pandas.DataFrame.min`
+            for complete details on the keyword arguments accepted by
+            :meth:`min`.
 
         Returns
         -------
@@ -800,9 +800,9 @@ class NestedFrame(pd.DataFrame):
         numeric_only : bool, default False
             Include only float, int, boolean columns.
         **kwargs
-            See the documentation for :func:`max` for complete details
-            on the keyword arguments accepted by
-            :meth:`~pandas.NestedFrame.max`.
+            See the documentation for :meth:`pandas.DataFrame.max`
+            for complete details on the keyword arguments accepted by
+            :meth:`max`.
 
         Returns
         -------
