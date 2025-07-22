@@ -829,7 +829,7 @@ class NestedFrame(pd.DataFrame):
         See Also
         --------
         :meth:`pandas.DataFrame.max`
-        
+
         """
 
         if not self.nested_columns:
