@@ -736,7 +736,7 @@ class NestedFrame(pd.DataFrame):
 
         Returns
         -------
-        pd.Series
+        pandas.Series
 
         Examples
         --------
@@ -751,6 +751,10 @@ class NestedFrame(pd.DataFrame):
         nested.flux    1.828828
         nested.band           g
         dtype: object
+
+        See Also
+        --------
+        :meth:`pandas.DataFrame.min`
 
         """
 
@@ -806,7 +810,7 @@ class NestedFrame(pd.DataFrame):
 
         Returns
         -------
-        pd.Series
+        pandas.Series
 
         Examples
         --------
@@ -822,6 +826,10 @@ class NestedFrame(pd.DataFrame):
         nested.band            r
         dtype: object
 
+        See Also
+        --------
+        :meth:`pandas.DataFrame.max`
+        
         """
 
         if not self.nested_columns:
