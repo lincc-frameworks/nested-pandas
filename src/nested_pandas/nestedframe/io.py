@@ -14,6 +14,9 @@ from ..series.packer import pack_lists
 from ..series.utils import table_to_struct_array
 from .core import NestedFrame
 
+# Use smaller block size for FSSPEC filesystems, it usually helps with parquet reads
+FSSPEC_BLOCK_SIZE = 32 * 1024
+
 
 def read_parquet(
     data: str | UPath | bytes,
@@ -103,6 +106,9 @@ def read_parquet(
         except (TypeError, pa.ArrowInvalid):
             # Otherwise, treat `data` as an URI for fsspec-supported silesystem and use UPath
             upath = UPath(data)
+            # Use smaller block size for better performance
+            if upath.protocol in ("http", "https"):
+                upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
             path = upath.path
             fs = upath.fs
         filesystem = kwargs.pop("filesystem", fs)
