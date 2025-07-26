@@ -6,8 +6,9 @@ https://asv.readthedocs.io/en/stable/writing_benchmarks.html."""
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-from nested_pandas import NestedDtype, NestedFrame, datasets
+from nested_pandas import NestedDtype, NestedFrame, datasets, read_parquet
 from nested_pandas.utils import count_nested
+from upath import UPath
 
 
 class AssignSingleDfToNestedSeries:
@@ -210,4 +211,46 @@ class CountNestedBy:
 
     def peakmem_run(self):
         """Benchmark the memory usage of count_nested(nf, by=...)"""
+        self.run()
+
+
+class ReadFewColumnsS3:
+    """Benchmark read_parquet("s3://", columns=[...])"""
+
+    # Replace with string when S3 access is reimplemented
+    path = UPath(
+        "s3://ipac-irsa-ztf/contributed/dr23/lc/hats/ztf_dr23_lc-hats/dataset/Norder=3/Dir=0/Npix=257/part0.snappy.parquet",
+        anon=True,
+    )
+    columns = ["_healpix_29", "lightcurve.mag"]
+
+    def run(self):
+        """Run the benchmark."""
+        _ = read_parquet(self.path, columns=self.columns)
+
+    def time_run(self):
+        """Benchmark the runtime of read_parquet(self.path, columns=self.columns)"""
+        self.run()
+
+    def peakmem_run(self):
+        """Benchmark the memory usage of read_parquet(self.path, columns=self.columns)"""
+        self.run()
+
+
+class ReadFewColumnsHTTPS:
+    """Benchmark read_parquet("https://", columns=[...])"""
+
+    path = "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet"
+    columns = ["_healpix_29", "ra", "astrometric_primary_flag"]
+
+    def run(self):
+        """Run the benchmark."""
+        _ = read_parquet(self.path, columns=self.columns)
+
+    def time_run(self):
+        """Benchmark the runtime of read_parquet(self.path, columns=self.columns)"""
+        self.run()
+
+    def peakmem_run(self):
+        """Benchmark the memory usage of read_parquet(self.path, columns=self.columns)"""
         self.run()
