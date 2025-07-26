@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.fs
 import pyarrow.parquet as pq
 from upath import UPath
 
@@ -96,10 +97,16 @@ def read_parquet(
         # If `data` is a file-like object or a sequence, pass it directly to pyarrow
         table = pq.read_table(data, columns=columns, **kwargs)
     else:
-        # Otherwise, treat `data` as a file path and use UPath
-        path = UPath(data)
-        filesystem = kwargs.pop("filesystem", path.fs)
-        table = pq.read_table(path.path, columns=columns, filesystem=filesystem, **kwargs)
+        # Try creating pyarrow-native filesystem
+        try:
+            fs, path = pa.fs.FileSystem.from_uri(data)
+        except (TypeError, pa.ArrowInvalid):
+            # Otherwise, treat `data` as an URI for fsspec-supported silesystem and use UPath
+            upath = UPath(data)
+            path = upath.path
+            fs = upath.fs
+        filesystem = kwargs.pop("filesystem", fs)
+        table = pq.read_table(path, columns=columns, filesystem=filesystem, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
