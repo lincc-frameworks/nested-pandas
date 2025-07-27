@@ -206,7 +206,7 @@ class NestedFrame(pd.DataFrame):
         return False
 
     def _is_nested_column(self, col: str):
-        return isinstance(self.dtypes[col], NestedDtype)
+        return col in self.columns and isinstance(self.dtypes[col], NestedDtype)
 
     def _is_known_column(self, components: list[str] | str) -> bool:
         """Determine whether a list of field components describes a known column name"""
