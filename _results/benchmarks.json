@@ -119,6 +119,54 @@
         "version": "5259b45d6e432e2b3eb25050a9581ac63703fbbae1e1fd98cc2fe7b83a9e8b95",
         "warmup_time": -1
     },
+    "benchmarks.ReadFewColumnsHTTPS.peakmem_run": {
+        "code": "class ReadFewColumnsHTTPS:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of read_parquet(self.path, columns=self.columns)\"\"\"\n        self.run()",
+        "name": "benchmarks.ReadFewColumnsHTTPS.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "cc08290bf8bf1e64e5236cb69b8c36f0d4a65bfc300ae4cd9f83c1bded8c9e26"
+    },
+    "benchmarks.ReadFewColumnsHTTPS.time_run": {
+        "code": "class ReadFewColumnsHTTPS:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of read_parquet(self.path, columns=self.columns)\"\"\"\n        self.run()",
+        "min_run_count": 2,
+        "name": "benchmarks.ReadFewColumnsHTTPS.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "6a51e680e1fcdf9edd2259466fb439dc4bc3224f4f42763b04b76ed0f4625b6f",
+        "warmup_time": -1
+    },
+    "benchmarks.ReadFewColumnsS3.peakmem_run": {
+        "code": "class ReadFewColumnsS3:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of read_parquet(self.path, columns=self.columns)\"\"\"\n        self.run()",
+        "name": "benchmarks.ReadFewColumnsS3.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "4ed3b0e7a17720c62bd5ee6b14c5fe6464a75e573723ff35822623d17b51fb0c"
+    },
+    "benchmarks.ReadFewColumnsS3.time_run": {
+        "code": "class ReadFewColumnsS3:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of read_parquet(self.path, columns=self.columns)\"\"\"\n        self.run()",
+        "min_run_count": 2,
+        "name": "benchmarks.ReadFewColumnsS3.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "4a225583d4100d419aecf0777bf473bb7d0453c7b89ffde0e415e10ccd4dd669",
+        "warmup_time": -1
+    },
     "benchmarks.ReassignHalfOfNestedSeries.peakmem_run": {
         "code": "class ReassignHalfOfNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_fields({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
         "name": "benchmarks.ReassignHalfOfNestedSeries.peakmem_run",
