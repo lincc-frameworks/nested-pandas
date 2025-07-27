@@ -202,7 +202,7 @@ class NestedFrame(pd.DataFrame):
         base_name = components[0]
         if base_name in self.nested_columns:
             nested_name = ".".join(components[1:])
-            return nested_name in self.all_columns[base_name]
+            return nested_name in self.dtypes[base_name].fields
         return False
 
     def _is_known_column(self, components: list[str] | str) -> bool:
