@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.fs
 import pyarrow.parquet as pq
 from upath import UPath
 
@@ -12,6 +13,9 @@ from ..series.dtype import NestedDtype
 from ..series.packer import pack_lists
 from ..series.utils import table_to_struct_array
 from .core import NestedFrame
+
+# Use smaller block size for FSSPEC filesystems, it usually helps with parquet reads
+FSSPEC_BLOCK_SIZE = 32 * 1024
 
 
 def read_parquet(
@@ -96,10 +100,19 @@ def read_parquet(
         # If `data` is a file-like object or a sequence, pass it directly to pyarrow
         table = pq.read_table(data, columns=columns, **kwargs)
     else:
-        # Otherwise, treat `data` as a file path and use UPath
-        path = UPath(data)
-        filesystem = kwargs.pop("filesystem", path.fs)
-        table = pq.read_table(path.path, columns=columns, filesystem=filesystem, **kwargs)
+        # Try creating pyarrow-native filesystem
+        try:
+            fs, path = pa.fs.FileSystem.from_uri(data)
+        except (TypeError, pa.ArrowInvalid):
+            # Otherwise, treat `data` as an URI for fsspec-supported silesystem and use UPath
+            upath = UPath(data)
+            # Use smaller block size for better performance
+            if upath.protocol in ("http", "https"):
+                upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
+            path = upath.path
+            fs = upath.fs
+        filesystem = kwargs.pop("filesystem", fs)
+        table = pq.read_table(path, columns=columns, filesystem=filesystem, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
