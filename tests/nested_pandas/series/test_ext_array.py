@@ -709,11 +709,14 @@ def test___getitem___with_integer():
     nf = generate_data(10, 3)
     # repeat index 3 and nest on it
     nf["id"] = [0, 1, 2, 3, 3, 4, 5, 6, 7, 8]
+    #nf["id"] = nf["id"].astype(pd.ArrowDtype(pa.int64()))
+
     nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
     ext_array = nnf["outer"].array
 
     actual = ext_array[3]
     desired = pd.DataFrame(nf.query("id == 3").drop("id", axis=1)).reset_index(drop=True)
+    #import pdb;pdb.set_trace()
 
     assert_frame_equal(actual, desired)
 
