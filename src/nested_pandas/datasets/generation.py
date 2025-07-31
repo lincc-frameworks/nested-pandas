@@ -33,7 +33,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
 
     # Generate base data
     base_data = {"a": randomstate.random(n_base), "b": randomstate.random(n_base) * 2}
-    base_nf = NestedFrame(data=base_data)
+    base_nf = NestedFrame(data=base_data).convert_dtypes(dtype_backend="pyarrow")
 
     # In case of int, create a single nested layer called "nested"
     if isinstance(n_layer, int):
@@ -50,6 +50,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
                 "index": np.arange(layer_size * n_base) % n_base,
             }
             layer_nf = NestedFrame(data=layer_data).set_index("index")
+            layer_nf = layer_nf.convert_dtypes(dtype_backend="pyarrow")
             base_nf = base_nf.add_nested(layer_nf, key)
         return base_nf
     else:
