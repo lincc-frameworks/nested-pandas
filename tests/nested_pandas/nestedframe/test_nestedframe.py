@@ -1480,6 +1480,146 @@ def test_max():
     assert (r9 == pd.Series({"nested3.a": 6, "nested3.b": 9})).all()
 
 
+def test_describe():
+    """Test NestedFrame.describe gives correct results with and without the nested columns"""
+    base_mix = NestedFrame(data={"a": [1, 2, 3], "b": ["2", "4", "6"], "c": ["x", "y", "z"]}, index=[0, 1, 2])
+    base_num = NestedFrame(data={"a": [1, 2, 3], "b": [2, 3, 2], "c": [55, 55, 55]}, index=[0, 1, 2])
+
+    nested_num = pd.DataFrame(
+        data={"d": [10, 11, 20, 21, 3, 31, 32], "y": [1, 2, 3, 4, 5, 6, 7]}, index=[0, 0, 1, 1, 1, 2, 2]
+    )
+    nested_mix = pd.DataFrame(
+        data={"e": ["A", "B", "C", "A", "E", "A", "A", "B"], "f": [5, 4, 7, 5, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 2, 2, 2],
+    )
+
+    # empty NestedFrame
+    nf = NestedFrame()
+    with pytest.raises(ValueError):
+        nf.describe()
+
+    # base columns with mixed type
+    r0 = base_mix.describe()
+    assert isinstance(r0, NestedFrame)
+    assert "a" in r0.columns
+    assert "mean" in r0.index
+    assert r0.loc["mean", "a"] == 2
+
+    r1 = base_mix.describe(include='all')
+    assert isinstance(r1, NestedFrame)
+    assert "c" in r1.columns
+    assert "max" in r1.index
+    assert r1.loc["max", "a"] == 3
+    assert "freq" in r1.index
+    assert r1.loc["freq", "c"] == 1
+
+    r2 = base_mix.describe(include=object)
+    assert isinstance(r2, NestedFrame)
+    assert "c" in r2.columns
+    assert r2.shape[1] == 2
+    assert "freq" in r2.index
+
+    r3 = base_mix.describe(exclude=np.number)
+    assert isinstance(r3, NestedFrame)
+    assert "a" not in r3.columns
+    assert "c" in r3.columns
+    assert "freq" in r3.index
+
+    r4 = base_mix.describe(exclude=object)
+    assert isinstance(r4, NestedFrame)
+    assert "a" in r4.columns
+    assert "c" not in r4.columns
+    assert "min" in r4.index
+    assert r4.loc["min", "a"] == 1
+
+    # base columns with number only
+    r5 = base_num.describe()
+    assert isinstance(r5, NestedFrame)
+    assert "c" in r5.columns
+    assert "count" in r5.index
+    assert r5.loc["50%", "b"] == 2
+
+    with pytest.raises(ValueError):
+        base_num.describe(exclude=np.number)
+
+    # adding number nested columns
+    base_mix = base_mix.add_nested(nested_num, "nested_num")
+    r6 = base_mix.describe()
+    assert isinstance(r6, NestedFrame)
+    assert r6.shape[1] == 3
+    assert "nested_num.d" in r6.columns
+
+    r7 = base_mix.describe(include=object)
+    assert isinstance(r7, NestedFrame)
+    assert r7.shape[1] == 2
+    assert "b" in r7.columns
+
+    r8 = base_mix.describe(include='all')
+    assert isinstance(r8, NestedFrame)
+    assert r8.shape[1] == 5
+    assert "b" in r8.columns
+    assert "nested_num.d" in r8.columns
+
+    r9 = base_mix.describe(exclude=object)
+    assert isinstance(r9, NestedFrame)
+    assert r9.shape[1] == 3
+    assert "b" not in r9.columns
+
+    r10 = base_mix.describe(exclude_nest=True, include='all')
+    assert isinstance(r10, NestedFrame)
+    assert r10.shape[1] == 3
+    assert "a" in r10.columns
+    assert "b" in r10.columns
+
+    # adding mixed type nested columns
+    base_mix = base_mix.add_nested(nested_mix, "nested_mix")
+    r11 = base_mix.describe()
+    assert isinstance(r11, NestedFrame)
+    assert r11.shape[1] == 4
+    assert "nested_num.d" in r11.columns
+    assert "nested_mix.f" in r11.columns
+    assert r11.loc["min", "nested_mix.f"] == 1
+
+    r12 = base_mix.describe(include=object)
+    assert isinstance(r12, NestedFrame)
+    assert r12.shape[1] == 2
+    assert "b" in r12.columns
+    assert r12.loc["unique", "b"] == 3
+
+    r13 = base_mix.describe(include='all')
+    assert isinstance(r13, NestedFrame)
+    assert r13.shape[1] == 7
+    assert "nested_num.y" in r13.columns
+    assert "nested_mix.e" in r13.columns
+
+    r14 = base_mix.describe(exclude=object)
+    assert isinstance(r14, NestedFrame)
+    assert r14.shape[1] == 5
+    assert "b" not in r14.columns
+    assert "nested_mix.e" in r14.columns
+
+    r15 = base_mix.describe(exclude_nest=True)
+    assert isinstance(r15, NestedFrame)
+    assert r15.shape[1] == 1
+    assert "a" in r15.columns
+    assert "b" not in r15.columns
+
+    r16 = base_mix.describe(percentiles=[0.1, 0.5, 0.9])
+    assert "10%" in r16.index 
+    assert "90%" in r16.index
+    assert r16.loc["10%", "a"] == 1.2
+
+    # only nested column
+    base2 = NestedFrame(data={"x": [0, 1, 2]}, index=[0, 1, 2])
+    base2 = base2.add_nested(nested_mix, "nested_mix").add_nested(nested_num, "nested_num")
+    base2 = base2.drop(["x"], axis=1)
+    r17 = base2.describe()
+    assert isinstance(r17, NestedFrame)
+    assert r17.shape[1] == 3
+    assert "nested_num.d" in r17.columns
+    assert "min" in r17.index
+
+
 def test_eval():
     """
     Test basic behavior of NestedFrame.eval, and that it can handle nested references
