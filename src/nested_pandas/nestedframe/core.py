@@ -916,48 +916,47 @@ class NestedFrame(pd.DataFrame):
 
         result = []
         errors = []
-        check = ["Base_coloumns"]   # a list of all possible columns to call describe()
+        check = ["Base_columns"]   # a list of all possible columns to call describe()
         if not exclude_nest:
             check.extend(self.nested_columns)
 
         if not self.nested_columns:
             return NestedFrame(super().describe(percentiles=percentiles, include=include, exclude=exclude))
-        else:
-            for checkable in check:
-                # check the base columns
-                if checkable == "Base_coloumns":
-                    try:
-                        base_col = [col for col in self.columns if col not in self.nested_columns]
-                        base_desc = super().__getitem__(base_col).describe(
-                            percentiles=percentiles,
-                            include=include,
-                            exclude=exclude,
-                        )
-                    except ValueError as err:
-                        # continue if value error caused by no matching type or empty base columns
-                        errors.append(f"Base columns: {err}")
-                        continue
 
-                    result.append(base_desc)
+        for checkable in check:
+            # check the base columns
+            if checkable == "Base_columns":
+                try:
+                    base_col = [col for col in self.columns if col not in self.nested_columns]
+                    base_desc = super().__getitem__(base_col).describe(
+                        percentiles=percentiles,
+                        include=include,
+                        exclude=exclude,
+                    )
+                except ValueError as err:
+                    # continue if value error caused by no matching type or empty base columns
+                    errors.append(f"Base columns: {err}")
+                    continue
 
-                # check the nested columns
-                else:
-                    nested_df = self[checkable].nest.to_flat()
-                    nested_df.columns = [f"{checkable}.{col}" for col in nested_df.columns]
-                    try:
-                        nested_desc = nested_df.describe(
-                            percentiles=percentiles,
-                            include=include,
-                            exclude=exclude,
-                        )
-                    except ValueError as err:
-                        # continue if value error caused by no matching type for nested columns
-                        errors.append(f"Nested column '{checkable}': {err}")
-                        continue
+                result.append(base_desc)
 
-                    result.append(nested_desc)
-            
-        # if no result added, raise combined value error with all the error messages
+            # check the nested columns
+            else:
+                nested_df = self[checkable].nest.to_flat()
+                nested_df.columns = [f"{checkable}.{col}" for col in nested_df.columns]
+                try:
+                    nested_desc = nested_df.describe(
+                        percentiles=percentiles,
+                        include=include,
+                        exclude=exclude,
+                    )
+                except ValueError as err:
+                    # continue if value error caused by no matching type for nested columns
+                    errors.append(f"Nested column '{checkable}': {err}")
+                    continue
+
+                result.append(nested_desc)
+
         if not result:
             raise ValueError(f"All columns in {check} failed.\n" + "\n".join(errors))
         
