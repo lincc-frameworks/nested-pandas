@@ -1571,6 +1571,10 @@ def test_describe():
     assert "a" in r10.columns
     assert "b" in r10.columns
 
+    base_num = base_num.add_nested(nested_num, "nested_num")
+    with pytest.raises(ValueError):
+        base_num.describe(exclude=np.number)
+
     # adding mixed type nested columns
     base_mix = base_mix.add_nested(nested_mix, "nested_mix")
     r11 = base_mix.describe()
@@ -1618,6 +1622,9 @@ def test_describe():
     assert r17.shape[1] == 3
     assert "nested_num.d" in r17.columns
     assert "min" in r17.index
+
+    with pytest.raises(ValueError):
+        base2.describe(include=object)
 
 
 def test_eval():
