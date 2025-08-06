@@ -869,7 +869,7 @@ class NestedFrame(pd.DataFrame):
 
         Nested columns use `pyarrow` data types for efficiency, which are not always
         directly compatible with pandas' type-based filtering.
-        
+
         - pyarrow strings are not viewed as object type.
         - numerical types from pyarrow (i.e., int, double) are still matched by pandas'
           `np.number`, so filtering with `include=[np.number]` will include numeric nested columns.
