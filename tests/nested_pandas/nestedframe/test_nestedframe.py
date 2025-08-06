@@ -1505,7 +1505,7 @@ def test_describe():
     assert "mean" in r0.index
     assert r0.loc["mean", "a"] == 2
 
-    r1 = base_mix.describe(include='all')
+    r1 = base_mix.describe(include="all")
     assert isinstance(r1, NestedFrame)
     assert "c" in r1.columns
     assert "max" in r1.index
@@ -1554,7 +1554,7 @@ def test_describe():
     assert r7.shape[1] == 2
     assert "b" in r7.columns
 
-    r8 = base_mix.describe(include='all')
+    r8 = base_mix.describe(include="all")
     assert isinstance(r8, NestedFrame)
     assert r8.shape[1] == 5
     assert "b" in r8.columns
@@ -1565,7 +1565,7 @@ def test_describe():
     assert r9.shape[1] == 3
     assert "b" not in r9.columns
 
-    r10 = base_mix.describe(exclude_nest=True, include='all')
+    r10 = base_mix.describe(exclude_nest=True, include="all")
     assert isinstance(r10, NestedFrame)
     assert r10.shape[1] == 3
     assert "a" in r10.columns
@@ -1590,7 +1590,7 @@ def test_describe():
     assert "b" in r12.columns
     assert r12.loc["unique", "b"] == 3
 
-    r13 = base_mix.describe(include='all')
+    r13 = base_mix.describe(include="all")
     assert isinstance(r13, NestedFrame)
     assert r13.shape[1] == 7
     assert "nested_num.y" in r13.columns
@@ -1609,7 +1609,7 @@ def test_describe():
     assert "b" not in r15.columns
 
     r16 = base_mix.describe(percentiles=[0.1, 0.5, 0.9])
-    assert "10%" in r16.index 
+    assert "10%" in r16.index
     assert "90%" in r16.index
     assert r16.loc["10%", "a"] == 1.2
 

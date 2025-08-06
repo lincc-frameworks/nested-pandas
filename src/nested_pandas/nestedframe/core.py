@@ -863,14 +863,14 @@ class NestedFrame(pd.DataFrame):
 
         Generate descriptive statistics, including nested columns with prefix to indicate the source.
 
-        Descriptive statistics include those that summarize the central tendency, 
+        Descriptive statistics include those that summarize the central tendency,
         dispersion and shape of a dataset's distribution, excluding NaN values,
         similar to the behavior of `pandas.DataFrame.describe()`.
 
         Nested columns use `pyarrow` data types for efficiency, which are not always
-        directly compatible with pandas' type-based filtering. 
+        directly compatible with pandas' type-based filtering.
         - pyarrow strings are not viewed as object type.
-        - numerical types from pyarrow (i.e., int, double) are still matched by pandas' 
+        - numerical types from pyarrow (i.e., int, double) are still matched by pandas'
           `np.number`, so filtering with `include=[np.number]` will include numeric nested columns.
 
         Parameters
@@ -916,7 +916,7 @@ class NestedFrame(pd.DataFrame):
 
         result = []
         errors = []
-        check = ["Base_columns"]   # a list of all possible columns to call describe()
+        check = ["Base_columns"]  # a list of all possible columns to call describe()
         if not exclude_nest:
             check.extend(self.nested_columns)
 
@@ -928,10 +928,14 @@ class NestedFrame(pd.DataFrame):
             if checkable == "Base_columns":
                 try:
                     base_col = [col for col in self.columns if col not in self.nested_columns]
-                    base_desc = super().__getitem__(base_col).describe(
-                        percentiles=percentiles,
-                        include=include,
-                        exclude=exclude,
+                    base_desc = (
+                        super()
+                        .__getitem__(base_col)
+                        .describe(
+                            percentiles=percentiles,
+                            include=include,
+                            exclude=exclude,
+                        )
                     )
                 except ValueError as err:
                     # continue if value error caused by no matching type or empty base columns
@@ -959,7 +963,7 @@ class NestedFrame(pd.DataFrame):
 
         if not result:
             raise ValueError(f"All columns in {check} failed.\n" + "\n".join(errors))
-        
+
         return NestedFrame(pd.concat(result, axis=1))
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
