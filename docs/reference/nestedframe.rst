@@ -41,6 +41,7 @@ Extended Pandas.DataFrame Interface
     NestedFrame.drop
     NestedFrame.min
     NestedFrame.max
+    NestedFrame.describe
 
 I/O
 ~~~~~~~~~

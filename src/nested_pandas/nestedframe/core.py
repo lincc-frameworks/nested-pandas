@@ -858,6 +858,115 @@ class NestedFrame(pd.DataFrame):
         else:
             return pd.concat([base_max] + nested_maxs)
 
+    def describe(self, exclude_nest: bool = False, percentiles=None, include=None, exclude=None):
+        """
+
+        Generate descriptive statistics, including nested columns with prefix to indicate the source.
+
+        Descriptive statistics include those that summarize the central tendency,
+        dispersion and shape of a dataset's distribution, excluding NaN values,
+        similar to the behavior of `pandas.DataFrame.describe()`.
+
+        Nested columns use `pyarrow` data types for efficiency, which are not always
+        directly compatible with pandas' type-based filtering.
+
+        - pyarrow strings are not viewed as object type.
+        - numerical types from pyarrow (i.e., int, double) are still matched by pandas'
+          `np.number`, so filtering with `include=[np.number]` will include numeric nested columns.
+
+        Parameters
+        ----------
+        exclude_nest : bool, default False
+            If set to True, will exclude the nested structure and
+            only computes the statistics over the base columns
+        percentiles : list-like of numbers, optional
+            The percentiles to include in the output. All should fall between 0 and 1.
+            Defaults to [.25, .5, .75].
+        include : 'all', list-like of dtypes or None (default), optional
+            A white list of data types to include in the output.
+        exclude : list-like of dtypes or None (default), optional
+            A black list of data types to exclude from the output.
+
+        Returns
+        -------
+        NestedFrame
+            A NestedFrame with the summary statistics.
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+
+        >>> nf_desc = nf.describe()
+        >>> nf_desc
+                      a         b   nested.t  nested.flux
+        count  5.000000  5.000000       25.0         25.0
+        mean   0.317310  0.623897  10.095623    45.252724
+        std    0.274904  0.351880   6.434858    30.152261
+        min    0.000114  0.184677   0.547752     1.828828
+        25%    0.146756  0.372520    3.96203    21.162812
+        50%    0.302333  0.691121  10.663306    44.789353
+        75%    0.417022  0.793535  16.014891    69.975836
+        max    0.720324  1.077633  19.365232    98.886109
+
+        See Also
+        --------
+        :meth:`pandas.DataFrame.describe`
+
+        """
+
+        result = []
+        errors = []
+        check = ["_base"]  # a list of all possible columns to call describe()
+        if not exclude_nest:
+            check.extend(self.nested_columns)
+
+        if not self.nested_columns:
+            return NestedFrame(super().describe(percentiles=percentiles, include=include, exclude=exclude))
+
+        for checkable in check:
+            # check the base columns
+            if checkable == "_base":
+                try:
+                    base_col = [col for col in self.columns if col not in self.nested_columns]
+                    base_desc = (
+                        super()
+                        .__getitem__(base_col)
+                        .describe(
+                            percentiles=percentiles,
+                            include=include,
+                            exclude=exclude,
+                        )
+                    )
+                except ValueError as err:
+                    # continue if value error caused by no matching type or empty base columns
+                    errors.append(f"Base columns: {err}")
+                    continue
+
+                result.append(base_desc)
+
+            # check the nested columns
+            else:
+                nested_df = self[checkable].nest.to_flat()
+                nested_df.columns = [f"{checkable}.{col}" for col in nested_df.columns]
+                try:
+                    nested_desc = nested_df.describe(
+                        percentiles=percentiles,
+                        include=include,
+                        exclude=exclude,
+                    )
+                except ValueError as err:
+                    # continue if value error caused by no matching type for nested columns
+                    errors.append(f"Nested column '{checkable}': {err}")
+                    continue
+
+                result.append(nested_desc)
+
+        if not result:
+            raise ValueError(f"All columns in {check} failed.\n" + "\n".join(errors))
+
+        return NestedFrame(pd.concat(result, axis=1))
+
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """Evaluate a string describing operations on NestedFrame columns.
 
