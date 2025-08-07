@@ -917,7 +917,7 @@ class NestedFrame(pd.DataFrame):
 
         result = []
         errors = []
-        check = ["Base_columns"]  # a list of all possible columns to call describe()
+        check = ["_base"]  # a list of all possible columns to call describe()
         if not exclude_nest:
             check.extend(self.nested_columns)
 
@@ -926,7 +926,7 @@ class NestedFrame(pd.DataFrame):
 
         for checkable in check:
             # check the base columns
-            if checkable == "Base_columns":
+            if checkable == "_base":
                 try:
                     base_col = [col for col in self.columns if col not in self.nested_columns]
                     base_desc = (
