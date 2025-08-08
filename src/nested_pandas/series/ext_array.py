@@ -762,7 +762,11 @@ class NestedExtensionArray(ExtensionArray):
                 copy=copy,
                 name=name,
             )
-        return pd.DataFrame(series, copy=False)
+
+        res_df = pd.DataFrame(series, copy=False)
+        #non_nested = [col for col in res_df.columns if not isinstance(res_df[col].dtype, NestedDtype)]
+        #res_df[non_nested] = res_df[non_nested].convert_dtypes(dtype_backend="pyarrow")
+        return res_df
 
     @property
     def _list_storage(self):
