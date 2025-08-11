@@ -965,6 +965,13 @@ class NestedFrame(pd.DataFrame):
         if not result:
             raise ValueError(f"All columns in {check} failed.\n" + "\n".join(errors))
 
+        if include is None and exclude is None:
+            # try only get the numeric columns and drop the others
+            filtered_result = [r.select_dtypes(include=[np.number]) for r in result]
+            filtered_result = [r for r in filtered_result if not r.empty]
+            if filtered_result:
+                result = filtered_result
+
         return NestedFrame(pd.concat(result, axis=1))
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
