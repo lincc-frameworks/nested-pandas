@@ -967,6 +967,119 @@ class NestedFrame(pd.DataFrame):
 
         return NestedFrame(pd.concat(result, axis=1))
 
+    def explode(self, column: IndexLabel, ignore_index: bool = False):
+        """
+
+        Transform each element of a list-like base column to a row, replicating index value.
+        Or unnest a specified nested column.
+
+        Parameters
+        ----------
+        column : IndexLabel
+            Base column(s) or nested column to explode. 
+            For multiple base columns, specify a non-empty list with each element be string or tuple.
+            For all specified base column, their list-like data on same row of the frame must have matching length.
+            Only one nested column can be exploded at a time. Nested column name should be string.
+        ignore_index : bool, default False
+            If True, the resulting index will be labeled 0, 1, …, n - 1.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with the specified column(s) exploded.
+
+        Raises
+        ------
+        ValueError
+
+            - If specified columns to explode has more than one nested column
+            - If specified columns to explode contain a mix of nested and base columns
+
+        See Also
+        --------
+        :meth:`pandas.DataFrame.explode`
+
+        Examples
+        --------
+        # TODO: unfinished
+
+        """
+
+        # Normalize a single-element list to string
+        if isinstance(column, list) and len(column) == 1:
+            column = column[0]
+
+        # handle single nested column explode
+        if isinstance(column, str) and column in self.nested_columns:
+            nested_df = self[column].nest.to_flat()
+            nested_df.columns = [f"{column}.{col}" for col in nested_df.columns]
+            # maybe should manually drop?
+            # base_col = [col for col in self.columns if col != nested_column]
+            # base_df = self[base_col]
+            base_df = self.drop(columns=[column])
+            res = base_df.join(nested_df)
+
+            if ignore_index:
+                res = res.reset_index(drop=True)
+
+            return NestedFrame(res)
+
+        # Errors for list-like containing nested columns
+        if isinstance(column, list):
+            nested_in_list = [col for col in column if col in self.nested_columns]
+            # list contains multiple nested columns
+            if len(nested_in_list) > 1:
+                raise ValueError(
+                    f"Exploding multiple nested columns at once is not supported.\n"
+                    f"Nested columns: {nested_in_list}"
+                )
+
+            # list contains mixing nested & base columns
+            if len(nested_in_list) == 1 and len(column) > 1:
+                raise ValueError(
+                    f"Exploding nested column together with base columns is not supported.\n"
+                    f"Nested column: {nested_in_list[0]}"
+                )
+
+        # Otherwise just use pandas' explode
+        return NestedFrame(super().explode(column=column, ignore_index=ignore_index))
+
+        # failed first try
+        # error for ambiguous calls
+        # if (column is None and nested_column is None) or (column is not None and nested_column is not None):
+        #     raise ValueError("Provide exactly one of `column` or `nested_column`.")
+
+        # Ensure columns are not nested columns
+        # if isinstance(column, list):
+        #     columns_to_check = column
+        # else:
+        #     columns_to_check = [column]
+
+        # if any(col in self.nested_columns for col in columns_to_check):
+        #     # raise ValueError("`column` must only contain base (non-nested) columns.")
+        #     return NestedFrame(super().explode(column=column, ignore_index=ignore_index))
+
+        # # check the nested_col has matching column in the nested frame
+        # if column not in self.nested_columns:
+        #     raise KeyError(f"Column '{column}' not found in nested columns")
+
+        # # Base columns (include nested columns that is not specified)
+        # base_col = [col for col in self.columns if col != nested_column]
+        # base_df = self[base_col]
+
+        # # Flatten the nested column
+        # nested_df = self[nested_column].nest.to_flat()
+        # nested_df.columns = [f"{nested_column}.{col}" for col in nested_df.columns]
+
+        # # join the two frame
+        # result = base_df.join(nested_df)
+
+        # # dropping old index
+        # if ignore_index:
+        #     result = result.reset_index(drop=True)
+
+        # return NestedFrame(result)
+
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """Evaluate a string describing operations on NestedFrame columns.
 

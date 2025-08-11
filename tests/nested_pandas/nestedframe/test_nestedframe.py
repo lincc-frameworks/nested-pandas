@@ -1403,7 +1403,7 @@ def test_min():
 
 
 def test_max():
-    """Test max function return correct result with an without the nested columns"""
+    """Test max function return correct result with and without the nested columns"""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "c": ["x", "y", "z"]}, index=[0, 1, 2])
     nested = pd.DataFrame(
         data={"d": [10, 11, 20, 21, 3, 31, 32], "y": [1, 10, 20, 30, 40, 50, 60]}, index=[0, 0, 1, 1, 1, 2, 2]
@@ -1626,6 +1626,9 @@ def test_describe():
     with pytest.raises(ValueError):
         base2.describe(include=object)
 
+
+def test_explode():
+    """Test NestedFrame.explode gives correct result for flattening specified nested columns"""
 
 def test_eval():
     """
