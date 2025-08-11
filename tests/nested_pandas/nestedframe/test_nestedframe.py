@@ -1484,7 +1484,9 @@ def test_describe():
     """Test NestedFrame.describe gives correct results with and without the nested columns"""
     base_mix = NestedFrame(data={"a": [1, 2, 3], "b": ["2", "4", "6"], "c": ["x", "y", "z"]}, index=[0, 1, 2])
     base_num = NestedFrame(data={"a": [1, 2, 3], "b": [2, 3, 2], "c": [55, 55, 55]}, index=[0, 1, 2])
-    base_obj = NestedFrame(data={"a": ["a", "b", "c"], "b": ["2", "4", "6"], "c": ["x", "y", "z"]}, index=[0, 1, 2])
+    base_obj = NestedFrame(
+        data={"a": ["a", "b", "c"], "b": ["2", "4", "6"], "c": ["x", "y", "z"]}, index=[0, 1, 2]
+    )
 
     nested_num = pd.DataFrame(
         data={"d": [10, 11, 20, 21, 3, 31, 32], "y": [1, 2, 3, 4, 5, 6, 7]}, index=[0, 0, 1, 1, 1, 2, 2]
@@ -1633,7 +1635,8 @@ def test_describe():
     assert isinstance(r18, NestedFrame)
     assert r18.shape[1] == 3
     assert "nested_mix.f" in r18.columns
-    assert "top" not in r18.index 
+    assert "top" not in r18.index
+
 
 def test_eval():
     """
