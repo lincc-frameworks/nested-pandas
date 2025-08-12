@@ -967,10 +967,10 @@ class NestedFrame(pd.DataFrame):
 
         if include is None and exclude is None:
             # try only get the numeric columns and drop the others
-            filtered_result = [r.select_dtypes(include=[np.number]) for r in result]
-            filtered_result = [r for r in filtered_result if not r.empty]
-            if filtered_result:
-                result = filtered_result
+            numeric_dtypes = [r.select_dtypes(include=[np.number]) for r in result]
+            non_empty_numeric_dtypes = [r for r in numeric_dtypes if not r.empty]
+            if non_empty_numeric_dtypes:
+                result = non_empty_numeric_dtypes
 
         return NestedFrame(pd.concat(result, axis=1))
 
