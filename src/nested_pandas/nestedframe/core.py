@@ -965,6 +965,13 @@ class NestedFrame(pd.DataFrame):
         if not result:
             raise ValueError(f"All columns in {check} failed.\n" + "\n".join(errors))
 
+        if include is None and exclude is None:
+            # try only get the numeric columns and drop the others
+            numeric_dtypes = [r.select_dtypes(include=[np.number]) for r in result]
+            non_empty_numeric_dtypes = [r for r in numeric_dtypes if not r.empty]
+            if non_empty_numeric_dtypes:
+                result = non_empty_numeric_dtypes
+
         return NestedFrame(pd.concat(result, axis=1))
 
     def explode(self, column: IndexLabel, ignore_index: bool = False):
