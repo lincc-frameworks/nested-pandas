@@ -571,11 +571,13 @@ class NestSeriesAccessor(Mapping):
 
         Examples
         --------
+
         >>> from nested_pandas import NestedFrame
         >>> from nested_pandas.datasets import generate_data
         >>> nf = generate_data(5, 2, seed=1).rename(columns={"nested": "inner"})
 
         Assign a repeated ID to double-nest on
+
         >>> nf["id"] = [0, 0, 0, 1, 1]
         >>> nf
                   a         b                                              inner  id
@@ -584,6 +586,7 @@ class NestSeriesAccessor(Mapping):
         2  0.000114  0.691121  [{t: 4.089045, flux: 31.342418, band: 'g'}; …]...   0
         3  0.302333  0.793535  [{t: 17.562349, flux: 69.232262, band: 'r'}; …...   1
         4  0.146756  1.077633  [{t: 0.547752, flux: 87.638915, band: 'g'}; …]...   1
+
         >>> nf.inner.nest.to_flat()
                    t       flux band
         0    8.38389  80.074457    r
@@ -598,16 +601,19 @@ class NestSeriesAccessor(Mapping):
         4    3.96203   87.81425    r
 
         Create a dataframe with double-nested column "outer"
+
         >>> dnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
 
         Flat "inner" nested column.
         This is like "concatenation" of the initial nf frame on duplicated `id` rows
+
         >>> concated_nf_series = dnf["outer"].nest.to_flatten_inner("inner")
         >>> concated_nf_series
         id
         0    [{a: 0.417022, b: 0.184677, t: 8.38389, flux: ...
         1    [{a: 0.302333, b: 0.793535, t: 17.562349, flux...
         Name: outer, dtype: nested<a: [double], b: [double], t: [double], flux: [double], band: [string]>
+
         >>> concated_nf_series.nest.to_flat()  # doctest: +NORMALIZE_WHITESPACE
                    a         b          t       flux band
         id
