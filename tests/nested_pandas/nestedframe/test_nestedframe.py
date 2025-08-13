@@ -1640,6 +1640,53 @@ def test_describe():
 
 def test_explode():
     """Test NestedFrame.explode gives correct result for flattening specified nested columns"""
+    base = NestedFrame(
+        data={
+            "a": [[1, 2, 3], 4, [5, 6]],
+            "b": ["2", "4", "6"],
+            "c": [["x1", "x2", "x3"], "y", ["z1", "z2"]],
+        },
+        index=[0, 1, 2],
+    )
+
+    nested_num = pd.DataFrame(
+        data={"d": [10, 11, 20, 21, 30, 31, 32], "e": [1, 2, 3, 4, 5, 6, 7]}, index=[0, 0, 1, 1, 1, 2, 2]
+    )
+    nested_mix = pd.DataFrame(
+        data={"f": ["A", "B", "C", "D", "E", "A", "A", "B"], "g": [5, 4, 7, 5, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 2, 2, 2],
+    )
+    base = base.add_nested(nested_num, "nested_num").add_nested(nested_mix, "nested_min")
+
+    # explode on base columns
+    r1 = base.explode(column=["a"])
+    assert r1.shape[0] == 6
+    assert r1.shape[1] == 5
+    expected1 = pd.Series([1, 2, 3, 4, 5, 6], index=[0, 0, 0, 1, 2, 2])
+    assert (r1["a"] == expected1).all()
+
+    r2 = base.explode(column="c", ignore_index=True)
+    expected2 = pd.Series(["x1", "x2", "x3", "y", "z1", "z2"])
+    assert (r2["c"] == expected2).all()
+
+    r3 = base.explode(column=["a", "c"])
+    assert (r3["a"] == expected1).all()
+    expected3 = pd.Series(["x1", "x2", "x3", "y", "z1", "z2"], index=[0, 0, 0, 1, 2, 2])
+    assert (r3["c"] == expected3).all()
+
+    # explode on nested column error
+    with pytest.raises(ValueError):
+        base.explode(column=["nested_num", "nested_mix"])
+
+    with pytest.raises(ValueError):
+        base.explode(column=["nested_num", "a"])
+
+    # explode on nested column
+    r4 = base.explode(column="nested_num")
+    assert r4.shape[1] == 6
+    expected4 = pd.Series([1, 2, 3, 4, 5, 6, 7], index=[0, 0, 1, 1, 1, 2, 2])
+    assert (r4["nested_num.e"] == expected4).all()
+
 
 def test_eval():
     """

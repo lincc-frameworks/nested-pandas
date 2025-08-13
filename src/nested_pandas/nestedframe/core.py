@@ -985,7 +985,8 @@ class NestedFrame(pd.DataFrame):
         column : IndexLabel
             Base column(s) or nested column to explode.
             For multiple base columns, specify a non-empty list with each element be string or tuple.
-            For all specified base column, their list-like data on same row of the frame must have matching length.
+            For all specified base column, their list-like data on same row of the frame
+            qmust have matching length.
             Only one nested column can be exploded at a time. Nested column name should be string.
         ignore_index : bool, default False
             If True, the resulting index will be labeled 0, 1, …, n - 1.
