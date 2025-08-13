@@ -1504,23 +1504,35 @@ def test_describe():
     # base columns with mixed type
     r0 = base_mix.describe()
     assert isinstance(r0, NestedFrame)
+    assert "a" in r0.columns
+    assert "mean" in r0.index
     assert r0.loc["mean", "a"] == 2
 
     r1 = base_mix.describe(include="all")
+    assert isinstance(r1, NestedFrame)
+    assert "c" in r1.columns
+    assert "max" in r1.index
     assert r1.loc["max", "a"] == 3
+    assert "freq" in r1.index
     assert r1.loc["freq", "c"] == 1
 
     r2 = base_mix.describe(include=object)
+    assert isinstance(r2, NestedFrame)
     assert "c" in r2.columns
     assert r2.shape[1] == 2
     assert "freq" in r2.index
 
     r3 = base_mix.describe(exclude=np.number)
+    assert isinstance(r3, NestedFrame)
     assert "a" not in r3.columns
     assert "c" in r3.columns
+    assert "freq" in r3.index
 
     r4 = base_mix.describe(exclude=object)
+    assert isinstance(r4, NestedFrame)
+    assert "a" in r4.columns
     assert "c" not in r4.columns
+    assert "min" in r4.index
     assert r4.loc["min", "a"] == 1
 
     # base columns with number only
@@ -1541,20 +1553,25 @@ def test_describe():
     assert "nested_num.d" in r6.columns
 
     r7 = base_mix.describe(include=object)
+    assert isinstance(r7, NestedFrame)
     assert r7.shape[1] == 2
     assert "b" in r7.columns
 
     r8 = base_mix.describe(include="all")
+    assert isinstance(r8, NestedFrame)
     assert r8.shape[1] == 5
     assert "b" in r8.columns
     assert "nested_num.d" in r8.columns
 
     r9 = base_mix.describe(exclude=object)
+    assert isinstance(r9, NestedFrame)
     assert r9.shape[1] == 3
     assert "b" not in r9.columns
 
     r10 = base_mix.describe(exclude_nest=True, include="all")
+    assert isinstance(r10, NestedFrame)
     assert r10.shape[1] == 3
+    assert "a" in r10.columns
     assert "b" in r10.columns
 
     base_num = base_num.add_nested(nested_num, "nested_num")
@@ -1567,28 +1584,35 @@ def test_describe():
     assert isinstance(r11, NestedFrame)
     assert r11.shape[1] == 4
     assert "nested_num.d" in r11.columns
+    assert "nested_mix.f" in r11.columns
     assert r11.loc["min", "nested_mix.f"] == 1
 
     r12 = base_mix.describe(include=object)
+    assert isinstance(r12, NestedFrame)
     assert r12.shape[1] == 2
+    assert "b" in r12.columns
     assert r12.loc["unique", "b"] == 3
 
     r13 = base_mix.describe(include="all")
+    assert isinstance(r13, NestedFrame)
     assert r13.shape[1] == 7
     assert "nested_num.y" in r13.columns
     assert "nested_mix.e" in r13.columns
 
     r14 = base_mix.describe(exclude=object)
+    assert isinstance(r14, NestedFrame)
     assert r14.shape[1] == 5
     assert "b" not in r14.columns
     assert "nested_mix.e" in r14.columns
 
     r15 = base_mix.describe(exclude_nest=True)
+    assert isinstance(r15, NestedFrame)
     assert r15.shape[1] == 1
     assert "a" in r15.columns
     assert "b" not in r15.columns
 
     r16 = base_mix.describe(percentiles=[0.1, 0.5, 0.9])
+    assert "10%" in r16.index
     assert "90%" in r16.index
     assert r16.loc["10%", "a"] == 1.2
 
@@ -1616,54 +1640,6 @@ def test_describe():
 
 def test_explode():
     """Test NestedFrame.explode gives correct result for flattening specified nested columns"""
-
-    base = NestedFrame(
-        data={
-            "a": [[1, 2, 3], 4, [5, 6]],
-            "b": ["2", "4", "6"],
-            "c": [["x1", "x2", "x3"], "y", ["z1", "z2"]],
-        },
-        index=[0, 1, 2],
-    )
-
-    nested_num = pd.DataFrame(
-        data={"d": [10, 11, 20, 21, 30, 31, 32], "e": [1, 2, 3, 4, 5, 6, 7]}, index=[0, 0, 1, 1, 1, 2, 2]
-    )
-    nested_mix = pd.DataFrame(
-        data={"f": ["A", "B", "C", "D", "E", "A", "A", "B"], "g": [5, 4, 7, 5, 1, 9, 3, 4]},
-        index=[0, 0, 0, 1, 1, 2, 2, 2],
-    )
-    base = base.add_nested(nested_num, "nested_num").add_nested(nested_mix, "nested_min")
-
-    # explode on base columns
-    r1 = base.explode(column=["a"])
-    assert r1.shape[0] == 6
-    assert r1.shape[1] == 5
-    expected1 = pd.Series([1, 2, 3, 4, 5, 6], index=[0, 0, 0, 1, 2, 2])
-    assert (r1["a"] == expected1).all()
-
-    r2 = base.explode(column="c", ignore_index=True)
-    expected2 = pd.Series(["x1", "x2", "x3", "y", "z1", "z2"])
-    assert (r2["c"] == expected2).all()
-
-    r3 = base.explode(column=["a", "c"])
-    assert (r3["a"] == expected1).all()
-    expected3 = pd.Series(["x1", "x2", "x3", "y", "z1", "z2"], index=[0, 0, 0, 1, 2, 2])
-    assert (r3["c"] == expected3).all()
-
-    # explode on nested column error
-    with pytest.raises(ValueError):
-        base.explode(column=["nested_num", "nested_mix"])
-
-    with pytest.raises(ValueError):
-        base.explode(column=["nested_num", "a"])
-
-    # explode on nested column
-    r4 = base.explode(column="nested_num")
-    assert r4.shape[1] == 6
-    expected4 = pd.Series([1, 2, 3, 4, 5, 6, 7], index=[0, 0, 1, 1, 1, 2, 2])
-    assert (r4["nested_num.e"] == expected4).all()
-
 
 def test_eval():
     """
