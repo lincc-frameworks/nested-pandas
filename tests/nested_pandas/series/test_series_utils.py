@@ -4,6 +4,7 @@ import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.utils import (
     nested_types_mapper,
+    struct_field_names,
     transpose_list_struct_array,
     transpose_list_struct_scalar,
     transpose_list_struct_type,
@@ -123,6 +124,21 @@ def test_transpose_list_struct_scalar():
     desired = pa.scalar({"a": [1, 2], "b": ["x", "y"]})
     actual = transpose_list_struct_scalar(input_scalar)
     assert actual == desired
+
+
+def test_struct_field_names():
+    """Test struct_field_names and guard against requirement bumps."""
+
+    # Otherwise, validate the shim works as expected (for pyarrow<=17 requirement)
+    t = pa.struct(
+        [
+            pa.field("a", pa.list_(pa.int64())),
+            pa.field("b", pa.list_(pa.float64())),
+            pa.field("c", pa.list_(pa.string())),
+        ]
+    )
+    # Ensure we get names in the correct order
+    assert struct_field_names(t) == ["a", "b", "c"]
 
 
 @pytest.mark.parametrize(
