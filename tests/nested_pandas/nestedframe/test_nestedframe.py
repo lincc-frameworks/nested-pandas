@@ -1685,12 +1685,13 @@ def test_explode():
     r4 = base.explode(column="nested_num")
     assert r4.shape[1] == 6
     expected4 = pd.Series([1, 2, 3, 4, 5, 6, 7], index=[0, 0, 1, 1, 1, 2, 2])
-    assert (r4["nested_num.e"] == expected4).all()
+    assert (r4["e"] == expected4).all()
 
     r5 = base.explode(column="nested_mix", ignore_index=True)
     assert r5.shape[1] == 6
     expected5 = pd.Series(["A", "B", "C", "D", "E", "A", "A", "B"])
-    assert (r5["nested_mix.f"] == expected5).all()
+    assert (r5["f"] == expected5).all()
+
 
 def test_eval():
     """

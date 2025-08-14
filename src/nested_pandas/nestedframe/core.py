@@ -978,7 +978,8 @@ class NestedFrame(pd.DataFrame):
         """
 
         Transform each element of a list-like base column to a row, replicating index value.
-        Or unnest a specified nested column.
+        Or unnest a specified nested column with the other columns being replicated as part
+        of the unnest. The exploded columns will be added to the right of the rest of the frame.
 
         Parameters
         ----------
@@ -1000,8 +1001,8 @@ class NestedFrame(pd.DataFrame):
         ------
         ValueError
 
-            - If specified columns to explode has more than one nested column
-            - If specified columns to explode contain a mix of nested and base columns
+        - If specified columns to explode has more than one nested column
+        - If specified columns to explode contain a mix of nested and base columns
 
         See Also
         --------
@@ -1014,16 +1015,16 @@ class NestedFrame(pd.DataFrame):
 
         >>> nf_explode = nf.explode(column="nested")
         >>> nf_explode
-                  a         b   nested.t  nested.flux nested.band
-        0  0.417022  0.604665   3.725204    67.046751           g
-        0  0.417022  0.604665  10.776335    14.038694           g
-        0  0.417022  0.604665   4.089045    96.826158           g
-        1  0.720324  0.293512   6.911215     41.73048           r
-        1  0.720324  0.293512    8.38389    19.810149           r
-        1  0.720324  0.293512  17.562349    31.342418           g
-        2  0.000114  0.184677   7.935349    55.868983           r
-        2  0.000114  0.184677   13.70439    80.074457           r
-        2  0.000114  0.184677   0.547752    69.232262           g
+                  a         b          t       flux band
+        0  0.417022  0.604665   3.725204  67.046751    g
+        0  0.417022  0.604665  10.776335  14.038694    g
+        0  0.417022  0.604665   4.089045  96.826158    g
+        1  0.720324  0.293512   6.911215   41.73048    r
+        1  0.720324  0.293512    8.38389  19.810149    r
+        1  0.720324  0.293512  17.562349  31.342418    g
+        2  0.000114  0.184677   7.935349  55.868983    r
+        2  0.000114  0.184677   13.70439  80.074457    r
+        2  0.000114  0.184677   0.547752  69.232262    g
 
         """
 
@@ -1043,14 +1044,13 @@ class NestedFrame(pd.DataFrame):
                     f"Nested column: {nested_in_list[0]}"
                 )
 
-        # Normalize a single-element list to string
+        # normalize a single-element list to string
         if isinstance(column, list) and len(column) == 1:
             column = column[0]
 
         # handle single nested column explode
         if isinstance(column, str) and column in self.nested_columns:
             selected_nested_df = self[column].nest.to_flat()
-            selected_nested_df.columns = [f"{column}.{col}" for col in selected_nested_df.columns]
             other_col = [col for col in self.columns if col != column]
             other_col_df = self[other_col]
             result = other_col_df.join(selected_nested_df)
@@ -1060,7 +1060,7 @@ class NestedFrame(pd.DataFrame):
 
             return NestedFrame(result)
 
-        # Otherwise just use pandas' explode
+        # otherwise just use pandas' explode
         return NestedFrame(super().explode(column=column, ignore_index=ignore_index))
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
