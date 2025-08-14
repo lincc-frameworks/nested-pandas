@@ -1656,7 +1656,7 @@ def test_explode():
         data={"f": ["A", "B", "C", "D", "E", "A", "A", "B"], "g": [5, 4, 7, 5, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 2, 2, 2],
     )
-    base = base.add_nested(nested_num, "nested_num").add_nested(nested_mix, "nested_min")
+    base = base.add_nested(nested_num, "nested_num").add_nested(nested_mix, "nested_mix")
 
     # explode on base columns
     r1 = base.explode(column=["a"])
@@ -1687,6 +1687,10 @@ def test_explode():
     expected4 = pd.Series([1, 2, 3, 4, 5, 6, 7], index=[0, 0, 1, 1, 1, 2, 2])
     assert (r4["nested_num.e"] == expected4).all()
 
+    r5 = base.explode(column="nested_mix", ignore_index=True)
+    assert r5.shape[1] == 6
+    expected5 = pd.Series(["A", "B", "C", "D", "E", "A", "A", "B"])
+    assert (r5["nested_mix.f"] == expected5).all()
 
 def test_eval():
     """
