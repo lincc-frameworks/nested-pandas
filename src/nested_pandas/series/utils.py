@@ -17,7 +17,6 @@ def struct_field_names(struct_type: pa.StructType) -> list[str]:
     Note: Once we bump our pyarrow requirement to ">=18", this helper can be
     replaced with direct usage of ``struct_type.names`` throughout the codebase.
     """
-    # PyArrow 17 removed/doesn't expose ``.names`` on StructType in some builds; iterate instead.
     return [f.name for f in struct_type]
 
 

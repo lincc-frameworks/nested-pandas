@@ -126,14 +126,8 @@ def test_transpose_list_struct_scalar():
     assert actual == desired
 
 
-def test_struct_field_names(test_utils):
-    """Test struct_field_names and guard against requirement bumps.
-
-    If the project's declared minimum required version of a dependency is bumped
-    beyond the threshold we accept, this test will fail and remind maintainers to
-    remove the compatibility shim and use the newer API directly everywhere.
-    """
-    test_utils.fail_if_min_required_exceeds("nested-pandas", "pyarrow", 17)
+def test_struct_field_names():
+    """Test struct_field_names and guard against requirement bumps."""
 
     # Otherwise, validate the shim works as expected (for pyarrow<=17 requirement)
     t = pa.struct(

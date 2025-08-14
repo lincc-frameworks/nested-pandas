@@ -21,7 +21,7 @@ dependencies = [
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
     "pandas>=2.2.3,<2.4",
-    "pyarrow>=16",
+    "pyarrow>=16",  # remove struct_field_names when upgraded to 18+
     "universal_pathlib>=0.2",
 ]
 
