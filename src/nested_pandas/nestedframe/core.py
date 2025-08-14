@@ -1000,8 +1000,8 @@ class NestedFrame(pd.DataFrame):
         Raises
         ------
         ValueError
-            * If specified columns to explode has more than one nested column.
-            * If specified columns to explode contain a mix of nested and base columns.
+            If specified columns to explode has more than one nested column,
+            or contain a mix of nested and base columns.
 
         See Also
         --------
