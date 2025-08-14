@@ -59,6 +59,7 @@ from nested_pandas.series.utils import (
     chunk_lengths,
     is_pa_type_a_list,
     rechunk,
+    struct_field_names,
     transpose_struct_list_type,
 )
 
@@ -186,7 +187,7 @@ def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) 
     types = {}
     columns = df.columns
     if pa_type is not None:
-        names = pa_type.names
+        names = struct_field_names(pa_type)
         columns = names + list(set(columns) - set(names))
     for column in columns:
         series = df[column]
@@ -913,7 +914,7 @@ class NestedExtensionArray(ExtensionArray):
     @property
     def field_names(self) -> list[str]:
         """Names of the nested columns"""
-        return [field for field in self._pyarrow_dtype.names]
+        return struct_field_names(self._pyarrow_dtype)
 
     @property
     def list_lengths(self) -> np.ndarray:

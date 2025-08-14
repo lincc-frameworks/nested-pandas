@@ -11,6 +11,16 @@ if TYPE_CHECKING:
     from nested_pandas.series.dtype import NestedDtype
 
 
+def struct_field_names(struct_type: pa.StructType) -> list[str]:
+    """Return field names for a pyarrow.StructType in a pyarrow<18-compatible way.
+
+    Note: Once we bump our pyarrow requirement to ">=18", this helper can be
+    replaced with direct usage of ``struct_type.names`` throughout the codebase.
+    """
+    # PyArrow 17 removed/doesn't expose ``.names`` on StructType in some builds; iterate instead.
+    return [f.name for f in struct_type]
+
+
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     """Check if the given pyarrow type is a list type.
 
@@ -149,7 +159,7 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
     struct_flat_array = pa.StructArray.from_arrays(
         # Select values within the offsets
         [field.values[field.offsets[0].as_py() : field.offsets[-1].as_py()] for field in array.flatten()],
-        names=array.type.names,
+        names=struct_field_names(array.type),
     )
     return pa.ListArray.from_arrays(
         offsets=offsets,
@@ -196,7 +206,7 @@ def transpose_list_struct_scalar(scalar: pa.ListScalar) -> pa.StructScalar:
     """
     struct_type = transpose_list_struct_type(scalar.type)
     struct_scalar = pa.scalar(
-        {field: scalar.values.field(field) for field in struct_type.names},
+        {field.name: scalar.values.field(field.name) for field in struct_type},
         type=struct_type,
     )
     return cast(pa.StructScalar, struct_scalar)
@@ -265,7 +275,7 @@ def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
 
     return pa.StructArray.from_arrays(
         arrays=fields,
-        names=array.type.value_type.names,
+        names=struct_field_names(array.type.value_type),
         mask=mask,
     )
 
