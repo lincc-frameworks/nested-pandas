@@ -226,6 +226,11 @@ class NestedFrame(pd.DataFrame):
         return super().__getitem__(item)
 
     def _getitem_str(self, item):
+
+        #if item in self.nested_columns:
+        #    # If the item is a nested column, return a flat dataframe
+        #    return super().__getitem__(item).nest.to_flat()
+
         # Preempt the nested check if the item is a base column, with or without
         # dots and backticks.
         if item in self.columns:

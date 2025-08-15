@@ -13,6 +13,7 @@ from pandas.api.extensions import register_series_accessor
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack_flat, pack_sorted_df_into_struct
 from nested_pandas.series.utils import nested_types_mapper
+from nested_pandas.nestedframe.core import NestedFrame
 
 __all__ = ["NestSeriesAccessor"]
 
@@ -479,6 +480,19 @@ class NestSeriesAccessor(Mapping):
         )
 
     def __getitem__(self, key: str | list[str]) -> pd.Series:
+
+        #import pdb;pdb.set_trace()
+        if isinstance(key, pd.Series) and pd.api.types.is_bool_dtype(key.dtype):
+            # Boolean masking
+            flat_df = self.to_flat()
+            if not key.index.equals(flat_df.index):
+                raise ValueError("Boolean mask must have the same index as the series")
+            # Apply the mask to the series
+            masked_df = flat_df[key]
+
+            nested_idx = NestedFrame(index=self._series.index)
+            return nested_idx.add_nested(masked_df, name=self._series.name)
+
         if isinstance(key, list):
             new_array = self._series.array.view_fields(key)
             return pd.Series(new_array, index=self._series.index, name=self._series.name)
