@@ -736,6 +736,35 @@ def test___getitem___multiple_fields():
     )
 
 
+def test___getitem___series_masking():
+    """Test that series masking works through the accessor."""
+    nf = generate_data(5, 5, seed=1)
+    nf["nested.flag"] = True  # Add an additional boolean column
+
+    # Test a simple mask
+    result = nf["nested"].nest[nf["nested.t"] < 5.0]
+    new_nf = nf.copy()
+    new_nf["nested"] = result
+
+    expected = nf["nested"].nest.to_flat().query("t < 5.0")
+
+    assert_frame_equal(new_nf["nested"].nest.to_flat(), expected)
+
+    # Test a two column mask
+    result = nf["nested"].nest[(nf["nested.t"] < 5.0) & (nf["nested.flag"])]
+    new_nf = nf.copy()
+    new_nf["nested"] = result
+
+    expected = nf["nested"].nest.to_flat().query("t < 5.0 and flag == True")
+
+    assert_frame_equal(new_nf["nested"].nest.to_flat(), expected)
+
+    # Test for misaligned index ValueError
+    with pytest.raises(ValueError):
+        mask = nf["nested.t"] < 5.0
+        _ = nf["nested"].nest[mask[0:23]]
+
+
 def test___setitem__():
     """Test that the .nest["field"] = ... works for a single field."""
     struct_array = pa.StructArray.from_arrays(
