@@ -892,6 +892,12 @@ class NestedFrame(pd.DataFrame):
         NestedFrame
             A NestedFrame with the summary statistics.
 
+        Raises
+        ------
+        ValueError
+            If no statistics can be generated from the columns.
+            A combined error message will be given.
+
         Examples
         --------
         >>> from nested_pandas.datasets.generation import generate_data
