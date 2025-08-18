@@ -6,8 +6,8 @@ import pytest
 from nested_pandas import NestedDtype, NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.series.ext_array import NestedExtensionArray
-from nested_pandas.series.packer import pack_flat, pack_seq
 from nested_pandas.series.nestedseries import NestedSeries
+from nested_pandas.series.packer import pack_flat, pack_seq
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
 
