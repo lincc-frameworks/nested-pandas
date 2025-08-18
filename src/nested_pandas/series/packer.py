@@ -61,7 +61,9 @@ def pack(
     return pack_seq(obj, name=name, index=index, dtype=dtype)
 
 
-def pack_flat(df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] = None) -> NestedSeries:
+def pack_flat(
+    df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] = None
+) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -125,7 +127,7 @@ def pack_seq(
     NestedSeries
         Output series.
     """
-    if isinstance(sequence, pd.Series): # generalized check for pandas series
+    if isinstance(sequence, pd.Series):  # generalized check for pandas series
         if index is None:
             index = sequence.index
         if name is None:
@@ -136,7 +138,9 @@ def pack_seq(
     return series
 
 
-def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> NestedSeries:
+def pack_sorted_df_into_struct(
+    df: pd.DataFrame, name: str | None = None
+) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
 
     Input dataframe must be sorted and all the columns must have pyarrow dtypes.
@@ -164,7 +168,9 @@ def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> Nes
     return pack_lists(packed_df, name=name, validate=False)
 
 
-def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = True) -> NestedSeries:
+def pack_lists(
+    df: pd.DataFrame, name: str | None = None, *, validate: bool = True
+) -> NestedSeries:
     """Make a series of arrow structures from a dataframe with nested arrays.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -207,7 +213,9 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
 
     # If all chunk arrays have the same chunk lengths, we can build a chunked struct array with no
     # data copying.
-    chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
+    chunk_lengths = pa.array(
+        [[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()]
+    )
     if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
         chunks = []
         num_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
@@ -265,7 +273,9 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def view_sorted_series_as_list_array(
-    series: NestedSeries, offset: np.ndarray | None = None, unique_index: np.ndarray | None = None
+    series: NestedSeries,
+    offset: np.ndarray | None = None,
+    unique_index: np.ndarray | None = None,
 ) -> NestedSeries:
     """Make a nested array representation of a "flat" series.
 

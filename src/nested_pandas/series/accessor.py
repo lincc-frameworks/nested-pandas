@@ -39,7 +39,9 @@ class NestSeriesAccessor(Mapping):
     def _check_series(series):
         dtype = series.dtype
         if not isinstance(dtype, NestedDtype):
-            raise AttributeError(f"Can only use .nest accessor with a Series of NestedDtype, got {dtype}")
+            raise AttributeError(
+                f"Can only use .nest accessor with a Series of NestedDtype, got {dtype}"
+            )
 
     def to_lists(self, fields: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns
@@ -72,7 +74,9 @@ class NestSeriesAccessor(Mapping):
         if len(fields) == 0:
             raise ValueError("Cannot convert a struct with no fields to lists")
 
-        list_df = self._series.array.pa_table.select(fields).to_pandas(types_mapper=nested_types_mapper)
+        list_df = self._series.array.pa_table.select(fields).to_pandas(
+            types_mapper=nested_types_mapper
+        )
         list_df.index = self._series.index
 
         return list_df
@@ -127,7 +131,9 @@ class NestSeriesAccessor(Mapping):
         flat_series = {}
         for field, chunks in flat_chunks.items():
             dtype = self._series.dtype.field_dtype(field)
-            chunked_array = pa.chunked_array(chunks, type=self._series.dtype.fields[field])
+            chunked_array = pa.chunked_array(
+                chunks, type=self._series.dtype.fields[field]
+            )
             flat_series[field] = pd.Series(
                 chunked_array,
                 index=index,
@@ -218,7 +224,9 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.set_flat_field(field, value)
-        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(
+            new_array, copy=False, index=self._series.index, name=self._series.name
+        )
 
     def with_list_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from list-array of values and return a new series
@@ -254,7 +262,9 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.set_list_field(field, value)
-        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(
+            new_array, copy=False, index=self._series.index, name=self._series.name
+        )
 
     def with_filled_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field by repeating values and return a new series
@@ -293,7 +303,9 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.fill_field_lists(field, value)
-        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(
+            new_array, copy=False, index=self._series.index, name=self._series.name
+        )
 
     def without_field(self, field: str | list[str]) -> NestedSeries:
         """Remove the field(s) from the series and return a new series
@@ -329,7 +341,9 @@ class NestSeriesAccessor(Mapping):
 
         new_array = self._series.array.copy()
         new_array.pop_fields(field)
-        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(
+            new_array, copy=False, index=self._series.index, name=self._series.name
+        )
 
     def query_flat(self, query: str) -> NestedSeries:
         """Query the flat arrays with a boolean expression
@@ -365,7 +379,9 @@ class NestSeriesAccessor(Mapping):
 
         if len(flat) == 0:
             return NestedSeries(
-                [], dtype=self._series.dtype, index=pd.Index([], dtype=flat.index.dtype, name=flat.index.name)
+                [],
+                dtype=self._series.dtype,
+                index=pd.Index([], dtype=flat.index.dtype, name=flat.index.name),
             )
         return pack_sorted_df_into_struct(flat)
 
@@ -388,7 +404,9 @@ class NestSeriesAccessor(Mapping):
         >>> nf["nested"].nest.get_flat_index()
         Index([0, 0, 1, 1, 2, 2, 3, 3, 4, 4], dtype='int64')
         """
-        flat_index = np.repeat(self._series.index, np.diff(self._series.array.list_offsets))
+        flat_index = np.repeat(
+            self._series.index, np.diff(self._series.array.list_offsets)
+        )
         # pd.Index supports np.repeat, so flat_index is the same type as self._series.index
         flat_index = cast(pd.Index, flat_index)
         return flat_index
@@ -433,7 +451,9 @@ class NestSeriesAccessor(Mapping):
             flat_array = list_array.flatten()
             flat_chunks.append(flat_array)
 
-        flat_chunked_array = pa.chunked_array(flat_chunks, type=self._series.dtype.fields[field])
+        flat_chunked_array = pa.chunked_array(
+            flat_chunks, type=self._series.dtype.fields[field]
+        )
 
         if isinstance(self._series.dtype.field_dtype(field), NestedDtype):
             # If the field is a nested dtype, return as NestedSeries
@@ -494,9 +514,13 @@ class NestSeriesAccessor(Mapping):
         if isinstance(key, pd.Series) and pd.api.types.is_bool_dtype(key.dtype):
             flat_df = self.to_flat()  # Use the flat representation
             if not key.index.equals(flat_df.index):
-                raise ValueError("Boolean mask must have the same index as the flattened nested dataframe.")
+                raise ValueError(
+                    "Boolean mask must have the same index as the flattened nested dataframe."
+                )
             # Apply the mask to the series, return a new NestedFrame
-            return NestedFrame(index=self._series.index).add_nested(flat_df[key], name=self._series.name)
+            return NestedFrame(index=self._series.index).add_nested(
+                flat_df[key], name=self._series.name
+            )
 
         # A list of fields may return a pd.Series or a NestedSeries depending
         # on the number of fields requested and their dtypes
@@ -504,8 +528,12 @@ class NestSeriesAccessor(Mapping):
             new_array = self._series.array.view_fields(key)
             if len(key) == 1 and not isinstance(new_array.dtype, NestedDtype):
                 # If only one field is requested, return it as a pd.Series
-                return pd.Series(new_array, index=self._series.index, name=self._series.name)
-            return NestedSeries(new_array, index=self._series.index, name=self._series.name)
+                return pd.Series(
+                    new_array, index=self._series.index, name=self._series.name
+                )
+            return NestedSeries(
+                new_array, index=self._series.index, name=self._series.name
+            )
 
         # If the key is a single string, return the flat series for that field
         return self.get_flat_series(key)
@@ -533,7 +561,9 @@ class NestSeriesAccessor(Mapping):
             self._series.array.set_flat_field(key, value, keep_dtype=True)
             return
 
-        if isinstance(value, pd.Series) and not self.get_flat_index().equals(value.index):
+        if isinstance(value, pd.Series) and not self.get_flat_index().equals(
+            value.index
+        ):
             raise ValueError("Cannot set field with a Series of different index")
 
         pa_array = pa.array(value, from_pandas=True)
@@ -675,8 +705,12 @@ class NestSeriesAccessor(Mapping):
         )
 
         # Use "inner" ordinal index for the join and drop it
-        field_flatten = series_flatten[field].nest.to_flat().reset_index("outer", drop=True)
-        inner_flatten = series_flatten.drop(field, axis=1).join(field_flatten, on="inner")
+        field_flatten = (
+            series_flatten[field].nest.to_flat().reset_index("outer", drop=True)
+        )
+        inner_flatten = series_flatten.drop(field, axis=1).join(
+            field_flatten, on="inner"
+        )
         inner_flatten = inner_flatten.reset_index("inner", drop=True)
 
         # Assign back the "outer" ordinal index and pack on it
