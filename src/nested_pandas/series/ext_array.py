@@ -557,7 +557,7 @@ class NestedExtensionArray(ExtensionArray):
                 def format_series(series):
                     if is_float_dtype(series.dtype):
                         # Format with the default Pandas formatter and strip white-spaces it adds
-                        return NestedSeries(format_array(series.to_numpy(), None)).str.strip()
+                        return pd.Series(format_array(series.to_numpy(), None)).str.strip()
                     # Convert to string, add extra quotes for strings
                     return series.apply(repr)
 
@@ -757,7 +757,7 @@ class NestedExtensionArray(ExtensionArray):
             # make it None if we'd like to use pandas "ordinary" dtypes.
             if not pyarrow_dtypes and not isinstance(dtype, NestedDtype):
                 dtype = None
-            series[name] = NestedSeries(
+            series[name] = pd.Series(
                 list_scalar.values,
                 # mypy doesn't understand that dtype is ExtensionDtype | None
                 dtype=dtype,  # type: ignore[arg-type]
