@@ -14,6 +14,7 @@ from nested_pandas.nestedframe.core import NestedFrame
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack_flat, pack_sorted_df_into_struct
 from nested_pandas.series.utils import nested_types_mapper
+from nested_pandas.series.nestedseries import NestedSeries
 
 __all__ = ["NestSeriesAccessor"]
 
@@ -127,7 +128,7 @@ class NestSeriesAccessor(Mapping):
         for field, chunks in flat_chunks.items():
             dtype = self._series.dtype.field_dtype(field)
             chunked_array = pa.chunked_array(chunks, type=self._series.dtype.fields[field])
-            flat_series[field] = pd.Series(
+            flat_series[field] = NestedSeries(
                 chunked_array,
                 index=index,
                 name=field,
@@ -152,7 +153,7 @@ class NestSeriesAccessor(Mapping):
         """Names of the nested columns"""
         return self._series.array.field_names
 
-    def with_field(self, field: str, value: ArrayLike) -> pd.Series:
+    def with_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
 
         It is an alias for `.nest.with_flat_field`.
@@ -167,7 +168,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The new series with the field set.
 
         Examples
@@ -185,7 +186,7 @@ class NestSeriesAccessor(Mapping):
         """
         return self.with_flat_field(field, value)
 
-    def with_flat_field(self, field: str, value: ArrayLike) -> pd.Series:
+    def with_flat_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
 
         Parameters
@@ -198,7 +199,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The new series with the field set.
 
         Examples
@@ -217,9 +218,9 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.set_flat_field(field, value)
-        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
-    def with_list_field(self, field: str, value: ArrayLike) -> pd.Series:
+    def with_list_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from list-array of values and return a new series
 
         Parameters
@@ -232,7 +233,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The new series with the field set.
 
         Examples
@@ -253,9 +254,9 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.set_list_field(field, value)
-        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
-    def with_filled_field(self, field: str, value: ArrayLike) -> pd.Series:
+    def with_filled_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field by repeating values and return a new series
 
         The input value array must have as many elements as the Series,
@@ -273,7 +274,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The new series with the field set.
 
         Examples
@@ -292,9 +293,9 @@ class NestSeriesAccessor(Mapping):
         """
         new_array = self._series.array.copy()
         new_array.fill_field_lists(field, value)
-        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
-    def without_field(self, field: str | list[str]) -> pd.Series:
+    def without_field(self, field: str | list[str]) -> NestedSeries:
         """Remove the field(s) from the series and return a new series
 
         Note, that at least one field must be left in the series.
@@ -306,7 +307,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The new series without the field(s).
 
         Examples
@@ -328,9 +329,9 @@ class NestSeriesAccessor(Mapping):
 
         new_array = self._series.array.copy()
         new_array.pop_fields(field)
-        return pd.Series(new_array, copy=False, index=self._series.index, name=self._series.name)
+        return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
-    def query_flat(self, query: str) -> pd.Series:
+    def query_flat(self, query: str) -> NestedSeries:
         """Query the flat arrays with a boolean expression
 
         Currently, it will remove empty rows from the output series.
@@ -343,7 +344,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The filtered series.
 
         Examples
@@ -363,7 +364,7 @@ class NestSeriesAccessor(Mapping):
         flat = self.to_flat().query(query)
 
         if len(flat) == 0:
-            return pd.Series(
+            return NestedSeries(
                 [], dtype=self._series.dtype, index=pd.Index([], dtype=flat.index.dtype, name=flat.index.name)
             )
         return pack_sorted_df_into_struct(flat)
@@ -392,8 +393,8 @@ class NestSeriesAccessor(Mapping):
         flat_index = cast(pd.Index, flat_index)
         return flat_index
 
-    def get_flat_series(self, field: str) -> pd.Series:
-        """Get the flat-array field as a Series
+    def get_flat_series(self, field: str) -> NestedSeries:
+        """Get the flat-array field as a NestedSeries
 
         Parameters
         ----------
@@ -402,7 +403,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The flat-array field.
 
         Examples
@@ -434,7 +435,7 @@ class NestSeriesAccessor(Mapping):
 
         flat_chunked_array = pa.chunked_array(flat_chunks, type=self._series.dtype.fields[field])
 
-        return pd.Series(
+        return NestedSeries(
             flat_chunked_array,
             dtype=self._series.dtype.field_dtype(field),
             index=self.get_flat_index(),
@@ -442,7 +443,7 @@ class NestSeriesAccessor(Mapping):
             copy=False,
         )
 
-    def get_list_series(self, field: str) -> pd.Series:
+    def get_list_series(self, field: str) -> NestedSeries:
         """Get the list-array field as a Series
 
         Parameters
@@ -452,7 +453,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             The list-array field.
 
         Examples
@@ -471,7 +472,7 @@ class NestSeriesAccessor(Mapping):
         """
 
         list_chunked_array = self._series.array.pa_table[field]
-        return pd.Series(
+        return NestedSeries(
             list_chunked_array,
             dtype=pd.ArrowDtype(list_chunked_array.type),
             index=self._series.index,
@@ -479,9 +480,9 @@ class NestSeriesAccessor(Mapping):
             copy=False,
         )
 
-    def __getitem__(self, key: str | list[str]) -> pd.Series:
+    def __getitem__(self, key: str | list[str]) -> NestedSeries:
         # Allow boolean masking given a Series of booleans
-        if isinstance(key, pd.Series) and pd.api.types.is_bool_dtype(key.dtype):
+        if isinstance(key, NestedSeries) and pd.api.types.is_bool_dtype(key.dtype):
             flat_df = self.to_flat()  # Use the flat representation
             if not key.index.equals(flat_df.index):
                 raise ValueError("Boolean mask must have the same index as the flattened nested dataframe.")
@@ -491,7 +492,7 @@ class NestSeriesAccessor(Mapping):
         # If the key is a single string, return the flat series for that field
         if isinstance(key, list):
             new_array = self._series.array.view_fields(key)
-            return pd.Series(new_array, index=self._series.index, name=self._series.name)
+            return NestedSeries(new_array, index=self._series.index, name=self._series.name)
 
         return self.get_flat_series(key)
 
@@ -518,7 +519,7 @@ class NestSeriesAccessor(Mapping):
             self._series.array.set_flat_field(key, value, keep_dtype=True)
             return
 
-        if isinstance(value, pd.Series) and not self.get_flat_index().equals(value.index):
+        if isinstance(value, NestedSeries) and not self.get_flat_index().equals(value.index):
             raise ValueError("Cannot set field with a Series of different index")
 
         pa_array = pa.array(value, from_pandas=True)
@@ -551,8 +552,8 @@ class NestSeriesAccessor(Mapping):
         """
         raise NotImplementedError("Cannot delete fields from nested series")
 
-    def to_flatten_inner(self, field: str) -> pd.Series:
-        """Explode the nested inner field and return as a pd.Series
+    def to_flatten_inner(self, field: str) -> NestedSeries:
+        """Explode the nested inner field and return as a NestedSeries
 
         Works for the case of multiple nesting only, the field must represent
         a nested series.
@@ -576,7 +577,7 @@ class NestSeriesAccessor(Mapping):
 
         Returns
         -------
-        pd.Series
+        NestedSeries
             This series object, but with the inner field exploded.
 
         Examples
@@ -669,7 +670,7 @@ class NestSeriesAccessor(Mapping):
 
         # Some indexes may be missed if the original series had some NULLs
         if len(result) < len(series):
-            nulls = pd.Series(None, index=series.index, dtype=result.dtype)
+            nulls = NestedSeries(None, index=series.index, dtype=result.dtype)
             nulls[result.index] = result
             result = nulls
 

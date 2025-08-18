@@ -55,6 +55,7 @@ from pandas.io.formats.format import format_array  # type: ignore[attr-defined]
 
 from nested_pandas.series._storage import ListStructStorage, StructListStorage, TableStorage  # noqa
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     chunk_lengths,
     is_pa_type_a_list,
@@ -556,7 +557,7 @@ class NestedExtensionArray(ExtensionArray):
                 def format_series(series):
                     if is_float_dtype(series.dtype):
                         # Format with the default Pandas formatter and strip white-spaces it adds
-                        return pd.Series(format_array(series.to_numpy(), None)).str.strip()
+                        return NestedSeries(format_array(series.to_numpy(), None)).str.strip()
                     # Convert to string, add extra quotes for strings
                     return series.apply(repr)
 
@@ -756,7 +757,7 @@ class NestedExtensionArray(ExtensionArray):
             # make it None if we'd like to use pandas "ordinary" dtypes.
             if not pyarrow_dtypes and not isinstance(dtype, NestedDtype):
                 dtype = None
-            series[name] = pd.Series(
+            series[name] = NestedSeries(
                 list_scalar.values,
                 # mypy doesn't understand that dtype is ExtensionDtype | None
                 dtype=dtype,  # type: ignore[arg-type]
@@ -999,7 +1000,7 @@ class NestedExtensionArray(ExtensionArray):
         """Set the field from flat-array of values
 
         Note that if this updates the dtype, it would not affect the dtype of
-        the pd.Series back-ended by this extension array.
+        the NestedSeries back-ended by this extension array.
 
         Parameters
         ----------
@@ -1051,7 +1052,7 @@ class NestedExtensionArray(ExtensionArray):
         """Set the field from list-array
 
         Note that if this updates the dtype, it would not affect the dtype of
-        the pd.Series back-ended by this extension array.
+        the NestedSeries back-ended by this extension array.
 
         Parameters
         ----------

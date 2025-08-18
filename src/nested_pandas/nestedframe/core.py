@@ -24,6 +24,7 @@ from nested_pandas.nestedframe.expr import (
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 from nested_pandas.series.utils import is_pa_type_a_list
+from nested_pandas.series.nestedseries import NestedSeries
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -226,6 +227,8 @@ class NestedFrame(pd.DataFrame):
         return super().__getitem__(item)
 
     def _getitem_str(self, item):
+        if item in self.nested_columns:
+            return NestedSeries(super().__getitem__(item))
         # Preempt the nested check if the item is a base column, with or without
         # dots and backticks.
         if item in self.columns:
