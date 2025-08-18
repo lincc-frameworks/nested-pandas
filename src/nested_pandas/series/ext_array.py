@@ -57,7 +57,9 @@ from nested_pandas.series._storage import (
     ListStructStorage,
     StructListStorage,
     TableStorage,
-)  # noqa
+)
+
+# noqa
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
@@ -173,9 +175,7 @@ def to_pyarrow_dtype(
     return None
 
 
-def replace_with_mask(
-    array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array
-) -> pa.ChunkedArray:
+def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array) -> pa.ChunkedArray:
     """Replace the elements of the array with the value where the mask is True"""
     # TODO: performance optimization
     # https://github.com/lincc-frameworks/nested-pandas/issues/52
@@ -191,9 +191,7 @@ def replace_with_mask(
     return pa.compute.if_else(mask, broadcast_value, array)
 
 
-def convert_df_to_pa_scalar(
-    df: pd.DataFrame, *, pa_type: pa.StructType | None
-) -> pa.Scalar:
+def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) -> pa.Scalar:
     d = {}
     types = {}
     columns = df.columns
@@ -242,9 +240,7 @@ class NestedExtensionArray(ExtensionArray):
     _storage: ListStructStorage
     _dtype: NestedDtype
 
-    def __init__(
-        self, values: pa.Array | pa.ChunkedArray, *, validate: bool = True
-    ) -> None:
+    def __init__(self, values: pa.Array | pa.ChunkedArray, *, validate: bool = True) -> None:
         if isinstance(values, pa.Array):
             values = pa.chunked_array([values])
 
@@ -254,9 +250,7 @@ class NestedExtensionArray(ExtensionArray):
         # If struct-list
         else:
             struct_list_storage = StructListStorage(values, validate=validate)
-            list_struct_storage = ListStructStorage.from_struct_list_storage(
-                struct_list_storage
-            )
+            list_struct_storage = ListStructStorage.from_struct_list_storage(struct_list_storage)
 
         self._storage = list_struct_storage
         self._dtype = NestedDtype(values.type)
@@ -307,9 +301,7 @@ class NestedExtensionArray(ExtensionArray):
 
         if isinstance(item, np.ndarray):
             if len(item) == 0:
-                return type(self)(
-                    pa.chunked_array([], type=self.dtype.pyarrow_dtype), validate=False
-                )
+                return type(self)(pa.chunked_array([], type=self.dtype.pyarrow_dtype), validate=False)
             pa_item = pa.array(item)
             if item.dtype.kind in "iu":
                 return type(self)(self.struct_array.take(pa_item), validate=False)
@@ -428,9 +420,7 @@ class NestedExtensionArray(ExtensionArray):
         result = np.empty(shape=len(self), dtype=object)
 
         for i, value in enumerate(self._struct_storage):
-            result[i] = self._convert_struct_scalar_to_df(
-                value, copy=copy, na_value=na_value
-            )
+            result[i] = self._convert_struct_scalar_to_df(value, copy=copy, na_value=na_value)
 
         return result
 
@@ -578,23 +568,16 @@ class NestedExtensionArray(ExtensionArray):
                 def format_series(series):
                     if is_float_dtype(series.dtype):
                         # Format with the default Pandas formatter and strip white-spaces it adds
-                        return pd.Series(
-                            format_array(series.to_numpy(), None)
-                        ).str.strip()
+                        return pd.Series(format_array(series.to_numpy(), None)).str.strip()
                     # Convert to string, add extra quotes for strings
                     return series.apply(repr)
 
                 def format_row(row):
-                    return ", ".join(
-                        f"{name}: {value}"
-                        for name, value in zip(row.index, row, strict=True)
-                    )
+                    return ", ".join(f"{name}: {value}" for name, value in zip(row.index, row, strict=True))
 
                 # Format series to strings
                 df = df.apply(format_series, axis=0)
-                str_rows = "; ".join(
-                    f"{{{format_row(row)}}}" for _index, row in df.iterrows()
-                )
+                str_rows = "; ".join(f"{{{format_row(row)}}}" for _index, row in df.iterrows())
                 if len(value) <= NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW:
                     return f"[{str_rows}]"
                 return f"[{str_rows}; …] ({len(value)} rows)"
@@ -604,11 +587,7 @@ class NestedExtensionArray(ExtensionArray):
 
     @classmethod
     def _concat_same_type(cls, to_concat: Sequence[Self]) -> Self:  # type: ignore[name-defined] # noqa: F821
-        chunks = [
-            chunk
-            for ext_array in to_concat
-            for chunk in ext_array.list_array.iterchunks()
-        ]
+        chunks = [chunk for ext_array in to_concat for chunk in ext_array.list_array.iterchunks()]
         pa_array = pa.chunked_array(chunks)
         return cls(pa_array)
 
@@ -704,9 +683,7 @@ class NestedExtensionArray(ExtensionArray):
         return pa.scalar(value, type=pa_type, from_pandas=True)
 
     @classmethod
-    def _box_pa_array(
-        cls, value, *, pa_type: pa.DataType | None
-    ) -> pa.Array | pa.ChunkedArray:
+    def _box_pa_array(cls, value, *, pa_type: pa.DataType | None) -> pa.Array | pa.ChunkedArray:
         """Convert a value to a PyArrow array with the specified type."""
         if isinstance(value, cls):
             pa_array = value.struct_array
@@ -719,11 +696,7 @@ class NestedExtensionArray(ExtensionArray):
                 scalars: list[pa.Scalar] = []
                 for v in value:
                     # If pa_type is not specified, then cast to the first non-null type
-                    if (
-                        pa_type is None
-                        and len(scalars) > 0
-                        and not isinstance(scalars[-1], pa.NullScalar)
-                    ):
+                    if pa_type is None and len(scalars) > 0 and not isinstance(scalars[-1], pa.NullScalar):
                         pa_type = scalars[-1].type
                     scalars.append(cls._box_pa_scalar(v, pa_type=pa_type))
                 # We recast the scalars to the specified type.
@@ -1028,9 +1001,7 @@ class NestedExtensionArray(ExtensionArray):
         if len(set(fields)) != len(fields):
             raise ValueError("Duplicate field names are not allowed")
         if not set(fields).issubset(self.field_names):
-            raise ValueError(
-                f"Some fields are not found, given: {fields}, available: {self.field_names}"
-            )
+            raise ValueError(f"Some fields are not found, given: {fields}, available: {self.field_names}")
 
         chunks = []
         for chunk in self.struct_array.iterchunks():
@@ -1038,17 +1009,13 @@ class NestedExtensionArray(ExtensionArray):
             struct_dict = {}
             for field in fields:
                 struct_dict[field] = chunk.field(field)
-            struct_array = pa.StructArray.from_arrays(
-                struct_dict.values(), struct_dict.keys()
-            )
+            struct_array = pa.StructArray.from_arrays(struct_dict.values(), struct_dict.keys())
             chunks.append(struct_array)
         pa_array = pa.chunked_array(chunks)
 
         return type(self)(pa_array, validate=False)
 
-    def set_flat_field(
-        self, field: str, value: ArrayLike, *, keep_dtype: bool = False
-    ) -> None:
+    def set_flat_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from flat-array of values
 
         Note that if this updates the dtype, it would not affect the dtype of
@@ -1092,21 +1059,15 @@ class NestedExtensionArray(ExtensionArray):
             ) from e
 
         if len(pa_array) != self.flat_length:
-            raise ValueError(
-                "The input must be a struct_scalar or have the same length as the flat arrays"
-            )
+            raise ValueError("The input must be a struct_scalar or have the same length as the flat arrays")
 
         if isinstance(pa_array, pa.ChunkedArray):
             pa_array = pa_array.combine_chunks()
-        field_list_array = pa.ListArray.from_arrays(
-            values=pa_array, offsets=self.list_offsets
-        )
+        field_list_array = pa.ListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
 
         return self.set_list_field(field, field_list_array, keep_dtype=keep_dtype)
 
-    def set_list_field(
-        self, field: str, value: ArrayLike, *, keep_dtype: bool = False
-    ) -> None:
+    def set_list_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from list-array
 
         Note that if this updates the dtype, it would not affect the dtype of
@@ -1149,9 +1110,7 @@ class NestedExtensionArray(ExtensionArray):
             raise ValueError(f"Expected a list array, got {pa_array.type}")
 
         if len(pa_array) != len(self):
-            raise ValueError(
-                "The length of the list-array must be equal to the length of the series"
-            )
+            raise ValueError("The length of the list-array must be equal to the length of the series")
 
         pa_array = rechunk(pa_array, chunk_lengths(self.pa_table.column(0)))
 
@@ -1162,9 +1121,7 @@ class NestedExtensionArray(ExtensionArray):
             pa_table = self.pa_table.append_column(field, pa_array)
         self.pa_table = pa_table
 
-    def fill_field_lists(
-        self, field: str, value: ArrayLike, *, keep_dtype: bool = False
-    ) -> None:
+    def fill_field_lists(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Fill list-arrays with values from the input array
 
         The input value array must have as many elements as the array, e.g.
@@ -1192,9 +1149,7 @@ class NestedExtensionArray(ExtensionArray):
                 " .nest.with_flat_field() for scalars"
             )
         if np.size(value) != len(self):
-            raise ValueError(
-                "The length of the input array must be equal to the length of the series"
-            )
+            raise ValueError("The length of the input array must be equal to the length of the series")
         if isinstance(value, pa.ChunkedArray | pa.Array):
             value = pa.compute.take(value, self.get_list_index())
         else:
@@ -1214,9 +1169,7 @@ class NestedExtensionArray(ExtensionArray):
         fields = frozenset(fields)
 
         if not fields.issubset(self.field_names):
-            raise ValueError(
-                f"Some fields are not found, given: {fields}, available: {self.field_names}"
-            )
+            raise ValueError(f"Some fields are not found, given: {fields}, available: {self.field_names}")
 
         if len(self.field_names) - len(fields) == 0:
             raise ValueError("Cannot delete all fields")
@@ -1228,8 +1181,6 @@ class NestedExtensionArray(ExtensionArray):
             for pa_field in chunk.type:
                 if pa_field.name not in fields:
                     struct_dict[pa_field.name] = chunk.field(pa_field.name)
-            struct_array = pa.StructArray.from_arrays(
-                struct_dict.values(), struct_dict.keys()
-            )
+            struct_array = pa.StructArray.from_arrays(struct_dict.values(), struct_dict.keys())
             chunks.append(struct_array)
         self.struct_array = pa.chunked_array(chunks)

@@ -138,9 +138,7 @@ def pack_seq(
     return series
 
 
-def pack_sorted_df_into_struct(
-    df: pd.DataFrame, name: str | None = None
-) -> NestedSeries:
+def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
 
     Input dataframe must be sorted and all the columns must have pyarrow dtypes.
@@ -168,9 +166,7 @@ def pack_sorted_df_into_struct(
     return pack_lists(packed_df, name=name, validate=False)
 
 
-def pack_lists(
-    df: pd.DataFrame, name: str | None = None, *, validate: bool = True
-) -> NestedSeries:
+def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = True) -> NestedSeries:
     """Make a series of arrow structures from a dataframe with nested arrays.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -213,9 +209,7 @@ def pack_lists(
 
     # If all chunk arrays have the same chunk lengths, we can build a chunked struct array with no
     # data copying.
-    chunk_lengths = pa.array(
-        [[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()]
-    )
+    chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
     if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
         chunks = []
         num_chunks = next(iter(pa_chunked_arrays.values())).num_chunks

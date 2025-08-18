@@ -22,9 +22,9 @@ from nested_pandas.nestedframe.expr import (
     _subexprs_by_nest,
 )
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 from nested_pandas.series.utils import is_pa_type_a_list
-from nested_pandas.series.nestedseries import NestedSeries
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)

@@ -37,9 +37,7 @@ def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
         True if the given type is a list type, False otherwise.
     """
     return (
-        pa.types.is_list(pa_type)
-        or pa.types.is_large_list(pa_type)
-        or pa.types.is_fixed_size_list(pa_type)
+        pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type) or pa.types.is_fixed_size_list(pa_type)
     )
 
 
@@ -124,9 +122,7 @@ def transpose_struct_list_type(t: pa.StructType) -> pa.ListType:
     return list_type
 
 
-def transpose_struct_list_array(
-    array: pa.StructArray, validate: bool = True
-) -> pa.ListArray:
+def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) -> pa.ListArray:
     """Converts a struct-array of lists into a list-array of structs.
 
     Parameters
@@ -161,10 +157,7 @@ def transpose_struct_list_array(
 
     struct_flat_array = pa.StructArray.from_arrays(
         # Select values within the offsets
-        [
-            field.values[field.offsets[0].as_py() : field.offsets[-1].as_py()]
-            for field in array.flatten()
-        ],
+        [field.values[field.offsets[0].as_py() : field.offsets[-1].as_py()] for field in array.flatten()],
         names=struct_field_names(array.type),
     )
     return pa.ListArray.from_arrays(
@@ -174,9 +167,7 @@ def transpose_struct_list_array(
     )
 
 
-def transpose_struct_list_chunked(
-    chunked_array: pa.ChunkedArray, validate: bool = True
-) -> pa.ChunkedArray:
+def transpose_struct_list_chunked(chunked_array: pa.ChunkedArray, validate: bool = True) -> pa.ChunkedArray:
     """Converts a chunked array of struct-list into a chunked array of list-struct.
 
     Parameters
@@ -195,10 +186,7 @@ def transpose_struct_list_chunked(
     if chunked_array.num_chunks == 0:
         return pa.chunked_array([], type=transpose_struct_list_type(chunked_array.type))
     return pa.chunked_array(
-        [
-            transpose_struct_list_array(array, validate)
-            for array in chunked_array.iterchunks()
-        ]
+        [transpose_struct_list_array(array, validate) for array in chunked_array.iterchunks()]
     )
 
 
@@ -229,9 +217,7 @@ def validate_list_struct_type(t: pa.ListType) -> None:
         raise ValueError(f"Expected a ListType, got {t}")
 
     if not pa.types.is_struct(t.value_type):
-        raise ValueError(
-            f"Expected a StructType as a list value type, got {t.value_type}"
-        )
+        raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
 
 
 def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
@@ -308,9 +294,7 @@ def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray) -> pa.ChunkedA
     """
     if chunked_array.num_chunks == 0:
         return pa.chunked_array([], type=transpose_list_struct_type(chunked_array.type))
-    return pa.chunked_array(
-        [transpose_list_struct_array(array) for array in chunked_array.iterchunks()]
-    )
+    return pa.chunked_array([transpose_list_struct_array(array) for array in chunked_array.iterchunks()])
 
 
 def nested_types_mapper(type: pa.DataType) -> pd.ArrowDtype | NestedDtype:
@@ -348,9 +332,7 @@ def chunk_lengths(array: pa.ChunkedArray) -> list[int]:
     return [len(chunk) for chunk in array.iterchunks()]
 
 
-def rechunk(
-    array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike
-) -> pa.ChunkedArray:
+def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.ChunkedArray:
     """Rechunk array to the same chunks a given chunked array.
 
     If no rechunk is needed the original chunked array is returned.
@@ -368,9 +350,7 @@ def rechunk(
         Rechunked `array`.
     """
     if len(array) != np.sum(chunk_lens):
-        raise ValueError(
-            "Input array must have the same length as the total chunk lengths"
-        )
+        raise ValueError("Input array must have the same length as the total chunk lengths")
     if isinstance(array, pa.Array):
         array = pa.chunked_array([array])
 
