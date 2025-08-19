@@ -182,6 +182,7 @@ def test_get_nested_columns():
 
     base = base.add_nested(nested, "nested")
 
+    # import pdb;pdb.set_trace()
     df = base[["a", "b", "nested.c"]]
     assert np.all(df.columns == ["a", "b", "nested"])
     assert df.dtypes["nested"].field_names == ["c"]

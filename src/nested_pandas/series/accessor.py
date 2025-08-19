@@ -508,9 +508,9 @@ class NestSeriesAccessor(Mapping):
         # on the number of fields requested and their dtypes
         if isinstance(key, list):
             new_array = self._series.array.view_fields(key)
-            if len(key) == 1 and not isinstance(new_array.dtype.field_dtype(key[0]), NestedDtype):
-                # If only one field is requested, return it as a pd.Series
-                return self._series[key[0]]
+            # if len(key) == 1 and not isinstance(new_array.dtype.field_dtype(key[0]), NestedDtype):
+            #    # If only one field is requested, return it as a pd.Series
+            #    return self._series[key[0]]
             return NestedSeries(new_array, index=self._series.index, name=self._series.name)
 
         # If the key is a single string, return the flat series for that field
