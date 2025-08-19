@@ -10,7 +10,6 @@ import pyarrow as pa
 from numpy.typing import ArrayLike
 from pandas.api.extensions import register_series_accessor
 
-from nested_pandas.nestedframe.core import NestedFrame
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack_flat, pack_sorted_df_into_struct
@@ -498,7 +497,12 @@ class NestSeriesAccessor(Mapping):
             if not key.index.equals(flat_df.index):
                 raise ValueError("Boolean mask must have the same index as the flattened nested dataframe.")
             # Apply the mask to the series, return a new NestedFrame
-            return NestedFrame(index=self._series.index).add_nested(flat_df[key], name=self._series.name)
+            # return NestedFrame(index=self._series.index).add_nested(flat_df[key], name=self._series.name)
+            return NestedSeries(
+                pack_flat(flat_df[key]),
+                index=self._series.index,
+                name=self._series.name,
+            )
 
         # A list of fields may return a pd.Series or a NestedSeries depending
         # on the number of fields requested and their dtypes

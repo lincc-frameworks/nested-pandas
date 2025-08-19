@@ -84,6 +84,94 @@ def test_nestedseries_list_lengths():
     assert list(series.list_lengths) == [2, 2]
 
 
+def test_nestedseries_getitem_single_field():
+    """Test getitem for a single field in NestedSeries."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    result = series["a"]
+    expected = pd.Series([1, 2, 3, 4], index=[0, 0, 1, 1], dtype=pd.ArrowDtype(pa.int64()), name="a")
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_nestedseries_getitem_multiple_fields():
+    """Test getitem for multiple fields in NestedSeries."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    result = series[["a", "b"]]
+    expected = series  # Full selection returns the original structure
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_nestedseries_getitem_masking():
+    """Test getitem with boolean masking in NestedSeries."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+        name="nested",
+    )
+
+    mask = pd.Series([True, False, False, True], index=[0, 0, 1, 1], dtype=bool, name="mask")
+    result = series[mask]
+    assert result.flat_length == 2
+
+
+def test_nestedseries_getitem_index():
+    """Test getitem with ordinary index selection in NestedSeries."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    result = series[0]
+    expected = pd.DataFrame({"a": [1, 2], "b": [0, 1]}, index=[0, 1])
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_nestedseries_getitem_non_nested_dtype():
+    """Test setitem with a non-nested dtype."""
+    series = NestedSeries(
+        data=[1, 2, 3],
+        index=[0, 1, 2],
+        dtype=pd.ArrowDtype(pa.int64()),
+    )
+
+    assert series[0] == 1
+
+
+def test_nestedseries_setitem_non_nested_dtype():
+    """Test setitem with a non-nested dtype."""
+    series = NestedSeries(
+        data=[1, 2, 3],
+        index=[0, 1, 2],
+        dtype=pd.ArrowDtype(pa.int64()),
+    )
+
+    series[0] = 10
+    assert series[0] == 10
+
+
 def test_nestedseries_to_flat():
     """Test to_flat method of NestedSeries."""
     series = NestedSeries(
