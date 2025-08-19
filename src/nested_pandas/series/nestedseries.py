@@ -44,7 +44,6 @@ class NestedSeries(pd.Series):
 
     def __setitem__(self, key, value):
         """Equip setitem with ability to handle nested data."""
-
         return super().__setitem__(key, value)
 
     def to_flat(self):
