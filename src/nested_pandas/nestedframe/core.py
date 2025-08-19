@@ -1077,7 +1077,7 @@ class NestedFrame(pd.DataFrame):
         is_base_exploded = not w_ordinal_idx.index.equals(base_exploded.index)
 
         # Unnest each requested nested column and store as a "flat" dataframe.
-        flat_frames = []
+        flat_frames: list[Self] = []  # type: ignore[name-defined] # noqa: F821
         for nested_col in nested_columns:
             # Check if counts (lengths) in nested columns mismatch
             if len(flat_frames) > 0 and np.any(
