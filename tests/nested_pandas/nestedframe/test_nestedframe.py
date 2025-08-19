@@ -6,7 +6,7 @@ from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
 from nested_pandas.series.packer import pack_lists
-from pandas.testing import assert_frame_equal
+from pandas.testing import assert_frame_equal, assert_index_equal
 
 
 def test_nestedframe_construction():
@@ -1638,7 +1638,7 @@ def test_describe():
     assert "top" not in r18.index
 
 
-def test_explode():
+def test_explode_1():
     """Test NestedFrame.explode gives correct result for flattening specified nested columns"""
     base = NestedFrame(
         data={
@@ -1691,6 +1691,100 @@ def test_explode():
     assert r5.shape[1] == 6
     expected5 = pd.Series(["A", "B", "C", "D", "E", "A", "A", "B"])
     assert (r5["f"] == expected5).all()
+
+
+def test_explode_non_unique_index():
+    """Test NestedFrame.explode function with non-unique index"""
+    n_base = 100
+    n_layer = 3
+
+    nf = generate_data(n_base, n_layer)
+    # Add a new nested column which has the same element length as the "nested"
+    nf["aligned_nested.aligned_t"] = nf["nested.t"]
+    # Add a new nested column which has different lengths
+    nf["unaligned_nested"] = nf.reduce(
+        lambda x: {"unaligned_nested.unaligned_t": x[:2]}, "nested.t"
+    ).reset_index(drop=True)
+    # Add a list column which has the same lengths
+    nf["aligned_list_t"] = nf["nested"].nest.to_lists("t")["t"]
+    # Add a list column which has different lengths
+    nf["unaligned_list_t"] = nf["nested"].nest.to_lists("t")["t"].list[:2]
+    # Make index non-unique
+    nf.index = np.tile(np.arange(10), 10)
+    nf.index.name = "my_index"
+
+    # Check that explode does nothing on a non-list base column
+    assert_frame_equal(nf, nf.explode("a"))
+
+    # Check that explode works on a base column
+    assert_frame_equal(
+        pd.DataFrame(nf).explode("unaligned_list_t"),
+        nf.explode("unaligned_list_t"),
+        check_frame_type=False,
+    )
+    assert_frame_equal(
+        pd.DataFrame(nf).explode("aligned_list_t", ignore_index=True),
+        nf.explode("aligned_list_t", ignore_index=True),
+        check_frame_type=False,
+    )
+
+    # Check that explode works on a single nested column
+    nested_exploded = nf.explode("nested")
+    assert nested_exploded.shape == (
+        n_base * n_layer,
+        len(nf.columns) - 1 + len(nf.all_columns["nested"]),
+    )
+    assert_index_equal(nested_exploded.index, pd.Index(np.repeat(nf.index, n_layer), name="my_index"))
+
+    # Check that explode works on two nested columns
+    two_nested_exploded = nf.explode(["nested", "aligned_nested"])
+    assert two_nested_exploded.shape == (
+        n_base * n_layer,
+        len(nf.columns) - 2 + len(nf.all_columns["nested"]) + len(nf.all_columns["aligned_nested"]),
+    )
+    assert "t" in two_nested_exploded.columns
+    assert "aligned_t" in two_nested_exploded.columns
+    assert_index_equal(two_nested_exploded.index, pd.Index(np.repeat(nf.index, n_layer), name="my_index"))
+
+    # Check that explode works on a mix of list-column and nested column
+    list_nested_exploded = nf.explode(["nested", "aligned_list_t"], ignore_index=True)
+    assert list_nested_exploded.shape == (
+        n_base * n_layer,
+        len(nf.columns) - 1 + len(nf.all_columns["nested"]),
+    )
+    assert_index_equal(list_nested_exploded.index, pd.Index(range(n_base * n_layer)))
+
+    # Check that explode fails when running on "unaligned" list columns
+    with pytest.raises(ValueError):
+        nf.explode(["aligned_list_t", "unaligned_list_t"])
+
+    # Check that explode fails when running on "unaligned" nested columns
+    with pytest.raises(ValueError):
+        nf.explode(["nested", "unaligned_nested"])
+
+    # Check that explode fails when running on nested and list columns, which are not aligned
+    with pytest.raises(ValueError):
+        nf.explode(["nested", "unaligned_list_t"])
+
+    # Check that explode fails on invalid `columns` inputs
+    # Empty input
+    with pytest.raises(ValueError):
+        nf.explode([])
+    # Non-string, non-list values
+    with pytest.raises(ValueError):
+        nf.explode(b"nested")
+    with pytest.raises(ValueError):
+        nf.explode(("nested", "aligned_nested"))
+    # Repeated column names
+    with pytest.raises(ValueError):
+        nf.explode(["nested"] * 2)
+    # Non-existing columns
+    with pytest.raises(ValueError):
+        nf.explode("XXX")
+    with pytest.raises(ValueError):
+        nf.explode(["nested", "XXX"])
+    with pytest.raises(ValueError):
+        nf.explode(["nested", "XXX", "AAA"])
 
 
 def test_eval():

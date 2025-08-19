@@ -129,7 +129,7 @@ class NestedFrame(pd.DataFrame):
             # Add a row that shows the number of additional rows not shown
             len_row = pd.DataFrame(
                 {
-                    col: [f"<i>+{n_rows-1} rows</i>"] if i == 0 else ["..."]
+                    col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
                     for i, col in enumerate(chunk.columns)
                 }
             )
@@ -983,31 +983,32 @@ class NestedFrame(pd.DataFrame):
     def explode(self, column: IndexLabel, ignore_index: bool = False):
         """
 
-        Transform each element of a list-like base column to a row, replicating index value.
-        Or unnest a specified nested column with the other columns being replicated as part
-        of the unnest. The exploded columns will be added to the right of the rest of the frame.
+        Transform each element of a list-like base column to a row, replicating index values.
 
         Parameters
         ----------
         column : IndexLabel
-            Base column(s) or nested column to explode.
-            For multiple base columns, specify a non-empty list with each element being a string or tuple.
-            For all specified base columns, their list-like data on same row of the frame
-            must have matching length.
-            Only a single nested column can be exploded at a time. Indicate the nested column as a string.
+            Column(s) to explode.
+            For multiple columns, specify a non-empty list with each element
+            be str or tuple, and all specified columns their list-like data
+            on same row of the frame must have matching length.
         ignore_index : bool, default False
             If True, the resulting index will be labeled 0, 1, ..., n - 1.
 
         Returns
         -------
         NestedFrame
-            A new NestedFrame with the specified column(s) exploded.
+            Exploded lists and  to rows of the subset columns;
+            index will be duplicated for these rows.
 
         Raises
         ------
         ValueError
-            If specified columns to explode have more than one nested column,
-            or contain a mix of nested and base columns.
+            It raises if:
+            1) columns of the frame are not unique,
+            2) specified columns to explode is an empty list,
+            3) specified columns to explode do not have matching counts of
+              elements rowwise in the frame.
 
         See Also
         --------
@@ -1033,40 +1034,82 @@ class NestedFrame(pd.DataFrame):
 
         """
 
-        if isinstance(column, list):
-            nested_in_list = [col for col in column if col in self.nested_columns]
-            # list contains more than 1 nested columns
-            if len(nested_in_list) > 1:
+        if isinstance(column, str):
+            columns = [column]
+        elif isinstance(column, list):
+            columns = column
+            if len(columns) == 0:
+                raise ValueError("`column` must not be empty")
+            if len(set(columns)) != len(columns):
+                raise ValueError("`column` must have unique elements")
+        else:
+            raise ValueError("`column` must be str or list")
+        if len(extra_cols := set(columns) - set(self.columns)) > 0:
+            if len(extra_cols) == 1:
                 raise ValueError(
-                    f"Exploding multiple nested columns at once is not supported.\n"
-                    f"Nested columns: {nested_in_list}"
+                    f"column {extra_cols.pop()} not found, available columns: {list(self.columns)}"
                 )
+            raise ValueError(
+                f"columns {sorted(extra_cols)} not found, available columns: {list(self.columns)}"
+            )
 
-            # list contains mixing nested & base columns
-            if len(nested_in_list) == 1 and len(column) > 1:
+        nested_columns = [col for col in columns if col in self.nested_columns]
+        base_columns = [col for col in columns if col not in nested_columns]
+
+        # Shortcut for the base-column-only case
+        if len(nested_columns) == 0:
+            return NestedFrame(super().explode(columns, ignore_index=ignore_index))
+
+        # Handle duplicated index use-case: use "ordinal" index, but keep the original one as a column to
+        # restore it later.
+        default_index_name = "__index_"
+        index_col_name = self.index.name or default_index_name
+        w_ordinal_idx = self.reset_index(drop=False, names=index_col_name)
+
+        # Call pandas.DataFrame.explode for non-nested columns
+        all_but_requested_nested_columns = [col for col in w_ordinal_idx.columns if col not in nested_columns]
+        base_exploded = w_ordinal_idx[all_but_requested_nested_columns]
+        if len(all_but_requested_nested_columns) > 0 and len(base_columns) > 0:
+            base_exploded = super(NestedFrame, base_exploded).explode(base_columns, ignore_index=False)
+            base_exploded = NestedFrame(base_exploded)
+
+        # Check if it was actually exploded, or no list-columns were there.
+        # This could fail in the case when all lists had one element only, we ignore that edge-case here.
+        is_base_exploded = not w_ordinal_idx.index.equals(base_exploded.index)
+
+        # Unnest each requested nested column and store as a "flat" dataframe.
+        flat_frames: list[Self] = []  # type: ignore[name-defined] # noqa: F821
+        for nested_col in nested_columns:
+            # Check if counts (lengths) in nested columns mismatch
+            if len(flat_frames) > 0 and np.any(
+                w_ordinal_idx[nested_col].nest.list_lengths
+                != w_ordinal_idx[nested_columns[0]].nest.list_lengths
+            ):
                 raise ValueError(
-                    f"Exploding nested column together with base columns is not supported.\n"
-                    f"Nested column: {nested_in_list[0]}"
+                    f"One or few rows of {nested_col} have different element counts from {nested_columns[0]}"
                 )
+            flat = w_ordinal_idx[nested_col].nest.to_flat()
+            # Check if counts (lengths) of this nested column mismatch with one of the list columns.
+            if is_base_exploded and not base_exploded.index.equals(flat.index):
+                raise ValueError(
+                    f"One or few rows of {nested_col} have different element counts "
+                    f"from one or few of these columns: {base_columns}"
+                )
+            flat_frames.append(flat)
 
-        # normalize a single-element list to string
-        if isinstance(column, list) and len(column) == 1:
-            column = column[0]
+        if is_base_exploded:
+            result = pd.concat([base_exploded] + flat_frames, axis=1)
+        else:
+            # Join works here, because we used the ordinal index before exploding
+            result = base_exploded.join(pd.concat(flat_frames, axis=1))
 
-        # handle single nested column explode
-        if isinstance(column, str) and column in self.nested_columns:
-            selected_nested_df = self[column].nest.to_flat()
-            other_col = [col for col in self.columns if col != column]
-            other_col_df = self[other_col]
-            result = other_col_df.join(selected_nested_df)
-
-            if ignore_index:
-                result = result.reset_index(drop=True)
-
-            return NestedFrame(result)
-
-        # otherwise just use pandas' explode
-        return NestedFrame(super().explode(column=column, ignore_index=ignore_index))
+        if ignore_index:
+            return result.drop(index_col_name, axis=1).reset_index(drop=True)
+        # Restore original index
+        result = result.set_index(index_col_name, drop=True)
+        if result.index.name == default_index_name:
+            result.index.name = None
+        return result
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """Evaluate a string describing operations on NestedFrame columns.
