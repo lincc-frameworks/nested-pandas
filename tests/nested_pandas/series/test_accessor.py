@@ -769,6 +769,27 @@ def test___getitem___series_masking():
         _ = nf["nested"].nest[mask[0:23]]
 
 
+def test___getitem___single_list_field():
+    """Test that the .nest["field"] works for a single list field."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),
+            pa.array([np.array([6, 4, 2]), np.array([1, 2, 3])]),
+        ],
+        names=["a", "b"],
+    )
+    series = NestedSeries(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
+    assert_series_equal(
+        series.nest[["a"]],
+        pd.Series(
+            data=[1, 2, 3, 4, 5, 6],
+            index=[5, 5, 5, 7, 7, 7],
+            name="a",
+            dtype=pd.ArrowDtype(pa.int64()),
+        ),
+    )
+
+
 def test___setitem__():
     """Test that the .nest["field"] = ... works for a single field."""
     struct_array = pa.StructArray.from_arrays(

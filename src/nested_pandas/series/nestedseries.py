@@ -50,8 +50,6 @@ class NestedSeries(pd.Series):
         if not isinstance(self.dtype, NestedDtype):
             return super().__getitem__(key)
 
-        if not isinstance(self.dtype, NestedDtype):
-            return super().__getitem__(key)
         # Return a flatten series for a single field
         if isinstance(key, str) and key in self.fields:
             return self.nest[key]
