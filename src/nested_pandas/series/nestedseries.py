@@ -35,6 +35,10 @@ class NestedSeries(pd.Series):
         elif isinstance(key, list | tuple) and all(isinstance(k, str) for k in key):
             return self.nest[key]
 
+        # Handle boolean masking
+        if isinstance(key, pd.Series) and pd.api.types.is_bool_dtype(key.dtype):
+            return self.nest[key]
+
         # Otherwise, fall back to the default behavior
         return super().__getitem__(key)
 
