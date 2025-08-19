@@ -1004,9 +1004,10 @@ class NestedFrame(pd.DataFrame):
         Raises
         ------
         ValueError
-            * If columns of the frame are not unique.
-            * If specified columns to explode is an empty list.
-            * If specified columns to explode do not have matching counts of
+            It raises if:
+            1) columns of the frame are not unique,
+            2) specified columns to explode is an empty list,
+            3) specified columns to explode do not have matching counts of
               elements rowwise in the frame.
 
         See Also
