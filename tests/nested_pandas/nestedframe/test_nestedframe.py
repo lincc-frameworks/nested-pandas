@@ -1766,6 +1766,26 @@ def test_explode_non_unique_index():
     with pytest.raises(ValueError):
         nf.explode(["nested", "unaligned_list_t"])
 
+    # Check that explode fails on invalid `columns` inputs
+    # Empty input
+    with pytest.raises(ValueError):
+        nf.explode([])
+    # Non-string, non-list values
+    with pytest.raises(ValueError):
+        nf.explode(b"nested")
+    with pytest.raises(ValueError):
+        nf.explode(("nested", "aligned_nested"))
+    # Repeated column names
+    with pytest.raises(ValueError):
+        nf.explode(["nested"] * 2)
+    # Non-existing columns
+    with pytest.raises(ValueError):
+        nf.explode("XXX")
+    with pytest.raises(ValueError):
+        nf.explode(["nested", "XXX"])
+    with pytest.raises(ValueError):
+        nf.explode(["nested", "XXX", "AAA"])
+
 
 def test_eval():
     """
