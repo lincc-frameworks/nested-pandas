@@ -40,7 +40,10 @@ class NestedSeries(pd.Series):
 
     def __setitem__(self, key, value):
         """Equip setitem with ability to handle nested data."""
-        return super().__setitem__(key, value)
+
+        # Purely use the nest accessors setitem method
+        # The pure series setitem doesn't really make sense for nested data
+        return self.nest.__setitem__(key, value)
 
     def to_flat(self):
         """Convert to a flat dataframe representation of the nested series."""
