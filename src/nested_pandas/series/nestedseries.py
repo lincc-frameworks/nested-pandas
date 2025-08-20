@@ -71,13 +71,8 @@ class NestedSeries(pd.Series):
         if not isinstance(self.dtype, NestedDtype):
             return super().__setitem__(key, value)
 
-        # Set a single field from a value
+        # Use nest setitem when setting on a single field
         if isinstance(key, str) and key in self.fields:
-            self.nest[key] = value
-            return
-
-        # Set a single field from a Series
-        if isinstance(key, pd.Series) and key.dtype == self.dtype:
             self.nest[key] = value
             return
 
