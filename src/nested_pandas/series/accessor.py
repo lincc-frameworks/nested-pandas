@@ -606,17 +606,18 @@ class NestSeriesAccessor(Mapping):
         >>> from nested_pandas import NestedFrame
         >>> from nested_pandas.datasets import generate_data
         >>> nf = generate_data(5, 2, seed=1).rename(columns={"nested": "inner"})
+        >>> nf["b"] = "b"  # Shorten width of example output
 
         Assign a repeated ID to double-nest on
 
         >>> nf["id"] = [0, 0, 0, 1, 1]
         >>> nf
-                  a         b                                              inner  id
-        0  0.417022  0.184677  [{t: 8.38389, flux: 80.074457, band: 'r'}; …] ...   0
-        1  0.720324  0.372520  [{t: 13.70439, flux: 96.826158, band: 'g'}; …]...   0
-        2  0.000114  0.691121  [{t: 4.089045, flux: 31.342418, band: 'g'}; …]...   0
-        3  0.302333  0.793535  [{t: 17.562349, flux: 69.232262, band: 'r'}; …...   1
-        4  0.146756  1.077633  [{t: 0.547752, flux: 87.638915, band: 'g'}; …]...   1
+                  a  b                                              inner  id
+        0  0.417022  b  [{t: 8.38389, flux: 80.074457, band: 'r'}; …] ...   0
+        1  0.720324  b  [{t: 13.70439, flux: 96.826158, band: 'g'}; …]...   0
+        2  0.000114  b  [{t: 4.089045, flux: 31.342418, band: 'g'}; …]...   0
+        3  0.302333  b  [{t: 17.562349, flux: 69.232262, band: 'r'}; …...   1
+        4  0.146756  b  [{t: 0.547752, flux: 87.638915, band: 'g'}; …]...   1
 
         >>> nf.inner.nest.to_flat()
                    t       flux band
@@ -641,23 +642,23 @@ class NestSeriesAccessor(Mapping):
         >>> concated_nf_series = dnf["outer"].nest.to_flatten_inner("inner")
         >>> concated_nf_series
         id
-        0    [{a: 0.417022, b: 0.184677, t: 8.38389, flux: ...
-        1    [{a: 0.302333, b: 0.793535, t: 17.562349, flux...
-        Name: outer, dtype: nested<a: [double], b: [double], t: [double], flux: [double], band: [string]>
+        0    [{a: 0.417022, b: 'b', t: 8.38389, flux: 80.07...
+        1    [{a: 0.302333, b: 'b', t: 17.562349, flux: 69....
+        Name: outer, dtype: nested<a: [double], b: [string], t: [double], flux: [double], band: [string]>
 
         >>> concated_nf_series.nest.to_flat()  # doctest: +NORMALIZE_WHITESPACE
-                   a         b          t       flux band
+                   a  b          t       flux band
         id
-        0   0.417022  0.184677    8.38389  80.074457    r
-        0   0.417022  0.184677   13.40935  89.460666    g
-        0   0.720324   0.37252   13.70439  96.826158    g
-        0   0.720324   0.37252   8.346096   8.504421    g
-        0   0.000114  0.691121   4.089045  31.342418    g
-        0   0.000114  0.691121  11.173797   3.905478    g
-        1   0.302333  0.793535  17.562349  69.232262    r
-        1   0.302333  0.793535   2.807739  16.983042    r
-        1   0.146756  1.077633   0.547752  87.638915    g
-        1   0.146756  1.077633    3.96203   87.81425    r
+        0   0.417022  b    8.38389  80.074457    r
+        0   0.417022  b   13.40935  89.460666    g
+        0   0.720324  b   13.70439  96.826158    g
+        0   0.720324  b   8.346096   8.504421    g
+        0   0.000114  b   4.089045  31.342418    g
+        0   0.000114  b  11.173797   3.905478    g
+        1   0.302333  b  17.562349  69.232262    r
+        1   0.302333  b   2.807739  16.983042    r
+        1   0.146756  b   0.547752  87.638915    g
+        1   0.146756  b    3.96203   87.81425    r
         """
         if not isinstance(self._series.dtype.field_dtype(field), NestedDtype):
             raise ValueError(

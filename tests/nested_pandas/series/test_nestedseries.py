@@ -172,6 +172,26 @@ def test_nestedseries_setitem_non_nested_dtype():
     assert series[0] == 10
 
 
+def test_nestedseries_setitem_single_field():
+    """Test setitem for a single field in NestedSeries."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    series["a"] = pd.Series([10, 20, 30, 40], index=[0, 0, 1, 1])
+    expected = pd.Series([10, 20, 30, 40], index=[0, 0, 1, 1], dtype=pd.ArrowDtype(pa.int64()), name="a")
+    pd.testing.assert_series_equal(series["a"], expected)
+
+    series["a"] = 5
+    expected = pd.Series([5, 5, 5, 5], index=[0, 0, 1, 1], dtype=pd.ArrowDtype(pa.int64()), name="a")
+    pd.testing.assert_series_equal(series["a"], expected)
+
+
 def test_nestedseries_to_flat():
     """Test to_flat method of NestedSeries."""
     series = NestedSeries(
