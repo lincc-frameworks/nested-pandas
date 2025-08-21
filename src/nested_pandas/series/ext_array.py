@@ -53,8 +53,15 @@ from pandas.core.indexers import (  # type: ignore[attr-defined]
 )
 from pandas.io.formats.format import format_array  # type: ignore[attr-defined]
 
-from nested_pandas.series._storage import ListStructStorage, StructListStorage, TableStorage  # noqa
+from nested_pandas.series._storage import (
+    ListStructStorage,
+    StructListStorage,
+    TableStorage,
+)
+
+# noqa
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     chunk_lengths,
     is_pa_type_a_list,
@@ -155,7 +162,9 @@ class _DataFrameWrapperForRepresentation:
         return len(self.__internal_nested_df)
 
 
-def to_pyarrow_dtype(dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None) -> pa.DataType | None:
+def to_pyarrow_dtype(
+    dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None,
+) -> pa.DataType | None:
     """Convert the dtype to pyarrow.DataType"""
     if isinstance(dtype, NestedDtype):
         return dtype.pyarrow_dtype
@@ -378,7 +387,10 @@ class NestedExtensionArray(ExtensionArray):
         return super().__eq__(other)
 
     def to_numpy(
-        self, dtype: DTypeLike | None = None, copy: bool = False, na_value: Any = no_default
+        self,
+        dtype: DTypeLike | None = None,
+        copy: bool = False,
+        na_value: Any = no_default,
     ) -> np.ndarray:
         """Convert the extension array to a numpy array.
 
@@ -728,7 +740,12 @@ class NestedExtensionArray(ExtensionArray):
         return cls(cast_array)
 
     def _convert_struct_scalar_to_df(
-        self, value: pa.StructScalar, *, copy: bool, na_value: Any = None, pyarrow_dtypes: bool = False
+        self,
+        value: pa.StructScalar,
+        *,
+        copy: bool,
+        na_value: Any = None,
+        pyarrow_dtypes: bool = False,
     ) -> Any:
         """Converts a struct scalar of equal-length list scalars to a pd.DataFrame
 
@@ -906,7 +923,10 @@ class NestedExtensionArray(ExtensionArray):
             return self.list_array.chunk(0).offsets
 
         zero_and_lengths = pa.chunked_array(
-            [pa.array([0], type=pa.int32()), pa.array(self.list_lengths, type=pa.int32())]
+            [
+                pa.array([0], type=pa.int32()),
+                pa.array(self.list_lengths, type=pa.int32()),
+            ]
         )
         offsets = pa.compute.cumulative_sum(zero_and_lengths)
         return offsets.chunk(0) if offsets.num_chunks == 1 else offsets.combine_chunks()
@@ -999,7 +1019,7 @@ class NestedExtensionArray(ExtensionArray):
         """Set the field from flat-array of values
 
         Note that if this updates the dtype, it would not affect the dtype of
-        the pd.Series back-ended by this extension array.
+        the NestedSeries back-ended by this extension array.
 
         Parameters
         ----------
@@ -1051,7 +1071,7 @@ class NestedExtensionArray(ExtensionArray):
         """Set the field from list-array
 
         Note that if this updates the dtype, it would not affect the dtype of
-        the pd.Series back-ended by this extension array.
+        the NestedSeries back-ended by this extension array.
 
         Parameters
         ----------

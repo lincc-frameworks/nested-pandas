@@ -5,6 +5,7 @@ import pytest
 from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.series import packer
+from nested_pandas.series.nestedseries import NestedSeries
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_series_equal
 
@@ -31,7 +32,7 @@ def test_pack_with_flat_df():
     )
     series = packer.pack(df, name="series")
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 3]), np.array([0, 0])),
             (np.array([2, 4]), np.array([1, 1])),
@@ -55,7 +56,7 @@ def test_pack_with_flat_df_and_index():
     )
     series = packer.pack(df, name="series", index=[101, 102])
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 3]), np.array([0, 0])),
             (np.array([2, 4]), np.array([1, 1])),
@@ -80,7 +81,7 @@ def test_pack_with_flat_df_and_on():
     )
     series = packer.pack(df, name="series", on="c")
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             # All of the values where the column c is 0
             (np.array([2, 4]), np.array([1, 1])),
@@ -112,7 +113,7 @@ def test_pack_with_flat_df_and_on_and_index():
     new_index = [101, 102]
     series = packer.pack(df, name="series", index=new_index, on="c")
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             # All of the values where the column c is 0
             (np.array([2, 4]), np.array([1, 1])),
@@ -150,7 +151,7 @@ def test_pack_with_series_of_dfs():
     )
     series = packer.pack(input_series, name="nested")
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
             (np.array([3, 4]), np.array([0, 1])),
@@ -174,7 +175,7 @@ def test_pack_flat():
     )
     actual = packer.pack_flat(df)
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
             (np.array([3, 4]), np.array([0, 1])),
@@ -201,7 +202,7 @@ def test_pack_flat_with_on():
     # Pack on the c olumn
     actual = packer.pack_flat(df, on="c")
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             # Index 0: # All of the values where column 'c' is 0
             (
@@ -233,7 +234,7 @@ def test_pack_sorted_df_into_struct():
     )
     actual = packer.pack_sorted_df_into_struct(df)
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
             (np.array([3, 4]), np.array([0, 1])),
@@ -357,7 +358,7 @@ def test_pack_seq_with_dfs_and_index():
     ]
     series = packer.pack_seq(dfs, index=[100, 101, 102, 103])
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
             (np.array([3, 4]), np.array([0, 1])),
@@ -386,7 +387,7 @@ def test_pack_seq_with_different_elements_and_index():
     ]
     series = packer.pack_seq(seq, index=[100, 101, 102, 103])
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
             None,
@@ -428,7 +429,7 @@ def test_pack_seq_with_series_of_dfs():
     )
     series = packer.pack_seq(input_series)
 
-    desired = pd.Series(
+    desired = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
             (np.array([3, 4]), np.array([0, 1])),
@@ -512,7 +513,7 @@ def test_view_sorted_series_as_list_array():
 
     assert_array_equal(nested.index, [1, 2, 3, 4])
 
-    desired_nested = pd.Series(
+    desired_nested = NestedSeries(
         data=[
             np.array([1, 2]),
             np.array([3, 4]),
@@ -549,7 +550,7 @@ def test_view_sorted_series_as_list_array_chunked_input():
     )
     offset = np.array([0, 2, 4, 5])
     unique_index = ["x", "y", "z"]
-    desired = pd.Series(
+    desired = NestedSeries(
         pa.array([[0, 1], [2, None], [4]]),
         index=unique_index,
         dtype=pd.ArrowDtype(pa.list_(pa.int64())),

@@ -15,6 +15,7 @@ import pyarrow as pa
 
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.nestedseries import NestedSeries
 
 __all__ = ["pack", "pack_flat", "pack_lists", "pack_seq"]
 
@@ -29,7 +30,7 @@ def pack(
     index=None,
     on: None | str | list[str] = None,
     dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
-) -> pd.Series:
+) -> NestedSeries:
     """Pack a "flat" dataframe or a sequence of dataframes into a "nested" series.
 
     Parameters
@@ -49,7 +50,7 @@ def pack(
 
     Returns
     -------
-    pd.Series
+    NestedSeries
         Output series.
     """
     if isinstance(obj, pd.DataFrame):
@@ -60,7 +61,9 @@ def pack(
     return pack_seq(obj, name=name, index=index, dtype=dtype)
 
 
-def pack_flat(df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] = None) -> pd.Series:
+def pack_flat(
+    df: pd.DataFrame, name: str | None = None, *, on: None | str | list[str] = None
+) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -75,13 +78,13 @@ def pack_flat(df: pd.DataFrame, name: str | None = None, *, on: None | str | lis
     df : pd.DataFrame
         Input dataframe, with repeated indexes.
     name : str, optional
-        Name of the pd.Series.
+        Name of the NestedSeries.
     on : str or list of str, optional
         Column name(s) to join on. If None, the df's index is used.
 
     Returns
     -------
-    pd.Series
+    NestedSeries
         Output series, with unique indexes.
 
     See Also
@@ -104,7 +107,7 @@ def pack_seq(
     *,
     index: object = None,
     dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
-) -> pd.Series:
+) -> NestedSeries:
     """Pack a sequence of "flat" dataframes into a "nested" series.
 
     Parameters
@@ -121,21 +124,21 @@ def pack_seq(
 
     Returns
     -------
-    pd.Series
+    NestedSeries
         Output series.
     """
-    if isinstance(sequence, pd.Series):
+    if isinstance(sequence, pd.Series):  # generalized check for pandas series
         if index is None:
             index = sequence.index
         if name is None:
             name = sequence.name
 
     ext_array = NestedExtensionArray.from_sequence(sequence, dtype=dtype)
-    series = pd.Series(ext_array, index=index, name=name, copy=False)
+    series = NestedSeries(ext_array, index=index, name=name, copy=False)
     return series
 
 
-def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> pd.Series:
+def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
 
     Input dataframe must be sorted and all the columns must have pyarrow dtypes.
@@ -147,11 +150,11 @@ def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> pd.
         all the columns must have pyarrow dtypes.
 
     name : str, optional
-        Name of the pd.Series.
+        Name of the NestedSeries.
 
     Returns
     -------
-    pd.Series
+    NestedSeries
         Output series, with unique indexes.
     """
     if not df.index.is_monotonic_increasing:
@@ -163,7 +166,7 @@ def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> pd.
     return pack_lists(packed_df, name=name, validate=False)
 
 
-def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = True) -> pd.Series:
+def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = True) -> NestedSeries:
     """Make a series of arrow structures from a dataframe with nested arrays.
 
     For the input dataframe with repeated indexes, make a pandas.Series,
@@ -181,13 +184,13 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     df : pd.DataFrame
         Input dataframe, with pyarrow list-arrays.
     name : str, optional
-        Name of the pd.Series.
+        Name of the NestedSeries.
     validate : bool, default True
         Whether to validate the input dataframe.
 
     Returns
     -------
-    pd.Series
+    NestedSeries
         Output series, with unique indexes.
 
     See Also
@@ -225,7 +228,7 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
         )
 
     ext_array = NestedExtensionArray(struct_array, validate=validate)
-    return pd.Series(
+    return NestedSeries(
         ext_array,
         index=df.index,
         copy=False,
@@ -264,13 +267,15 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def view_sorted_series_as_list_array(
-    series: pd.Series, offset: np.ndarray | None = None, unique_index: np.ndarray | None = None
-) -> pd.Series:
+    series: NestedSeries,
+    offset: np.ndarray | None = None,
+    unique_index: np.ndarray | None = None,
+) -> NestedSeries:
     """Make a nested array representation of a "flat" series.
 
     Parameters
     ----------
-    series : pd.Series
+    series : NestedSeries
         Input series, with repeated indexes. It must be sorted by its index.
 
     offset: np.ndarray or None, optional
@@ -281,7 +286,7 @@ def view_sorted_series_as_list_array(
 
     Returns
     -------
-    pd.Series
+    NestedSeries
         Output series, with unique indexes. It is a view over the input series,
         so it would mute the input series if modified.
     """
@@ -304,7 +309,7 @@ def view_sorted_series_as_list_array(
         flat_array,
     )
 
-    return pd.Series(
+    return NestedSeries(
         list_array,
         dtype=pd.ArrowDtype(list_array.type),
         index=unique_index,
