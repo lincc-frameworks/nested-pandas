@@ -496,8 +496,7 @@ class NestSeriesAccessor(Mapping):
             flat_df = self.to_flat()  # Use the flat representation
             if not key.index.equals(flat_df.index):
                 raise ValueError("Boolean mask must have the same index as the flattened nested dataframe.")
-            # Apply the mask to the series, return a new NestedFrame
-            # return NestedFrame(index=self._series.index).add_nested(flat_df[key], name=self._series.name)
+            # Apply the mask to the series
             return NestedSeries(
                 pack_flat(flat_df[key]),
                 index=self._series.index,
@@ -508,9 +507,6 @@ class NestSeriesAccessor(Mapping):
         # on the number of fields requested and their dtypes
         if isinstance(key, list):
             new_array = self._series.array.view_fields(key)
-            # if len(key) == 1 and not isinstance(new_array.dtype.field_dtype(key[0]), NestedDtype):
-            #    # If only one field is requested, return it as a pd.Series
-            #    return self._series[key[0]]
             return NestedSeries(new_array, index=self._series.index, name=self._series.name)
 
         # If the key is a single string, return the flat series for that field
