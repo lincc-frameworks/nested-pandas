@@ -10,7 +10,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pandas._libs import lib
-from pandas._typing import Any, AnyAll, Axis, IndexLabel
+from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
 from pandas.core.computation.eval import Expr, ensure_scope
 from pandas.core.dtypes.inference import is_list_like
@@ -1110,6 +1110,85 @@ class NestedFrame(pd.DataFrame):
         if result.index.name == default_index_name:
             result.index.name = None
         return result
+
+    def fillna(
+        self,
+        value: Hashable | Mapping | pd.Series | pd.DataFrame | None = None,
+        *,
+        axis: Axis | None = None,
+        inplace: bool = False,
+        limit: int | None = None,
+    ) -> NestedFrame | None:
+        """
+        Fill NA/NaN values using the specified method for base and nested columns.
+
+        Parameters
+        ----------
+        value : scalar, dict, Series, or DataFrame
+            Value to use to fill holes (e.g. 0), alternately a
+            dict/Series/DataFrame of values specifying which value to use for
+            each column.  Values not in the dict/Series/DataFrame will not be filled.
+            This value cannot be a list.
+        axis : {axes_single_arg}, default None
+            Axis along which to fill missing values.
+        inplace : bool, default False
+            If True, fill in-place. Note: this will modify any
+            other views on this object (e.g., a no-copy slice for a column in a
+            NestedFrame).
+        limit : int, default None
+            The maximum number of entries along the entire axis where NaNs will be
+            filled. Must be greater than 0 if not None. Currently, limit on nested
+            columns is not supported, meaning that all Nans will be filled (if there
+            is a value specified) regardless of the input.
+
+        Returns
+        -------
+        NestedFrame or None
+            NestedFrame with missing values filled or None if ``inplace=True``.
+
+        See Also
+        --------
+        :meth:`pandas.DataFrame.fillna`
+
+        Examples
+        --------
+        >>> import nested_pandas as npd
+        >>> nf = npd.NestedFrame(
+        ...     data={"a": [np.nan, 20, np.nan], "b": [np.nan, np.nan, 30], "c": [10, np.nan, np.nan]},
+        ...     index=[0, 1, 2]
+        ... )
+        >>> nested = pd.DataFrame(
+        ...     data={"d": [np.nan, np.nan, np.nan], "e": [np.nan, 1, np.nan]},
+        ...     index=[0, 1, 2]
+        ... )
+        >>> nf = nf.add_nested(nested, "nested")
+
+        >>> nf.fillna(0)
+              a     b     c              nested
+        0   0.0   0.0  10.0  [{d: 0.0, e: 0.0}]
+        1  20.0   0.0   0.0  [{d: 0.0, e: 1.0}]
+        2   0.0  30.0   0.0  [{d: 0.0, e: 0.0}]
+
+        """
+
+        if not self.nested_columns:
+            return super().fillna(value=value, axis=axis, inplace=inplace, limit=limit)
+
+        base_cols = [col for col in self.columns if col not in self.nested_columns]
+        filled_df = super().__getitem__(base_cols).fillna(value=value, axis=axis, inplace=False, limit=limit)
+
+        for nest_col in self.nested_columns:
+            nested_df = self[nest_col].nest.to_flat()
+            # prepend prefix to columns for value matching, undo after filled
+            nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
+            nested_df = nested_df.fillna(value=value, axis=axis, inplace=False, limit=limit)
+            nested_df.columns = [col.split(".")[-1] for col in nested_df.columns]
+            filled_df = filled_df.add_nested(nested_df, nest_col)
+
+        if inplace:
+            self._update_inplace(filled_df)
+            return None
+        return filled_df
 
     def eval(self, expr: str, *, inplace: bool = False, **kwargs) -> Any | None:
         """Evaluate a string describing operations on NestedFrame columns.

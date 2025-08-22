@@ -1787,6 +1787,53 @@ def test_explode_non_unique_index():
         nf.explode(["nested", "XXX", "AAA"])
 
 
+def test_fillna():
+    """Test NestedFrame.fillna give correct result with NA/NaN filled"""
+
+    base = NestedFrame(data={"a": [np.nan, np.nan, 3], "b": [2, np.nan, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"c": [0, 2, np.nan, 1, np.nan, 3, 1, 4, 1], "d": [np.nan, 4, np.nan, 5, 3, 1, np.nan, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    nested2 = pd.DataFrame(
+        data={"e": [np.nan, np.nan, np.nan, 1, 4, np.nan, 4, 1], "f": [5, 4, 7, 5, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 2, 2, 2],
+    )
+
+    # only base columns
+    r0 = base.fillna(0)
+    assert (r0["a"] == pd.Series([0, 0, 3])).all()
+    assert (r0["b"] == pd.Series([2, 0, 6])).all()
+
+    # 1 nested column
+    base = base.add_nested(nested, "nested")
+    r1 = base.fillna(0)
+    expected1 = pd.Series([0, 4, 0, 5, 3, 1, 0, 3, 4], index=[0, 0, 0, 1, 1, 1, 2, 2, 2])
+    assert (r1["nested.d"] == expected1).all()
+
+    r2 = base.fillna({"a": 0, "b": 1, "nested.c": 2, "nested.d": 3})
+    expected2 = pd.Series([0, 2, 2, 1, 2, 3, 1, 4, 1], index=[0, 0, 0, 1, 1, 1, 2, 2, 2])
+    assert (r2["nested.c"] == expected2).all()
+    assert (r2["a"] == pd.Series([0, 0, 3])).all()
+
+    r3 = base.fillna(0, limit=1)
+    assert np.isnan(r3["a"][1])
+
+    # 2 nested columns
+    base = base.add_nested(nested2, "nested2")
+    r4 = base.fillna(0)
+    expected4 = pd.Series([0, 0, 0, 1, 4, 0, 4, 1], index=[0, 0, 0, 1, 1, 2, 2, 2])
+    assert (r4["nested2.e"] == expected4).all()
+
+    # inplace check
+    expected5 = pd.Series([0, 2, np.nan, 1, np.nan, 3, 1, 4, 1], index=[0, 0, 0, 1, 1, 1, 2, 2, 2])
+    assert (base["nested.c"] == expected5).all()
+
+    base.fillna({"nested.c": 0}, inplace=True)
+    expected6 = pd.Series([0, 2, 0, 1, 0, 3, 1, 4, 1], index=[0, 0, 0, 1, 1, 1, 2, 2, 2])
+    assert (base["nested.c"] == expected6).all()
+
+
 def test_eval():
     """
     Test basic behavior of NestedFrame.eval, and that it can handle nested references
