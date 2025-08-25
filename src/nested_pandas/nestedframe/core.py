@@ -594,7 +594,7 @@ class NestedFrame(pd.DataFrame):
             packed_df = pack_lists(df[list_columns])
             packed_df.name = name
 
-        # join the nested column to the base_column df
+        # concat the nested column to the base_column df
         if base_columns is not None:
             return pd.concat([df[base_columns], packed_df], axis=1)
         # or just return the packed_df as a nestedframe if no base cols
