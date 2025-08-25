@@ -18,7 +18,7 @@ def nested_only(func):
 
 class NestedSeries(pd.Series):
     """
-    A Series that can contain nested data structures, such as lists or dictionaries.
+    A Series that can contain nested data structures, such as lists or data-frames.
     This class extends the functionality of a standard pandas Series to handle nested data.
     """
 
