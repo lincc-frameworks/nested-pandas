@@ -2032,6 +2032,17 @@ def test_nest_lists():
         res = ndf.nest_lists("nested", ["c", "b"])
 
 
+def test_nestlists_nonunique_index():
+    """Test that nest_lists works with a non-unique index."""
+    nf = generate_data(5, 10)
+    nf_lists = nf["a", "b"].join(nf["nested"].nest.to_lists())
+    nf_lists.index = [0, 0, 1, 1, 2]
+    nf_repacked = nf_lists.nest_lists(["t", "flux", "band"], "nested")
+
+    nf.index = [0, 0, 1, 1, 2]
+    assert nf_repacked.equals(nf)
+
+
 def test_delitem_base_and_nested():
     """Test that __delitem__ works for both base and nested columns."""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])

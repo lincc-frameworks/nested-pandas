@@ -596,7 +596,7 @@ class NestedFrame(pd.DataFrame):
 
         # join the nested column to the base_column df
         if base_columns is not None:
-            return df[base_columns].join(packed_df)
+            return pd.concat([df[base_columns], packed_df], axis=1)
         # or just return the packed_df as a nestedframe if no base cols
         else:
             return NestedFrame(packed_df.to_frame())
