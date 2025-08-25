@@ -436,22 +436,16 @@ class NestSeriesAccessor(Mapping):
 
         flat_chunked_array = pa.chunked_array(flat_chunks, type=self._series.dtype.fields[field])
 
-        if isinstance(self._series.dtype.field_dtype(field), NestedDtype):
-            # If the field is a nested dtype, return as NestedSeries
-            return NestedSeries(
-                flat_chunked_array,
-                dtype=self._series.dtype.field_dtype(field),
-                index=self.get_flat_index(),
-                name=field,
-                copy=False,
-            )
-        return pd.Series(
+        flat_series = pd.Series(
             flat_chunked_array,
             dtype=self._series.dtype.field_dtype(field),
             index=self.get_flat_index(),
             name=field,
             copy=False,
         )
+        if isinstance(self._series.dtype.field_dtype(field), NestedDtype):
+            return NestedSeries(flat_series, copy=False)
+        return flat_series
 
     def get_list_series(self, field: str) -> pd.Series:
         """Get the list-array field as a Series
