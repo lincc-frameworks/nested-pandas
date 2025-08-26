@@ -1,11 +1,16 @@
+from functools import wraps
+
 import pandas as pd
 
 from nested_pandas.series.dtype import NestedDtype
+
+__all__ = ["NestedSeries"]
 
 
 def nested_only(func):
     """Decorator to designate certain functions can only be used with NestedDtype."""
 
+    @wraps(func)  # This ensures the original function's metadata is preserved
     def wrapper(*args, **kwargs):
         if not isinstance(args[0].dtype, NestedDtype):
             raise TypeError(f"'{func.__name__}' can only be used with a NestedDtype, not '{args[0].dtype}'.")
