@@ -5,6 +5,7 @@ API Reference
     :maxdepth: 2
 
     NestedFrame <reference/nestedframe>
+    NestedSeries <reference/nestedseries>
     .nest Accessor <reference/accessor>
     Utility Functions <reference/utils>
     NestedDtype <reference/nesteddtype>
