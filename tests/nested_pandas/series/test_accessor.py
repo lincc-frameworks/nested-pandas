@@ -6,6 +6,7 @@ import pytest
 from nested_pandas import NestedDtype, NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack_flat, pack_seq
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_frame_equal, assert_index_equal, assert_series_equal
@@ -21,8 +22,10 @@ def test_registered():
         names=["a", "b"],
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+    nestedseries = NestedSeries(series)
 
     _accessor = series.nest
+    _accessor = nestedseries.nest
 
 
 @pytest.mark.parametrize(
@@ -439,7 +442,7 @@ def test_without_field_single_field():
         ],
         names=["b"],
     )
-    desired = pd.Series(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
+    desired = NestedSeries(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
 
     assert_series_equal(new_series, desired)
 
@@ -464,7 +467,7 @@ def test_without_field_multiple_fields():
         ],
         names=["c"],
     )
-    desired = pd.Series(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
+    desired = NestedSeries(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
 
     assert_series_equal(new_series, desired)
 
@@ -521,7 +524,7 @@ def test_query_flat_1():
         ],
         names=["a", "b"],
     )
-    desired = pd.Series(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
+    desired = NestedSeries(desired_struct_array, dtype=NestedDtype(desired_struct_array.type), index=[5, 7])
 
     assert_series_equal(filtered, desired)
 
@@ -539,7 +542,7 @@ def test_query_flat_empty_rows():
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[5, 7])
 
     filtered = series.nest.query_flat("a > 1000.0")
-    desired = pd.Series([], dtype=series.dtype)
+    desired = NestedSeries([], dtype=series.dtype)
 
     assert_series_equal(filtered, desired)
 
@@ -676,6 +679,7 @@ def test___getitem___nested_field():
     nf = nf.assign(id=np.repeat(np.r_[0:5], 2))
     nf = nf.rename(columns={"nested": "inner"})
     nnf = NestedFrame.from_flat(nf, base_columns=[], on="id", name="outer")
+
     assert_series_equal(nnf["outer"].nest["inner"], nf["inner"], check_index=False)
 
 
@@ -712,7 +716,7 @@ def test___getitem___multiple_fields():
         pa.array([np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])]),
         pa.array([np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
     ]
-    series = pd.Series(
+    series = NestedSeries(
         NestedExtensionArray(
             pa.StructArray.from_arrays(
                 arrays=arrays,
@@ -724,7 +728,7 @@ def test___getitem___multiple_fields():
 
     assert_series_equal(
         series.nest[["b", "a"]],
-        pd.Series(
+        NestedSeries(
             NestedExtensionArray(
                 pa.StructArray.from_arrays(
                     arrays=arrays[::-1],
@@ -894,7 +898,7 @@ def test___setitem___raises_for_wrong_index():
         ],
         names=["a", "b"],
     )
-    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+    series = NestedSeries(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
     flat_series = pd.Series(
         data=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
@@ -1017,7 +1021,7 @@ def test___eq___false_for_different_types():
     """Test that one.nest == other.nest is False for different types."""
     seq = [{"a": [1, 2, 3]}, {"a": [4, None]}]
     series = pack_seq(seq)
-    assert series.nest != pd.Series(seq, dtype=pd.ArrowDtype(pa.struct([("a", pa.list_(pa.int64()))])))
+    assert series.nest != NestedSeries(seq, dtype=pd.ArrowDtype(pa.struct([("a", pa.list_(pa.int64()))])))
 
 
 def test_clear_raises():
