@@ -1179,10 +1179,16 @@ class NestedFrame(pd.DataFrame):
 
         for nest_col in self.nested_columns:
             nested_df = self[nest_col].nest.to_flat()
-            # prepend prefix to columns for value matching, undo after filled
-            nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
-            nested_df = nested_df.fillna(value=value, axis=axis, inplace=False, limit=limit)
-            nested_df.columns = [col.split(".")[-1] for col in nested_df.columns]
+            nested_value: Any
+            if isinstance(value, dict):
+                nested_value = {}
+                for k, v in value.items():
+                    if k.startswith(f"{nest_col}."):
+                        subcol = k.split(".", 1)[1]  # strip prefix
+                        nested_value[subcol] = v
+            else:
+                nested_value = value
+            nested_df = nested_df.fillna(value=nested_value, axis=axis, inplace=False, limit=None)
             filled_df = filled_df.add_nested(nested_df, nest_col)
 
         if inplace:
