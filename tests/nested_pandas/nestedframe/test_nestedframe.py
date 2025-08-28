@@ -152,6 +152,30 @@ def test_is_known_column():
     assert base._is_known_column("nested.d")
 
 
+def test_series_methods_on_nest_in_query_eval():
+    """Test that a nest can also be treated as a Series.
+    .isna() and .notna() should be available and work, for example.
+    """
+
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    # Prepare to test isna, notna
+    base.loc[1, "nested"] = None
+
+    assert (base["nested"].isna() == base.eval("nested.isna()")).all()
+    assert (base["nested"].notna() == base.eval("nested.notna()")).all()
+
+    assert len(base[base["nested"].isna()]) == 1
+    assert len(base.query("nested.isna()")) == 1
+
+
 def test_get_nested_column():
     """Test that __getitem__ can retrieve a nested column"""
 
