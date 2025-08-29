@@ -13,6 +13,7 @@ from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
 from pandas.core.computation.eval import Expr, ensure_scope
+from pandas.core.dtypes.common import is_bool_dtype
 from pandas.core.dtypes.inference import is_list_like
 
 from nested_pandas.nestedframe.expr import (
@@ -252,6 +253,8 @@ class NestedFrame(pd.DataFrame):
 
     def _is_key_list(self, item):
         if not is_list_like(item):
+            return False
+        if is_bool_dtype(item):
             return False
         for k in item:
             if not isinstance(k, str):

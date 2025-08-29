@@ -256,6 +256,28 @@ def test_get_nested_columns_errors():
         base[["a", "nested.a", "wrong.b"]]
 
 
+def test_getitem_empty_bool_array():
+    """Test that __getitem__ works as expected with an empty boolean array"""
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+
+    base = base.add_nested(nested, "nested")
+
+    bool_index = np.array([], dtype=bool)
+
+    with pytest.raises(ValueError, match="Item wrong length"):
+        _ = base[bool_index]
+
+    df = base.iloc[:0][bool_index]
+    assert len(df) == 0
+    assert np.all(df.columns == base.columns)
+    assert df.dtypes.equals(base.dtypes)
+
+
 def test_set_or_replace_nested_col():
     """Test that __setitem__ can set or replace a column in an existing nested structure"""
 
