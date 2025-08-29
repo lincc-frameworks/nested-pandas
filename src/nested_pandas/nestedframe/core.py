@@ -1180,7 +1180,7 @@ class NestedFrame(pd.DataFrame):
         for nest_col in self.nested_columns:
             nested_df = self[nest_col].nest.to_flat()
             nested_value: Any
-            if isinstance(value, dict):
+            if isinstance(value, Mapping):
                 nested_value = {}
                 for k, v in value.items():
                     if k.startswith(f"{nest_col}."):
