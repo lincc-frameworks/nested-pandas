@@ -1,7 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-from collections.abc import Sequence
+from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
@@ -33,10 +33,11 @@ def read_parquet(
 
     Parameters
     ----------
-    data: str, Upath, or file-like object
+    data: str, list or str, Path, Upath, or file-like object
         Path to the data or a file-like object. If a string is passed, it can be a single file name,
         directory name, or a remote path (e.g., HTTP/HTTPS or S3). If a file-like object is passed,
-        it must support the `read` method.
+        it must support the `read` method. You can also pass the `filesystem` argument with
+        a `pyarrow.fs` object, which will be passed to `pyarrow.parquet.read_table()`.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -93,26 +94,13 @@ def read_parquet(
         reject_nesting = [reject_nesting]
 
     # First load through pyarrow
-    # Check if `data` is a file-like object or a sequence
-    if hasattr(data, "read") or (
-        isinstance(data, Sequence) and not isinstance(data, str | bytes | bytearray)
-    ):
-        # If `data` is a file-like object or a sequence, pass it directly to pyarrow
+    # If `filesystem` is specified - use it
+    if kwargs.get("filesystem") is not None:
         table = pq.read_table(data, columns=columns, **kwargs)
+    # Otherwise convert with a special function
     else:
-        # Try creating pyarrow-native filesystem
-        try:
-            fs, path = pa.fs.FileSystem.from_uri(data)
-        except (TypeError, pa.ArrowInvalid):
-            # Otherwise, treat `data` as an URI for fsspec-supported silesystem and use UPath
-            upath = UPath(data)
-            # Use smaller block size for better performance
-            if upath.protocol in ("http", "https"):
-                upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
-            path = upath.path
-            fs = upath.fs
-        filesystem = kwargs.pop("filesystem", fs)
-        table = pq.read_table(path, columns=columns, filesystem=filesystem, **kwargs)
+        data, filesystem = _transform_read_parquet_data_arg(data)
+        table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -170,6 +158,56 @@ def read_parquet(
             table = table.append_column(col, struct)
 
     return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
+
+
+def _transform_read_parquet_data_arg(data):
+    """Transform `data` argument of read_parquet to pq.read_parquet's `source` and `filesystem`"""
+    # Check if a list, run the function recursively and check that filesystems are all the same
+    if isinstance(data, list):
+        paths = []
+        first_fs = None
+        for i, d in enumerate(data):
+            path, fs = _transform_read_parquet_data_arg(d)
+            paths.append(path)
+            if i == 0:
+                first_fs = fs
+            elif fs != first_fs:
+                raise ValueError(
+                    f"All filesystems in the list should be the same, first fs: {first_fs}, {i + 1} fs: {fs}"
+                )
+        return paths, first_fs
+    # Check if a file-like object
+    if hasattr(data, "read"):
+        return data, None
+        # Check if `data` is a Path
+    # Check if `data` is a UPath and use it
+    if isinstance(data, UPath):
+        return data.path, data.fs
+    if isinstance(data, Path):
+        return data, None
+    # It should be a string now
+    if not isinstance(data, str):
+        raise TypeError("data must be a file-like object, Path, UPath, list, or str")
+
+    # Try creating pyarrow-native filesystem assuming that `data` is a URI
+    try:
+        fs, path = pa.fs.FileSystem.from_uri(data)
+    # If the convertion failed, continue
+    except (TypeError, pa.ArrowInvalid):
+        pass
+    # If not, use pyarrow filesystem
+    else:
+        return path, fs
+
+    # Otherwise, treat `data` as a URI or a local path
+    upath = UPath(data)
+    # If it is a local path, use pyarrow's filesystem
+    if upath.protocol == "":
+        return upath.path, None
+    # If HTTP, change the default UPath object to use a smaller block size
+    if upath.protocol in ("http", "https"):
+        upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
+    return upath.path, upath.fs
 
 
 def from_pyarrow(
