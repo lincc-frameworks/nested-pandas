@@ -1,13 +1,18 @@
+import io
 import os
 import tempfile
+from pathlib import Path
 
+import fsspec.implementations.http
+import fsspec.implementations.local
 import pandas as pd
 import pyarrow as pa
+import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
 from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
-from nested_pandas.nestedframe.io import from_pyarrow
+from nested_pandas.nestedframe.io import _transform_read_parquet_data_arg, from_pyarrow
 from pandas.testing import assert_frame_equal
 from upath import UPath
 
@@ -338,3 +343,57 @@ def test_read_parquet_list_autocast():
         assert len(nf["c"].nest.to_flat()) == 9
         assert nf["d"].nest.fields == ["d"]
         assert len(nf["d"].nest.to_flat()) == 9
+
+
+def test__transform_read_parquet_data_arg():
+    """Testing _transform_read_parquet_data_arg"""
+    with open("tests/test_data/nested.parquet", "rb") as f:
+        bytes = f.read()
+    io_bytes = io.BytesIO(bytes)
+    assert _transform_read_parquet_data_arg(io_bytes) == (io_bytes, None)
+
+    local_path = "tests/test_data/nested.parquet"
+    with open(local_path, "rb") as f:
+        assert _transform_read_parquet_data_arg(f) == (f, None)
+    with open(Path(local_path), "rb") as f:
+        assert _transform_read_parquet_data_arg(f) == (f, None)
+    with Path(local_path).open("rb") as f:
+        assert _transform_read_parquet_data_arg(f) == (f, None)
+    with UPath(local_path).open("rb") as f:
+        assert _transform_read_parquet_data_arg(f) == (f, None)
+
+    assert _transform_read_parquet_data_arg(local_path) == (local_path, None)
+
+    assert _transform_read_parquet_data_arg(Path(local_path)) == (Path(local_path), None)
+
+    local_upath = UPath(local_path)
+    assert _transform_read_parquet_data_arg(local_upath) == (local_path, local_upath.fs)
+
+    s3_path = "s3://nasa-irsa-euclid-q1/contributed/q1/merged_objects/hats/euclid_q1_merged_objects-hats/dataset/Norder=3/Dir=0/Npix=334/part0.snappy.parquet"
+    path, fs = _transform_read_parquet_data_arg(s3_path)
+    assert f"s3://{path}" == s3_path
+    assert isinstance(fs, pa.fs.S3FileSystem)
+
+    https_path = "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet"
+    path, fs = _transform_read_parquet_data_arg(https_path)
+    assert path == https_path
+    assert isinstance(fs, fsspec.implementations.http.HTTPFileSystem)
+
+    with pytest.raises(TypeError):
+        _transform_read_parquet_data_arg(123)
+
+    local_paths = list(Path("tests/test_data").glob("*.parquet"))
+    assert _transform_read_parquet_data_arg(local_paths) == (local_paths, None)
+
+    local_upaths = list(UPath("tests/test_data").glob("*.parquet"))
+    paths, fs = _transform_read_parquet_data_arg(local_upaths)
+    assert paths == [up.path for up in local_upaths]
+    assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
+
+    with pytest.raises(ValueError):
+        _transform_read_parquet_data_arg(
+            [
+                "tests/test_data",
+                "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet",
+            ]
+        )
