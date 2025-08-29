@@ -109,9 +109,7 @@ class _NestResolver(dict):
 
     def __getitem__(self, item):
         top_nest = item if "." not in item else item.split(".")[0].strip()
-        if not super().__contains__(top_nest):
-            if top_nest not in self._outer.nested_columns:
-                raise KeyError(f"Unknown nest {top_nest}")
+        if not super().__contains__(top_nest) and top_nest in self._outer.nested_columns:
             self._initialize_column_resolver(top_nest, self._outer)
         return super().__getitem__(top_nest)
 
@@ -165,7 +163,8 @@ class _NestedFieldResolver:
             result.nest_name = self._nest_name
             result.flat_nest = self._flat_nest
             return result
-        raise AttributeError(f"No attribute {item_name}")
+        # Outside of this special case, delegate to the underlying Pandas object.
+        return getattr(self._outer[self._nest_name], item_name)
 
 
 def _subexprs_by_nest(parents: list, node) -> dict[str, list]:
