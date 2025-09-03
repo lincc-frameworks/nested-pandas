@@ -179,10 +179,10 @@ def _transform_read_parquet_data_arg(data):
     # Check if a file-like object
     if hasattr(data, "read"):
         return data, None
-        # Check if `data` is a Path
     # Check if `data` is a UPath and use it
     if isinstance(data, UPath):
         return data.path, data.fs
+    # Check if `data` is a Path (Path is a superclass for UPath, so this order of checks)
     if isinstance(data, Path):
         return data, None
     # It should be a string now
