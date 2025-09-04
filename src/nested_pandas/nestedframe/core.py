@@ -1895,6 +1895,18 @@ class NestedFrame(pd.DataFrame):
         -------
         pd.DataFrame
             Ordinal pandas DataFrame.
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5,5, seed=1)
+        >>> nf.to_pandas()
+                  a         b                                             nested
+        0  0.417022  0.184677  {'t': array([ 8.38389029, 13.4093502 , 16.0148...
+        1  0.720324  0.372520  {'t': array([13.70439001,  8.34609605, 19.3652...
+        2  0.000114  0.691121  {'t': array([ 4.08904499, 11.17379657,  6.2684...
+        3  0.302333  0.793535  {'t': array([17.56234873,  2.80773877, 13.8464...
+        4  0.146756  1.077633  {'t': array([ 0.54775186,  3.96202978, 17.5277...
         """
         df = pd.DataFrame(self)
         for col in self.nested_columns:

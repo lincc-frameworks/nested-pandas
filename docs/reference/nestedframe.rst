@@ -51,4 +51,5 @@ I/O
     :toctree: api/
 
     NestedFrame.to_parquet
+    NestedFrame.to_pandas
     read_parquet
