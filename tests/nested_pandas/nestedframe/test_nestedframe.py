@@ -2217,4 +2217,3 @@ def test_issue350():
     nf = nf.set_index(np.array([100, 100, 101]))
     result = nf.reduce(lambda flux: {"new.flux": flux}, "nested.flux")
     assert len(result) == 3
-
