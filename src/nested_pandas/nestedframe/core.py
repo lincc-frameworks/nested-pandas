@@ -408,6 +408,12 @@ class NestedFrame(pd.DataFrame):
         packed = pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()
         res = new_df.join(packed, how=how, on=on)
+
+        # In some cases join returns a DataFrame, so convert back to NestedFrame
+        # For example, with empty dataframes
+        if not isinstance(res, NestedFrame):
+            res = NestedFrame(res)
+
         return res
 
     def nest_lists(self, columns: list[str], name: str) -> NestedFrame:

@@ -2199,3 +2199,13 @@ def test_issue294():
     # Failed with a ValueError in the original issue
     nf["nested.c"] = nf["c"]
     nf["nested.mag"] = -2.5 * np.log10(nf["nested.flux"])
+
+
+def test_issue348():
+    """https://github.com/lincc-frameworks/nested-pandas/issues/348"""
+    new = NestedFrame.from_flat(
+        pd.DataFrame({"x": np.array([], dtype=float)}),
+        base_columns=[],
+        name="new",
+    )
+    assert isinstance(new, NestedFrame)
