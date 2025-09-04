@@ -2199,3 +2199,11 @@ def test_issue294():
     # Failed with a ValueError in the original issue
     nf["nested.c"] = nf["c"]
     nf["nested.mag"] = -2.5 * np.log10(nf["nested.flux"])
+
+
+def test_issue350():
+    """https://github.com/lincc-frameworks/nested-pandas/issues/350"""
+    nf = generate_data(3, 2)
+    nf = nf.set_index(np.array([100, 100, 101]))
+    result = nf.reduce(lambda flux: {"new.flux": flux}, "nested.flux")
+    assert len(result) == 3
