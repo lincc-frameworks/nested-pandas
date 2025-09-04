@@ -1870,7 +1870,8 @@ class NestedFrame(pd.DataFrame):
                 nested_col = pack_lists(rename_df, name=layer)
                 results_nf = results_nf[
                     [col for col in results_nf.columns if not col.startswith(f"{layer}.")]
-                ].join(nested_col)
+                ]
+                results_nf[layer] = nested_col
 
         if append_columns:
             # Append the results to the original NestedFrame
