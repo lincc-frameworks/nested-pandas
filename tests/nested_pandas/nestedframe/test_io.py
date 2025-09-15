@@ -335,6 +335,7 @@ def test_read_parquet_list_autocast():
         }
     )
     with tempfile.NamedTemporaryFile("wb", suffix=".parquet") as tmpfile:
+        tmpfile.close()
         list_nf.to_parquet(tmpfile.name)
 
         nf = read_parquet(tmpfile.name, autocast_list=True)
