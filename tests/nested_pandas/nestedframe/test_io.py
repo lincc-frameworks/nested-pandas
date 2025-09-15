@@ -302,7 +302,8 @@ def test_read_empty_parquet():
     """Test that we can read empty parquet files"""
     orig_nf = generate_data(1, 2).iloc[:0]
 
-    with tempfile.NamedTemporaryFile("wb", suffix="parquet") as tmpfile:
+    with tempfile.NamedTemporaryFile("wb", suffix=".parquet", delete_on_close=False) as tmpfile:
+        tmpfile.close()
         orig_nf.to_parquet(tmpfile.name)
         # All columns
         # Do not check dtype because of:
@@ -333,7 +334,7 @@ def test_read_parquet_list_autocast():
             "d": [[10, 20, 30], [40, 50, 60], [70, 80, 90]],
         }
     )
-    with tempfile.NamedTemporaryFile("wb", suffix="parquet") as tmpfile:
+    with tempfile.NamedTemporaryFile("wb", suffix=".parquet") as tmpfile:
         list_nf.to_parquet(tmpfile.name)
 
         nf = read_parquet(tmpfile.name, autocast_list=True)
