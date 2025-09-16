@@ -1,7 +1,7 @@
+import warnings
 from functools import wraps
 
 import pandas as pd
-import warnings
 
 from nested_pandas.series.dtype import NestedDtype
 
@@ -136,15 +136,15 @@ class NestedSeries(pd.Series):
             DeprecationWarning,
             stacklevel=2,  # Ensures the warning points to the caller
         )
-        return self.explode(fields=fields)
+        return self.explode(columns=fields)
 
     @nested_only
-    def explode(self, fields: list[str] | None = None) -> pd.DataFrame:
+    def explode(self, columns: list[str] | None = None) -> pd.DataFrame:
         """Unpack nested series into dataframe of flat arrays.
 
         Parameters
         ----------
-        fields : list[str] or None, optional
+        columns : list[str] or None, optional
             Names of the fields to include. Default is None, which means all fields.
 
         Returns
@@ -172,10 +172,10 @@ class NestedSeries(pd.Series):
         4    3.96203   87.81425    r
 
         """
-        return self.nest.to_flat(fields=fields)
+        return self.nest.to_flat(columns=columns)
 
     @nested_only
-    def to_lists(self, fields: list[str] | None = None) -> pd.DataFrame:
+    def to_lists(self, columns: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns.
 
         Parameters
@@ -202,4 +202,4 @@ class NestedSeries(pd.Series):
         3  [17.56234873  2.80773877]  [69.23226157 16.98304196]  ['r' 'r']
         4    [0.54775186 3.96202978]  [87.63891523 87.81425034]  ['g' 'r']
         """
-        return self.nest.to_lists(fields=fields)
+        return self.nest.to_lists(columns=columns)

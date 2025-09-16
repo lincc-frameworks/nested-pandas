@@ -1,5 +1,6 @@
 from __future__ import annotations  # Self is not available in python 3.10
 
+import warnings
 from collections.abc import Mapping
 
 # We use Type, because we must use "type" as an attribute name
@@ -163,6 +164,17 @@ class NestedDtype(ExtensionDtype):
     @property
     def struct_list_pa_dtype(self) -> pa.StructType:
         """Struct-list pyarrow type representing the nested type."""
+        warnings.warn(
+            "struct_list_pa_dtype is deprecated and will be privatized sometime in the future. "
+            "Use _struct_list_pa_dtype instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _struct_list_pa_dtype
+
+    @property
+    def _struct_list_pa_dtype(self) -> pa.StructType:
+        """Struct-list pyarrow type representing the nested type."""
         return self.pyarrow_dtype
 
     @classmethod
@@ -190,7 +202,39 @@ class NestedDtype(ExtensionDtype):
         ...     == pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.int64())})
         ... )
         """
-        pyarrow_dtype = pa.struct({field: pa.list_(pa_type) for field, pa_type in fields.items()})
+        warnings.warn(
+            "from_fields is deprecated and will be removed in a future release. " "Use from_columns instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.from_columns(fields)
+
+    @classmethod
+    def from_columns(cls, columns: Mapping[str, pa.DataType]) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Make NestedDtype from a mapping of column names and list item types.
+
+        Parameters
+        ----------
+        columns : Mapping[str, pa.DataType]
+            A mapping of column names and their item types. Since all fields are lists, the item types are
+            inner types of the lists, not the list types themselves.
+
+        Returns
+        -------
+        NestedDtype
+            The constructed NestedDtype.
+
+        Examples
+        --------
+        >>> dtype = NestedDtype.from_columns({"a": pa.float64(), "b": pa.int64()})
+        >>> dtype
+        nested<a: [double], b: [int64]>
+        >>> assert (
+        ...     dtype.pyarrow_dtype
+        ...     == pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.int64())})
+        ... )
+        """
+        pyarrow_dtype = pa.struct({column: pa.list_(pa_type) for column, pa_type in columns.items()})
         pyarrow_dtype = cast(pa.StructType, pyarrow_dtype)
         return cls(pyarrow_dtype=pyarrow_dtype)
 
@@ -226,11 +270,27 @@ class NestedDtype(ExtensionDtype):
     @property
     def fields(self) -> dict[str, pa.DataType]:
         """The mapping of field names and their item types."""
-        return {field.name: field.type.value_type for field in self.pyarrow_dtype}
+        warnings.warn(
+            "The `fields` property is deprecated and will be removed in a future release. "
+            "Use the `column_dtypes` property instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.column_dtypes
+
+    @property
+    def column_dtypes(self) -> dict[str, pa.DataType]:
+        """The mapping of field names and their item types."""
+        return {column.name: column.type.value_type for column in self.pyarrow_dtype}
 
     @property
     def field_names(self) -> list[str]:
         """The list of field names of the nested type"""
+        warnings.warn(
+            "The `field_names` property is deprecated and will be removed in a future release. ",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return [field.name for field in self.pyarrow_dtype]
 
     @classmethod
@@ -287,7 +347,28 @@ class NestedDtype(ExtensionDtype):
             If the field is a list-struct, return NestedDtype, else wrap it
             as a pd.ArrowDtype.
         """
-        list_type = self.pyarrow_dtype.field(field).type
+        warnings.warn(
+            "The `field_dtype` method is deprecated and will be removed in a future release. ",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.column_dtype(field)
+
+    def column_dtype(self, column: str) -> pd.ArrowDtype | Self:  # type: ignore[name-defined] # noqa: F821
+        """Pandas dtype of a column, pd.ArrowDType or NestedDtype.
+
+        Parameters
+        ----------
+        column : str
+            Column name
+
+        Returns
+        -------
+        pd.ArrowDtype | NestedDtype
+            If the column is a list-struct, return NestedDtype, else wrap it
+            as a pd.ArrowDtype.
+        """
+        list_type = self.pyarrow_dtype.field(column).type
         value_type = list_type.value_type
         if is_pa_type_is_list_struct(value_type):
             return type(self)(value_type)
@@ -296,4 +377,9 @@ class NestedDtype(ExtensionDtype):
     @property
     def field_dtypes(self) -> dict[str, pd.ArrowDtype | Self]:  # type: ignore[name-defined] # noqa: F821
         """Pandas dtypes of this dtype's fields."""
+        warnings.warn(
+            "The `field_dtypes` property is deprecated and will be removed in a future release. ",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return {field: self.field_dtype(field) for field in self.field_names}
