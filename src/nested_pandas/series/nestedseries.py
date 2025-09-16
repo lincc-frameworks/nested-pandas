@@ -1,6 +1,7 @@
 from functools import wraps
 
 import pandas as pd
+import warnings
 
 from nested_pandas.series.dtype import NestedDtype
 
@@ -34,6 +35,18 @@ class NestedSeries(pd.Series):
     @nested_only
     def fields(self):
         """Returns the fields of the nested series as a list."""
+        warnings.warn(
+            "The `fields` property is deprecated and will be removed in a future release. "
+            "Use the `columns` property instead.",
+            DeprecationWarning,
+            stacklevel=2,  # Ensures the warning points to the caller
+        )
+        return self.nest.fields
+
+    @property
+    @nested_only
+    def columns(self):
+        """Returns the names of the nested columns of the nested series as a list."""
         return self.nest.fields
 
     @property
@@ -104,6 +117,48 @@ class NestedSeries(pd.Series):
         >>> nf = generate_data(5, 2, seed=1)
 
         >>> nf["nested"].to_flat()
+                   t       flux band
+        0    8.38389  80.074457    r
+        0   13.40935  89.460666    g
+        1   13.70439  96.826158    g
+        1   8.346096   8.504421    g
+        2   4.089045  31.342418    g
+        2  11.173797   3.905478    g
+        3  17.562349  69.232262    r
+        3   2.807739  16.983042    r
+        4   0.547752  87.638915    g
+        4    3.96203   87.81425    r
+
+        """
+        warnings.warn(
+            "The `to_flat` method is deprecated and will be removed in a future release. "
+            "Use `explode` instead.",
+            DeprecationWarning,
+            stacklevel=2,  # Ensures the warning points to the caller
+        )
+        return self.explode(fields=fields)
+
+    @nested_only
+    def explode(self, fields: list[str] | None = None) -> pd.DataFrame:
+        """Unpack nested series into dataframe of flat arrays.
+
+        Parameters
+        ----------
+        fields : list[str] or None, optional
+            Names of the fields to include. Default is None, which means all fields.
+
+        Returns
+        -------
+        pd.DataFrame
+            Dataframe of flat arrays.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].explode()
                    t       flux band
         0    8.38389  80.074457    r
         0   13.40935  89.460666    g

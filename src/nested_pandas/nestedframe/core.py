@@ -89,7 +89,7 @@ class NestedFrame(pd.DataFrame):
         all_columns = {"base": self.columns}
         for column in self.columns:
             if isinstance(self.dtypes[column], NestedDtype):
-                nest_cols = self[column].nest.fields
+                nest_cols = self[column].columns
                 all_columns[column] = nest_cols
         return all_columns
 
@@ -288,15 +288,15 @@ class NestedFrame(pd.DataFrame):
                         new_nested = value[col]
                     else:
                         # there must be a better way than through list fields
-                        for field in value[col].nest.fields:
+                        for field in value[col].columns:
                             new_nested = new_nested.nest.with_list_field(
                                 field, value[col].nest.get_list_series(field)
                             )
                 value = new_nested
             # Assign a DataFrame as a new column, auto-nesting it
             elif key not in self.columns:
-                # Note this uses the default approach for add_nested, which is a left join on index
-                new_df = self.add_nested(value, name=key)
+                # Note this uses the default approach for join_nested, which is a left join on index
+                new_df = self.join_nested(value, name=key)
                 self._update_inplace(new_df)
                 return
 
@@ -327,7 +327,7 @@ class NestedFrame(pd.DataFrame):
             if isinstance(value, pd.Series):
                 value.name = field
                 value = value.to_frame()
-            new_df = self.add_nested(value, name=new_nested)
+            new_df = self.join_nested(value, name=new_nested)
             self._update_inplace(new_df)
             return None
 
@@ -603,7 +603,7 @@ class NestedFrame(pd.DataFrame):
         # add nested
         if nested_columns is None:
             nested_columns = [col for col in df.columns if col not in base_columns]
-        return out_df.add_nested(df[nested_columns], name=name)
+        return out_df.join_nested(df[nested_columns], name=name)
 
     @classmethod
     def from_lists(cls, df, base_columns=None, list_columns=None, name="nested"):
@@ -666,7 +666,7 @@ class NestedFrame(pd.DataFrame):
         if len(df) == 0:
             # if the dataframe is empty, just return an empty nested column
             # since there are no iterable values to pack
-            packed_df = NestedFrame().add_nested(df[list_columns], name=name)
+            packed_df = NestedFrame().join_nested(df[list_columns], name=name)
         else:
             # Check that each column has iterable elements
             for col in list_columns:
@@ -1249,7 +1249,7 @@ class NestedFrame(pd.DataFrame):
         ...     data={"d": [np.nan, np.nan, np.nan], "e": [np.nan, 1, np.nan]},
         ...     index=[0, 1, 2]
         ... )
-        >>> nf = nf.add_nested(nested, "nested")
+        >>> nf = nf.join_nested(nested, "nested")
 
         >>> nf.fillna(0)
               a     b     c              nested
@@ -1277,7 +1277,7 @@ class NestedFrame(pd.DataFrame):
             else:
                 nested_value = value
             nested_df = nested_df.fillna(value=nested_value, axis=axis, inplace=False, limit=None)
-            filled_df = filled_df.add_nested(nested_df, nest_col)
+            filled_df = filled_df.join_nested(nested_df, nest_col)
 
         if inplace:
             self._update_inplace(filled_df)
