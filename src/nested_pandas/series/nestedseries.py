@@ -47,7 +47,7 @@ class NestedSeries(pd.Series):
     @nested_only
     def columns(self):
         """Returns the names of the nested columns of the nested series as a list."""
-        return self.nest.fields
+        return self.nest.columns
 
     @property
     @nested_only
@@ -68,8 +68,8 @@ class NestedSeries(pd.Series):
         if not isinstance(self.dtype, NestedDtype):
             return super().__getitem__(key)
 
-        # Return a flattened series for a single field
-        if isinstance(key, str) and key in self.fields:
+        # Return a flattened series for a single column
+        if isinstance(key, str) and key in self.columns:
             return self.nest[key]
 
         # For list-like keys, perform sub-column selection
@@ -90,7 +90,7 @@ class NestedSeries(pd.Series):
             return super().__setitem__(key, value)
 
         # Use nest setitem when setting on a single field
-        if isinstance(key, str) and key in self.fields:
+        if isinstance(key, str) and key in self.columns:
             self.nest[key] = value
             return
 
@@ -145,7 +145,7 @@ class NestedSeries(pd.Series):
         Parameters
         ----------
         columns : list[str] or None, optional
-            Names of the fields to include. Default is None, which means all fields.
+            Names of the columns to include. Default is None, which means all columns.
 
         Returns
         -------
@@ -180,8 +180,8 @@ class NestedSeries(pd.Series):
 
         Parameters
         ----------
-        fields : list[str] or None, optional
-            Names of the fields to include. Default is None, which means all fields.
+        columns : list[str] or None, optional
+            Names of the columns to include. Default is None, which means all columns.
 
         Returns
         -------

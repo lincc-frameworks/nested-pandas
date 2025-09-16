@@ -50,9 +50,10 @@ class NestedDtype(ExtensionDtype):
     def name(self) -> str:
         """The string representation of the nested type"""
         # Replace pd.ArrowDtype with pa.DataType, because it has nicer __str__
+        field_dtypes = {field: self.column_dtype(field) for field in list(self.column_dtypes.keys())}
         nice_dtypes = {
             field: dtype.pyarrow_dtype if isinstance(dtype, pd.ArrowDtype) else dtype
-            for field, dtype in self.field_dtypes.items()
+            for field, dtype in field_dtypes.items()
         }
         fields = ", ".join([f"{field}: [{dtype!s}]" for field, dtype in nice_dtypes.items()])
         return f"nested<{fields}>"
@@ -124,12 +125,12 @@ class NestedDtype(ExtensionDtype):
             except ValueError as e:
                 raise TypeError(
                     f"Parsing pyarrow specific parameters in the string is not supported yet: {value_type}. "
-                    "Please use NestedDtype() or NestedDtype.from_fields() instead."
+                    "Please use NestedDtype() or NestedDtype.from_columns() instead."
                 ) from e
 
             fields[field_name] = pa_value_type
 
-        return cls.from_fields(fields)
+        return cls.from_columns(fields)
 
     # ArrowDtype would return None so we do
     def _get_common_dtype(self, dtypes: list) -> None:
@@ -170,7 +171,7 @@ class NestedDtype(ExtensionDtype):
             DeprecationWarning,
             stacklevel=2,
         )
-        return _struct_list_pa_dtype
+        return self._struct_list_pa_dtype
 
     @property
     def _struct_list_pa_dtype(self) -> pa.StructType:

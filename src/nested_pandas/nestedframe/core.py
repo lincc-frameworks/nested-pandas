@@ -204,7 +204,7 @@ class NestedFrame(pd.DataFrame):
         base_name = components[0]
         if self._is_nested_column(base_name):
             nested_name = ".".join(components[1:])
-            return nested_name in self.dtypes[base_name].fields
+            return nested_name in self.dtypes[base_name].column_dtypes
         return False
 
     def _is_nested_column(self, col: str):
@@ -247,7 +247,7 @@ class NestedFrame(pd.DataFrame):
         if self._is_known_hierarchical_column(components):
             nested = components[0]
             field = ".".join(components[1:])
-            return self[nested].nest.get_flat_series(field)
+            return self[nested].explode()[field]
         else:
             raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
 
@@ -287,10 +287,10 @@ class NestedFrame(pd.DataFrame):
                     if i == 0:
                         new_nested = value[col]
                     else:
-                        # there must be a better way than through list fields
-                        for field in value[col].columns:
-                            new_nested = new_nested.nest.with_list_field(
-                                field, value[col].nest.get_list_series(field)
+                        # there must be a better way than through list columns
+                        for column in value[col].columns:
+                            new_nested = new_nested.nest.add_list_column(
+                                column, value[col].to_lists()[column]
                             )
                 value = new_nested
             # Assign a DataFrame as a new column, auto-nesting it
@@ -315,9 +315,9 @@ class NestedFrame(pd.DataFrame):
             # Support a special case of embedding a base column into a nested column, with values being
             # repeated in each nested list-array.
             if isinstance(value, pd.Series) and self.index.equals(value.index):
-                new_nested_series = self[nested].nest.with_filled_field(field, value)
+                new_nested_series = self[nested].nest.add_filled_column(field, value)
             else:
-                new_nested_series = self[nested].nest.with_flat_field(field, value)
+                new_nested_series = self[nested].nest.add_flat_column(field, value)
             return super().__setitem__(nested, new_nested_series)
 
         # Adding a new nested structure from a column
@@ -770,9 +770,9 @@ class NestedFrame(pd.DataFrame):
                 for col in nested_cols:
                     sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
                     if inplace:
-                        self[col] = self[col].nest.without_field(sub_cols)
+                        self[col] = self[col].nest.drop(sub_cols)
                     else:
-                        self = self.assign(**{f"{col}": self[col].nest.without_field(sub_cols)})
+                        self = self.assign(**{f"{col}": self[col].nest.drop(sub_cols)})
 
             # drop remaining base columns
             if len(base_labels) > 0:
@@ -862,7 +862,7 @@ class NestedFrame(pd.DataFrame):
         # handle nested columns
         nested_mins = []
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()
+            nested_df = self[nest_col].explode()
             nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
             nested_mins.append(nested_df.min(numeric_only=numeric_only, **kwargs))
 
@@ -936,7 +936,7 @@ class NestedFrame(pd.DataFrame):
         # handle nested columns
         nested_maxs = []
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()
+            nested_df = self[nest_col].explode()
             nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
             nested_maxs.append(nested_df.max(numeric_only=numeric_only, **kwargs))
 
@@ -1041,7 +1041,7 @@ class NestedFrame(pd.DataFrame):
 
             # check the nested columns
             else:
-                nested_df = self[checkable].nest.to_flat()
+                nested_df = self[checkable].explode()
                 nested_df.columns = [f"{checkable}.{col}" for col in nested_df.columns]
                 try:
                     nested_desc = nested_df.describe(
@@ -1176,7 +1176,7 @@ class NestedFrame(pd.DataFrame):
                 raise ValueError(
                     f"One or few rows of {nested_col} have different element counts from {nested_columns[0]}"
                 )
-            flat = w_ordinal_idx[nested_col].nest.to_flat()
+            flat = w_ordinal_idx[nested_col].explode()
             # Check if counts (lengths) of this nested column mismatch with one of the list columns.
             if is_base_exploded and not base_exploded.index.equals(flat.index):
                 raise ValueError(
@@ -1266,7 +1266,7 @@ class NestedFrame(pd.DataFrame):
         filled_df = super().__getitem__(base_cols).fillna(value=value, axis=axis, inplace=False, limit=limit)
 
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()
+            nested_df = self[nest_col].explode()
             nested_value: Any
             if isinstance(value, Mapping):
                 nested_value = {}
@@ -1652,7 +1652,7 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("ignore_index is not supported for nested columns")
         if subset is not None:
             subset = [col.split(".")[-1] for col in subset]
-        target_flat = self[target].nest.to_flat()
+        target_flat = self[target].explode()
         target_flat = target_flat.set_index(self[target].array.get_list_index())
         if inplace:
             target_flat.dropna(
@@ -1769,7 +1769,7 @@ class NestedFrame(pd.DataFrame):
                 key=key,
             )
         else:  # target is a nested column
-            target_flat = self[target].nest.to_flat()
+            target_flat = self[target].explode()
             target_flat = target_flat.set_index(self[target].array.get_list_index())
 
             if target_flat.index.name is None:  # set name if not present

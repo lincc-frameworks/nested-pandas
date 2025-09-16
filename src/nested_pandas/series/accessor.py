@@ -114,7 +114,7 @@ class NestSeriesAccessor(Mapping):
         if len(columns) == 0:
             raise ValueError("Cannot flatten a struct with no columns")
 
-        index = self.get_flat_index()
+        index = self.flat_index
 
         flat_chunks: dict[str, list[pa.Array]] = {column: [] for column in columns}
         for chunk in self._series.array.struct_array.iterchunks():
@@ -201,7 +201,7 @@ class NestSeriesAccessor(Mapping):
         1  13.40935  89.460666    g      50.0
         """
         warnings.warn(
-            ".nest.with_field is deprecated, use .nest.with_flat_field instead",
+            ".nest.with_field is deprecated, use .nest.add_column instead",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -238,7 +238,7 @@ class NestSeriesAccessor(Mapping):
         0   8.38389  80.074457    r      50.0
         1  13.40935  89.460666    g      50.0
         """
-        return self.with_flat_field(column, value)
+        return self.add_flat_column(column, value)
 
     def with_flat_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
@@ -683,16 +683,17 @@ class NestSeriesAccessor(Mapping):
             flat_array = list_array.flatten()
             flat_chunks.append(flat_array)
 
-        flat_chunked_array = pa.chunked_array(flat_chunks, type=self._series.dtype.fields[field])
+        flat_chunked_array = pa.chunked_array(flat_chunks, type=self._series.dtype.column_dtypes[field])
 
         flat_series = pd.Series(
             flat_chunked_array,
-            dtype=self._series.dtype.field_dtype(field),
-            index=self.get_flat_index(),
+            dtype=self._series.dtype.column_dtype(field),
+            # index=self.get_flat_index(),
+            index=self.flat_index,
             name=field,
             copy=False,
         )
-        if isinstance(self._series.dtype.field_dtype(field), NestedDtype):
+        if isinstance(self._series.dtype.column_dtype(field), NestedDtype):
             return NestedSeries(flat_series, copy=False)
         return flat_series
 
@@ -758,7 +759,7 @@ class NestSeriesAccessor(Mapping):
             return NestedSeries(new_array, index=self._series.index, name=self._series.name)
 
         # If the key is a single string, return the flat series for that field
-        return self.get_flat_series(key)
+        return self.get_flat_series(key)  # keep use of deprecated function for now, due to dtype handling
 
     def __setitem__(self, key: str, value: ArrayLike) -> None:
         """Replace the field values from flat-array of values
@@ -783,7 +784,7 @@ class NestSeriesAccessor(Mapping):
             self._series.array.set_flat_field(key, value, keep_dtype=True)
             return
 
-        if isinstance(value, pd.Series) and not self.get_flat_index().equals(value.index):
+        if isinstance(value, pd.Series) and not self.flat_index.equals(value.index):
             raise ValueError("Cannot set field with a Series of different index")
 
         pa_array = pa.array(value, from_pandas=True)
@@ -904,9 +905,9 @@ class NestSeriesAccessor(Mapping):
         1   0.146756  b   0.547752  87.638915    g
         1   0.146756  b    3.96203   87.81425    r
         """
-        if not isinstance(self._series.dtype.field_dtype(field), NestedDtype):
+        if not isinstance(self._series.dtype.column_dtype(field), NestedDtype):
             raise ValueError(
-                f"Field '{field}' dtype must be NestedDtype, got '{self._series.dtype.field_dtype(field)}'"
+                f"Field '{field}' dtype must be NestedDtype, got '{self._series.dtype.column_dtype(field)}'"
             )
 
         # Copy series and make an "ordinal" index
