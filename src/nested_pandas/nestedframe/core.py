@@ -351,6 +351,10 @@ class NestedFrame(pd.DataFrame):
 
         This method returns a new NestedFrame with the added nested column.
 
+        .. warning::
+            **Deprecation Warning**: The `add_nested` method is deprecated and will be removed
+            in a future release. Use `join_nested` instead.
+
         Parameters
         ----------
         obj : pd.DataFrame or a sequence of items convertible to nested structures
@@ -397,6 +401,78 @@ class NestedFrame(pd.DataFrame):
         ...             index=[0,0,0,1,1,1,2,2,2])
         >>> # By default, aligns on the index
         >>> nf.add_nested(nf2, "nested")
+           a  b                nested
+        0  1  4  [{c: 1}; …] (3 rows)
+        1  2  5  [{c: 4}; …] (3 rows)
+        2  3  6  [{c: 7}; …] (3 rows)
+        """
+        warnings.warn(
+            "The `add_nested` method is deprecated and will be removed in a future release. "
+            "Use `join_nested` instead.",
+            DeprecationWarning,
+            stacklevel=2,  # Ensures the warning points to the caller
+        )
+        return self.join_nested(obj, name, how=how, on=on, dtype=dtype)
+
+    def join_nested(
+        self,
+        obj,
+        name: str,
+        *,
+        how: str = "left",
+        on: None | str | list[str] = None,
+        dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Packs input object to a nested column and adds it to the NestedFrame
+
+        This method returns a new NestedFrame with the added nested column.
+
+        Parameters
+        ----------
+        obj : pd.DataFrame or a sequence of items convertible to nested structures
+            The object to be packed into nested pd.Series and added to
+            the NestedFrame. If a DataFrame is passed, it must have non-unique
+            index values, which are used to pack the DataFrame. If a sequence
+            of elements is passed, it is packed into a nested pd.Series.
+            Sequence elements may be individual pd.DataFrames, dictionaries
+            (keys are nested column names, values are arrays of the same
+            length), or any other object convertible to pa.StructArray.
+            Additionally, None and pd.NA are allowed as elements to represent
+            missing values.
+        name : str
+            The name of the nested column to be joined to the NestedFrame.
+        how : {'left', 'right', 'outer', 'inner'}, default: 'left'
+            How to handle the operation of the two objects:
+
+            - left: use calling frame's index.
+            - right: use the calling frame's index and order but drop values
+              not in the other frame's index.
+            - outer: form union of calling frame's index with other frame's
+              index, and sort it lexicographically.
+            - inner: form intersection of calling frame's index with other
+              frame's index, preserving the order of the calling index.
+        on : str, default: None
+            A column in the list
+        dtype : dtype or None
+            NestedDtype to use for the nested column; pd.ArrowDtype or
+            pa.DataType can also be used to specify the nested dtype. If None,
+            the dtype is inferred from the input object.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with the joined nested column.
+
+        Examples
+        --------
+
+        >>> import nested_pandas as npd
+        >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
+        ...            index=[0,1,2])
+        >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
+        ...             index=[0,0,0,1,1,1,2,2,2])
+        >>> # By default, aligns on the index
+        >>> nf.join_nested(nf2, "nested")
            a  b                nested
         0  1  4  [{c: 1}; …] (3 rows)
         1  2  5  [{c: 4}; …] (3 rows)
