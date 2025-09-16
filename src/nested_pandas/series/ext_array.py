@@ -622,7 +622,7 @@ class NestedExtensionArray(ExtensionArray):
 
     def __arrow_array__(self, type=None):
         """Convert the extension array to a PyArrow array."""
-        # struct_array is the default "external" representation
+        # list_array is the default "external" representation
         if type is None:
             return self.list_array
         if pa.types.is_struct(type):
