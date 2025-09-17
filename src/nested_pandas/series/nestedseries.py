@@ -2,6 +2,7 @@ import warnings
 from functools import wraps
 
 import pandas as pd
+from deprecated import deprecated
 
 from nested_pandas.series.dtype import NestedDtype
 
@@ -97,6 +98,9 @@ class NestedSeries(pd.Series):
         return super().__setitem__(key, value)
 
     @nested_only
+    @deprecated(
+        version="0.6.0", reason="`to_flat` will be removed in version 0.7.0, " "use `explode` instead."
+    )
     def to_flat(self, fields: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of flat arrays.
 
@@ -130,12 +134,6 @@ class NestedSeries(pd.Series):
         4    3.96203   87.81425    r
 
         """
-        warnings.warn(
-            "The `to_flat` method is deprecated and will be removed in a future release. "
-            "Use `explode` instead.",
-            DeprecationWarning,
-            stacklevel=2,  # Ensures the warning points to the caller
-        )
         return self.explode(columns=fields)
 
     @nested_only

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from deprecated import deprecated
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
@@ -289,7 +290,7 @@ class NestedFrame(pd.DataFrame):
                     else:
                         # there must be a better way than through list columns
                         for column in value[col].columns:
-                            new_nested = new_nested.nest.add_list_column(
+                            new_nested = new_nested.nest.set_list_column(
                                 column, value[col].to_lists()[column]
                             )
                 value = new_nested
@@ -315,9 +316,9 @@ class NestedFrame(pd.DataFrame):
             # Support a special case of embedding a base column into a nested column, with values being
             # repeated in each nested list-array.
             if isinstance(value, pd.Series) and self.index.equals(value.index):
-                new_nested_series = self[nested].nest.add_filled_column(field, value)
+                new_nested_series = self[nested].nest.set_filled_column(field, value)
             else:
-                new_nested_series = self[nested].nest.add_flat_column(field, value)
+                new_nested_series = self[nested].nest.set_flat_column(field, value)
             return super().__setitem__(nested, new_nested_series)
 
         # Adding a new nested structure from a column
@@ -338,6 +339,9 @@ class NestedFrame(pd.DataFrame):
         """Delete a column or a nested field using dot notation (e.g., del nf['nested.x'])"""
         self.drop([key], axis=1, inplace=True)
 
+    @deprecated(
+        version="0.6.0", reason="`add_nested` will be removed in version 0.7.0, " "use `join_nested` instead."
+    )
     def add_nested(
         self,
         obj,
@@ -350,10 +354,6 @@ class NestedFrame(pd.DataFrame):
         """Packs input object to a nested column and adds it to the NestedFrame
 
         This method returns a new NestedFrame with the added nested column.
-
-        .. warning::
-            **Deprecation Warning**: The `add_nested` method is deprecated and will be removed
-            in a future release. Use `join_nested` instead.
 
         Parameters
         ----------
@@ -406,12 +406,6 @@ class NestedFrame(pd.DataFrame):
         1  2  5  [{c: 4}; …] (3 rows)
         2  3  6  [{c: 7}; …] (3 rows)
         """
-        warnings.warn(
-            "The `add_nested` method is deprecated and will be removed in a future release. "
-            "Use `join_nested` instead.",
-            DeprecationWarning,
-            stacklevel=2,  # Ensures the warning points to the caller
-        )
         return self.join_nested(obj, name, how=how, on=on, dtype=dtype)
 
     def join_nested(

@@ -8,6 +8,7 @@ from typing import cast
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from deprecated import deprecated
 from numpy.typing import ArrayLike
 from pandas.api.extensions import register_series_accessor
 
@@ -149,6 +150,9 @@ class NestSeriesAccessor(Mapping):
         return self._series.array.flat_length
 
     @property
+    @deprecated(
+        version="0.6.0", reason="`fields` will be removed in version 0.7.0, " "use `columns` instead."
+    )
     def fields(self) -> list[str]:
         """Names of the nested columns"""
         warnings.warn(
@@ -169,6 +173,9 @@ class NestSeriesAccessor(Mapping):
         flat_index = cast(pd.Index, flat_index)
         return flat_index
 
+    @deprecated(
+        version="0.6.0", reason="`with_field` will be removed in version 0.7.0, " "use `set_column` instead."
+    )
     def with_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
 
@@ -200,17 +207,12 @@ class NestSeriesAccessor(Mapping):
         0   8.38389  80.074457    r      50.0
         1  13.40935  89.460666    g      50.0
         """
-        warnings.warn(
-            ".nest.with_field is deprecated, use .nest.add_column instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.add_column(field, value)
+        return self.set_column(field, value)
 
-    def add_column(self, column: str, value: ArrayLike) -> NestedSeries:
+    def set_column(self, column: str, value: ArrayLike) -> NestedSeries:
         """Set the column from a flat-array of values and return a new series
 
-        It is an alias for `.nest.add_flat_column`.
+        It is an alias for `.nest.set_flat_column`.
 
         Parameters
         ----------
@@ -231,15 +233,19 @@ class NestSeriesAccessor(Mapping):
         >>> from nested_pandas.datasets.generation import generate_data
         >>> nf = generate_data(5, 2, seed=1)
 
-        >>> nested_with_avg = nf["nested"].nest.add_column("avg_flux", 50.0)
+        >>> nested_with_avg = nf["nested"].nest.set_column("avg_flux", 50.0)
         >>> # Look at one row of the series
         >>> nested_with_avg[0]
                   t       flux band  avg_flux
         0   8.38389  80.074457    r      50.0
         1  13.40935  89.460666    g      50.0
         """
-        return self.add_flat_column(column, value)
+        return self.set_flat_column(column, value)
 
+    @deprecated(
+        version="0.6.0",
+        reason="`with_flat_field` will be removed in version 0.7.0, " "use `set_flat_column` instead.",
+    )
     def with_flat_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
 
@@ -270,14 +276,9 @@ class NestSeriesAccessor(Mapping):
         0   8.38389  80.074457    r      50.0
         1  13.40935  89.460666    g      50.0
         """
-        warnings.warn(
-            ".nest.with_flat_field is deprecated, use .nest.add_flat_column instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.add_flat_column(field, value)
+        return self.set_flat_column(field, value)
 
-    def add_flat_column(self, column: str, value: ArrayLike) -> NestedSeries:
+    def set_flat_column(self, column: str, value: ArrayLike) -> NestedSeries:
         """Set the column from flat-array of values and return a new series
 
         Parameters
@@ -299,7 +300,7 @@ class NestSeriesAccessor(Mapping):
         >>> from nested_pandas.datasets.generation import generate_data
         >>> nf = generate_data(5, 2, seed=1)
 
-        >>> nested_with_avg = nf["nested"].nest.add_flat_column("avg_flux",
+        >>> nested_with_avg = nf["nested"].nest.set_flat_column("avg_flux",
         ...                                                     50.0)
         >>> # Look at one row of the series
         >>> nested_with_avg[0]
@@ -311,6 +312,10 @@ class NestSeriesAccessor(Mapping):
         new_array.set_flat_field(column, value)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
+    @deprecated(
+        version="0.6.0",
+        reason="`with_list_field` will be removed in version 0.7.0, " "use `set_list_column` instead.",
+    )
     def with_list_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from list-array of values and return a new series
 
@@ -343,14 +348,9 @@ class NestSeriesAccessor(Mapping):
         1  3.725204  41.919451    r        g
 
         """
-        warnings.warn(
-            ".nest.with_list_field is deprecated, use .nest.add_list_column instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.add_list_column(field, value)
+        return self.set_list_column(field, value)
 
-    def add_list_column(self, column: str, value: ArrayLike) -> NestedSeries:
+    def set_list_column(self, column: str, value: ArrayLike) -> NestedSeries:
         """Set the field from list-array of values and return a new series
 
         Parameters
@@ -372,7 +372,7 @@ class NestSeriesAccessor(Mapping):
         >>> from nested_pandas.datasets.generation import generate_data
         >>> nf = generate_data(2, 2, seed=1)
 
-        >>> nf_new_band = nf["nested"].nest.add_list_column("new_band",
+        >>> nf_new_band = nf["nested"].nest.set_list_column("new_band",
         ...                                                 [["g","g"],
         ...                                                  ["r","r"]])
         >>> # Look at one row of the series
@@ -386,6 +386,10 @@ class NestSeriesAccessor(Mapping):
         new_array.set_list_field(column, value)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
+    @deprecated(
+        version="0.6.0",
+        reason="`with_filled_field` will be removed in version 0.7.0, " "use `set_filled_column` instead.",
+    )
     def with_filled_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field by repeating values and return a new series
 
@@ -421,20 +425,15 @@ class NestSeriesAccessor(Mapping):
         0   3.725204  20.445225    g  1
         1  10.776335  67.046751    r  1
         """
-        warnings.warn(
-            ".nest.with_filled_field is deprecated, use .nest.add_filled_column instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.add_filled_column(field, value)
+        return self.set_filled_column(field, value)
 
-    def add_filled_column(self, column: str, value: ArrayLike) -> NestedSeries:
+    def set_filled_column(self, column: str, value: ArrayLike) -> NestedSeries:
         """Set the column by repeating values and return a new series
 
         The input value array must have as many elements as the Series,
         each of them will be repeated in the corresponding list.
 
-        .nest.add_filled_column("a", [1, 2, 3]) will create a nested column
+        .nest.set_filled_column("a", [1, 2, 3]) will create a nested column
         "a" with values [[1, 1, ...], [2, 2, ...], [3, 3, ...]].
 
         Parameters
@@ -455,7 +454,7 @@ class NestSeriesAccessor(Mapping):
         >>> from nested_pandas.datasets.generation import generate_data
         >>> nf = generate_data(3, 2, seed=1)
 
-        >>> nf_filled = nf["nested"].nest.add_filled_column("a", [1,2,3])
+        >>> nf_filled = nf["nested"].nest.set_filled_column("a", [1,2,3])
 
         >>> # Look at one row of the series
         >>> nf_filled[0]
@@ -467,6 +466,9 @@ class NestSeriesAccessor(Mapping):
         new_array.fill_field_lists(column, value)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
+    @deprecated(
+        version="0.6.0", reason="`without_field` will be removed in version 0.7.0, " "use `drop` instead."
+    )
     def without_field(self, field: str | list[str]) -> NestedSeries:
         """Remove the field(s) from the series and return a new series
 
@@ -496,9 +498,6 @@ class NestSeriesAccessor(Mapping):
         4     [{t: 0.547752, band: 'g'}; …] (2 rows)
         Name: nested, dtype: nested<t: [double], band: [string]>
         """
-        warnings.warn(
-            ".nest.without_field is deprecated, use .nest.drop instead", DeprecationWarning, stacklevel=2
-        )
         return self.drop(field)
 
     def drop(self, column: str | list[str]) -> NestedSeries:
@@ -537,6 +536,9 @@ class NestSeriesAccessor(Mapping):
         new_array.pop_fields(column)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
+    @deprecated(
+        version="0.6.0", reason="`query_flat` will be removed in version 0.7.0, " "use `query` instead."
+    )
     def query_flat(self, query: str) -> NestedSeries:
         """Query the flat arrays with a boolean expression
 
@@ -567,9 +569,6 @@ class NestSeriesAccessor(Mapping):
         4    [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
         dtype: nested<t: [double], flux: [double], band: [string]>
         """
-        warnings.warn(
-            ".nest.query_flat is deprecated, use .nest.query instead", DeprecationWarning, stacklevel=2
-        )
         return self.query(query)
 
     def query(self, query: str) -> NestedSeries:
@@ -612,6 +611,10 @@ class NestSeriesAccessor(Mapping):
             )
         return pack_sorted_df_into_struct(flat)
 
+    @deprecated(
+        version="0.6.0",
+        reason="`get_flat_index` will be removed in version 0.7.0, " "use the `flat_index` property instead.",
+    )
     def get_flat_index(self) -> pd.Index:
         """Index of the flat arrays
 
@@ -631,13 +634,12 @@ class NestSeriesAccessor(Mapping):
         >>> nf["nested"].nest.get_flat_index()
         Index([0, 0, 1, 1, 2, 2, 3, 3, 4, 4], dtype='int64')
         """
-        warnings.warn(
-            ".nest.get_flat_index is deprecated, use the .nest.flat_index property instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return self.flat_index
 
+    @deprecated(
+        version="0.6.0",
+        reason="`get_flat_series` will be removed in version 0.7.0, " "use `to_flat()[column]` instead.",
+    )
     def get_flat_series(self, field: str) -> pd.Series:
         """Get the flat-array field as a pd.Series
 
@@ -670,12 +672,6 @@ class NestSeriesAccessor(Mapping):
         4     87.81425
         Name: flux, dtype: double[pyarrow]
         """
-        warnings.warn(
-            ".nest.get_flat_series is deprecated and will be removed in a future release. "
-            "Use .nest.to_flat()[field] instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         flat_chunks = []
         for nested_chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, nested_chunk)
@@ -697,6 +693,10 @@ class NestSeriesAccessor(Mapping):
             return NestedSeries(flat_series, copy=False)
         return flat_series
 
+    @deprecated(
+        version="0.6.0",
+        reason="`get_list_series` will be removed in version 0.7.0, " "use `to_lists()[column]` instead.",
+    )
     def get_list_series(self, field: str) -> pd.Series:
         """Get the list-array field as a Series
 
@@ -724,12 +724,6 @@ class NestSeriesAccessor(Mapping):
         4    [87.63891523 87.81425034]
         Name: flux, dtype: list<item: double>[pyarrow]
         """
-        warnings.warn(
-            ".nest.get_list_series is deprecated and will be removed in a future release. "
-            "Use .nest.to_lists()[column] instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         list_chunked_array = self._series.array.pa_table[field]
         return pd.Series(
             list_chunked_array,
@@ -759,7 +753,26 @@ class NestSeriesAccessor(Mapping):
             return NestedSeries(new_array, index=self._series.index, name=self._series.name)
 
         # If the key is a single string, return the flat series for that field
-        return self.get_flat_series(key)  # keep use of deprecated function for now, due to dtype handling
+        flat_chunks = []
+        for nested_chunk in self._series.array.struct_array.iterchunks():
+            struct_array = cast(pa.StructArray, nested_chunk)
+            list_array = cast(pa.ListArray, struct_array.field(key))
+            flat_array = list_array.flatten()
+            flat_chunks.append(flat_array)
+
+        flat_chunked_array = pa.chunked_array(flat_chunks, type=self._series.dtype.column_dtypes[key])
+
+        flat_series = pd.Series(
+            flat_chunked_array,
+            dtype=self._series.dtype.column_dtype(key),
+            # index=self.get_flat_index(),
+            index=self.flat_index,
+            name=key,
+            copy=False,
+        )
+        if isinstance(self._series.dtype.column_dtype(key), NestedDtype):
+            return NestedSeries(flat_series, copy=False)
+        return flat_series
 
     def __setitem__(self, key: str, value: ArrayLike) -> None:
         """Replace the field values from flat-array of values

@@ -332,8 +332,8 @@ def test_flat_length():
     assert series.nest.flat_length == 6
 
 
-def test_add_flat_column():
-    """Test that the .nest.add_flat_column() method works."""
+def test_set_flat_column():
+    """Test that the .nest.set_flat_column() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -343,7 +343,7 @@ def test_add_flat_column():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    new_series = series.nest.add_flat_column("a", np.array(["a", "b", "c", "d", "e", "f"]))
+    new_series = series.nest.set_flat_column("a", np.array(["a", "b", "c", "d", "e", "f"]))
 
     assert_series_equal(
         new_series.nest["a"],
@@ -356,8 +356,8 @@ def test_add_flat_column():
     )
 
 
-def test_add_column():
-    """Test that .nest.add_column is just an alias to .nest.add_flat_column."""
+def test_set_column():
+    """Test that .nest.set_column is just an alias to .nest.set_flat_column."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -367,13 +367,13 @@ def test_add_column():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
     assert_series_equal(
-        series.nest.add_column("a", np.array(["a", "b", "c", "d", "e", "f"])),
-        series.nest.add_flat_column("a", np.array(["a", "b", "c", "d", "e", "f"])),
+        series.nest.set_column("a", np.array(["a", "b", "c", "d", "e", "f"])),
+        series.nest.set_flat_column("a", np.array(["a", "b", "c", "d", "e", "f"])),
     )
 
 
-def test_add_list_column():
-    """Test that the .nest.add_list_column() method works."""
+def test_set_list_column():
+    """Test that the .nest.set_list_column() method works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])]),
@@ -383,7 +383,7 @@ def test_add_list_column():
     )
     series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
 
-    new_series = series.nest.add_list_column("c", [["a", "b", "c"], ["d", "e", "f"]])
+    new_series = series.nest.set_list_column("c", [["a", "b", "c"], ["d", "e", "f"]])
 
     assert_series_equal(
         new_series.nest["c"],
@@ -396,18 +396,18 @@ def test_add_list_column():
     )
 
 
-def test_add_filled_column():
-    """Test .nest.add_filled_column("column", value)"""
+def test_set_filled_column():
+    """Test .nest.set_filled_column("column", value)"""
     series = pack_seq(
         [
             pd.DataFrame({"a": [1, 2, 3], "b": [1.0, 5.0, 6.0]}),
             pd.DataFrame({"a": [1, 2], "b": [None, 0.0]}),
         ]
     )
-    new_series = series.nest.add_filled_column(
+    new_series = series.nest.set_filled_column(
         "a",
         [0, 100],
-    ).nest.add_filled_column(
+    ).nest.set_filled_column(
         "c",
         ["abc", "xyz"],
     )
