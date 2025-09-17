@@ -42,6 +42,7 @@ dev = [
     "aiohttp",
     "requests",
     "s3fs",
+    "types-Deprecated", # Needed for mypy type checking of Deprecated package
 ]
 
 [build-system]
