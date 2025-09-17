@@ -43,7 +43,6 @@ dev = [
     "requests",
     "s3fs",
     "types-Deprecated", # Needed for mypy type checking of Deprecated package
-    "wrapt>=1.17.3",
 ]
 
 [build-system]
