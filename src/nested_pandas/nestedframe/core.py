@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from deprecated import deprecated
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
@@ -89,7 +90,7 @@ class NestedFrame(pd.DataFrame):
         all_columns = {"base": self.columns}
         for column in self.columns:
             if isinstance(self.dtypes[column], NestedDtype):
-                nest_cols = self[column].nest.fields
+                nest_cols = self[column].columns
                 all_columns[column] = nest_cols
         return all_columns
 
@@ -204,7 +205,7 @@ class NestedFrame(pd.DataFrame):
         base_name = components[0]
         if self._is_nested_column(base_name):
             nested_name = ".".join(components[1:])
-            return nested_name in self.dtypes[base_name].fields
+            return nested_name in self.dtypes[base_name].column_dtypes
         return False
 
     def _is_nested_column(self, col: str):
@@ -247,7 +248,7 @@ class NestedFrame(pd.DataFrame):
         if self._is_known_hierarchical_column(components):
             nested = components[0]
             field = ".".join(components[1:])
-            return self[nested].nest.get_flat_series(field)
+            return self[nested].explode()[field]
         else:
             raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
 
@@ -287,16 +288,16 @@ class NestedFrame(pd.DataFrame):
                     if i == 0:
                         new_nested = value[col]
                     else:
-                        # there must be a better way than through list fields
-                        for field in value[col].nest.fields:
-                            new_nested = new_nested.nest.with_list_field(
-                                field, value[col].nest.get_list_series(field)
+                        # there must be a better way than through list columns
+                        for column in value[col].columns:
+                            new_nested = new_nested.nest.set_list_column(
+                                column, value[col].to_lists()[column]
                             )
                 value = new_nested
             # Assign a DataFrame as a new column, auto-nesting it
             elif key not in self.columns:
-                # Note this uses the default approach for add_nested, which is a left join on index
-                new_df = self.add_nested(value, name=key)
+                # Note this uses the default approach for join_nested, which is a left join on index
+                new_df = self.join_nested(value, name=key)
                 self._update_inplace(new_df)
                 return
 
@@ -315,9 +316,9 @@ class NestedFrame(pd.DataFrame):
             # Support a special case of embedding a base column into a nested column, with values being
             # repeated in each nested list-array.
             if isinstance(value, pd.Series) and self.index.equals(value.index):
-                new_nested_series = self[nested].nest.with_filled_field(field, value)
+                new_nested_series = self[nested].nest.set_filled_column(field, value)
             else:
-                new_nested_series = self[nested].nest.with_flat_field(field, value)
+                new_nested_series = self[nested].nest.set_flat_column(field, value)
             return super().__setitem__(nested, new_nested_series)
 
         # Adding a new nested structure from a column
@@ -327,7 +328,7 @@ class NestedFrame(pd.DataFrame):
             if isinstance(value, pd.Series):
                 value.name = field
                 value = value.to_frame()
-            new_df = self.add_nested(value, name=new_nested)
+            new_df = self.join_nested(value, name=new_nested)
             self._update_inplace(new_df)
             return None
 
@@ -338,6 +339,9 @@ class NestedFrame(pd.DataFrame):
         """Delete a column or a nested field using dot notation (e.g., del nf['nested.x'])"""
         self.drop([key], axis=1, inplace=True)
 
+    @deprecated(
+        version="0.6.0", reason="`add_nested` will be removed in version 0.7.0, " "use `join_nested` instead."
+    )
     def add_nested(
         self,
         obj,
@@ -397,6 +401,72 @@ class NestedFrame(pd.DataFrame):
         ...             index=[0,0,0,1,1,1,2,2,2])
         >>> # By default, aligns on the index
         >>> nf.add_nested(nf2, "nested")
+           a  b                nested
+        0  1  4  [{c: 1}; …] (3 rows)
+        1  2  5  [{c: 4}; …] (3 rows)
+        2  3  6  [{c: 7}; …] (3 rows)
+        """
+        return self.join_nested(obj, name, how=how, on=on, dtype=dtype)
+
+    def join_nested(
+        self,
+        obj,
+        name: str,
+        *,
+        how: str = "left",
+        on: None | str | list[str] = None,
+        dtype: NestedDtype | pd.ArrowDtype | pa.DataType | None = None,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Packs input object to a nested column and adds it to the NestedFrame
+
+        This method returns a new NestedFrame with the added nested column.
+
+        Parameters
+        ----------
+        obj : pd.DataFrame or a sequence of items convertible to nested structures
+            The object to be packed into nested pd.Series and added to
+            the NestedFrame. If a DataFrame is passed, it must have non-unique
+            index values, which are used to pack the DataFrame. If a sequence
+            of elements is passed, it is packed into a nested pd.Series.
+            Sequence elements may be individual pd.DataFrames, dictionaries
+            (keys are nested column names, values are arrays of the same
+            length), or any other object convertible to pa.StructArray.
+            Additionally, None and pd.NA are allowed as elements to represent
+            missing values.
+        name : str
+            The name of the nested column to be joined to the NestedFrame.
+        how : {'left', 'right', 'outer', 'inner'}, default: 'left'
+            How to handle the operation of the two objects:
+
+            - left: use calling frame's index.
+            - right: use the calling frame's index and order but drop values
+              not in the other frame's index.
+            - outer: form union of calling frame's index with other frame's
+              index, and sort it lexicographically.
+            - inner: form intersection of calling frame's index with other
+              frame's index, preserving the order of the calling index.
+        on : str, default: None
+            A column in the list
+        dtype : dtype or None
+            NestedDtype to use for the nested column; pd.ArrowDtype or
+            pa.DataType can also be used to specify the nested dtype. If None,
+            the dtype is inferred from the input object.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with the joined nested column.
+
+        Examples
+        --------
+
+        >>> import nested_pandas as npd
+        >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
+        ...            index=[0,1,2])
+        >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
+        ...             index=[0,0,0,1,1,1,2,2,2])
+        >>> # By default, aligns on the index
+        >>> nf.join_nested(nf2, "nested")
            a  b                nested
         0  1  4  [{c: 1}; …] (3 rows)
         1  2  5  [{c: 4}; …] (3 rows)
@@ -527,7 +597,7 @@ class NestedFrame(pd.DataFrame):
         # add nested
         if nested_columns is None:
             nested_columns = [col for col in df.columns if col not in base_columns]
-        return out_df.add_nested(df[nested_columns], name=name)
+        return out_df.join_nested(df[nested_columns], name=name)
 
     @classmethod
     def from_lists(cls, df, base_columns=None, list_columns=None, name="nested"):
@@ -590,7 +660,7 @@ class NestedFrame(pd.DataFrame):
         if len(df) == 0:
             # if the dataframe is empty, just return an empty nested column
             # since there are no iterable values to pack
-            packed_df = NestedFrame().add_nested(df[list_columns], name=name)
+            packed_df = NestedFrame().join_nested(df[list_columns], name=name)
         else:
             # Check that each column has iterable elements
             for col in list_columns:
@@ -694,9 +764,9 @@ class NestedFrame(pd.DataFrame):
                 for col in nested_cols:
                     sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
                     if inplace:
-                        self[col] = self[col].nest.without_field(sub_cols)
+                        self[col] = self[col].nest.drop(sub_cols)
                     else:
-                        self = self.assign(**{f"{col}": self[col].nest.without_field(sub_cols)})
+                        self = self.assign(**{f"{col}": self[col].nest.drop(sub_cols)})
 
             # drop remaining base columns
             if len(base_labels) > 0:
@@ -786,7 +856,7 @@ class NestedFrame(pd.DataFrame):
         # handle nested columns
         nested_mins = []
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()
+            nested_df = self[nest_col].explode()
             nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
             nested_mins.append(nested_df.min(numeric_only=numeric_only, **kwargs))
 
@@ -860,7 +930,7 @@ class NestedFrame(pd.DataFrame):
         # handle nested columns
         nested_maxs = []
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()
+            nested_df = self[nest_col].explode()
             nested_df.columns = [f"{nest_col}.{col}" for col in nested_df.columns]
             nested_maxs.append(nested_df.max(numeric_only=numeric_only, **kwargs))
 
@@ -965,7 +1035,7 @@ class NestedFrame(pd.DataFrame):
 
             # check the nested columns
             else:
-                nested_df = self[checkable].nest.to_flat()
+                nested_df = self[checkable].explode()
                 nested_df.columns = [f"{checkable}.{col}" for col in nested_df.columns]
                 try:
                     nested_desc = nested_df.describe(
@@ -1100,7 +1170,7 @@ class NestedFrame(pd.DataFrame):
                 raise ValueError(
                     f"One or few rows of {nested_col} have different element counts from {nested_columns[0]}"
                 )
-            flat = w_ordinal_idx[nested_col].nest.to_flat()
+            flat = w_ordinal_idx[nested_col].explode()
             # Check if counts (lengths) of this nested column mismatch with one of the list columns.
             if is_base_exploded and not base_exploded.index.equals(flat.index):
                 raise ValueError(
@@ -1173,7 +1243,7 @@ class NestedFrame(pd.DataFrame):
         ...     data={"d": [np.nan, np.nan, np.nan], "e": [np.nan, 1, np.nan]},
         ...     index=[0, 1, 2]
         ... )
-        >>> nf = nf.add_nested(nested, "nested")
+        >>> nf = nf.join_nested(nested, "nested")
 
         >>> nf.fillna(0)
               a     b     c              nested
@@ -1190,7 +1260,7 @@ class NestedFrame(pd.DataFrame):
         filled_df = super().__getitem__(base_cols).fillna(value=value, axis=axis, inplace=False, limit=limit)
 
         for nest_col in self.nested_columns:
-            nested_df = self[nest_col].nest.to_flat()
+            nested_df = self[nest_col].explode()
             nested_value: Any
             if isinstance(value, Mapping):
                 nested_value = {}
@@ -1201,7 +1271,7 @@ class NestedFrame(pd.DataFrame):
             else:
                 nested_value = value
             nested_df = nested_df.fillna(value=nested_value, axis=axis, inplace=False, limit=None)
-            filled_df = filled_df.add_nested(nested_df, nest_col)
+            filled_df = filled_df.join_nested(nested_df, nest_col)
 
         if inplace:
             self._update_inplace(filled_df)
@@ -1576,7 +1646,7 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("ignore_index is not supported for nested columns")
         if subset is not None:
             subset = [col.split(".")[-1] for col in subset]
-        target_flat = self[target].nest.to_flat()
+        target_flat = self[target].explode()
         target_flat = target_flat.set_index(self[target].array.get_list_index())
         if inplace:
             target_flat.dropna(
@@ -1693,7 +1763,7 @@ class NestedFrame(pd.DataFrame):
                 key=key,
             )
         else:  # target is a nested column
-            target_flat = self[target].nest.to_flat()
+            target_flat = self[target].explode()
             target_flat = target_flat.set_index(self[target].array.get_list_index())
 
             if target_flat.index.name is None:  # set name if not present

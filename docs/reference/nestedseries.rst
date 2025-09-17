@@ -16,4 +16,4 @@ Functions
     :toctree: api/
 
     NestedSeries.to_lists
-    NestedSeries.to_flat
+    NestedSeries.explode
