@@ -29,8 +29,8 @@ def test_read_parquet():
     assert nf.nested_columns == ["nested", "lincc"]
 
     # Check the nested columns
-    assert nf.nested.nest.fields == ["t", "flux", "band"]
-    assert nf.lincc.nest.fields == ["band", "frameworks"]
+    assert nf.nested.nest.columns == ["t", "flux", "band"]
+    assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
 def test_read_parquet_list():
@@ -46,8 +46,8 @@ def test_read_parquet_list():
     assert nf.nested_columns == ["nested", "lincc"]
 
     # Check the nested columns
-    assert nf.nested.nest.fields == ["t", "flux", "band"]
-    assert nf.lincc.nest.fields == ["band", "frameworks"]
+    assert nf.nested.nest.columns == ["t", "flux", "band"]
+    assert nf.lincc.nest.columns == ["band", "frameworks"]
 
     # Check loading list works correctly
     assert len(nf) == 2 * len(single_file_nf)
@@ -65,8 +65,8 @@ def test_read_parquet_directory():
     assert nf.nested_columns == ["nested", "lincc"]
 
     # Check the nested columns
-    assert nf.nested.nest.fields == ["t", "flux", "band"]
-    assert nf.lincc.nest.fields == ["band", "frameworks"]
+    assert nf.nested.nest.columns == ["t", "flux", "band"]
+    assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
 def test_read_parquet_directory_with_filesystem():
@@ -82,8 +82,8 @@ def test_read_parquet_directory_with_filesystem():
     assert nf.nested_columns == ["nested", "lincc"]
 
     # Check the nested columns
-    assert nf.nested.nest.fields == ["t", "flux", "band"]
-    assert nf.lincc.nest.fields == ["band", "frameworks"]
+    assert nf.nested.nest.columns == ["t", "flux", "band"]
+    assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
 def test_file_object_read_parquet():
@@ -95,8 +95,8 @@ def test_file_object_read_parquet():
     # Make sure nested columns were recognized
     assert nf.nested_columns == ["nested", "lincc"]
     # Check the nested columns
-    assert nf.nested.nest.fields == ["t", "flux", "band"]
-    assert nf.lincc.nest.fields == ["band", "frameworks"]
+    assert nf.nested.nest.columns == ["t", "flux", "band"]
+    assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
 @pytest.mark.parametrize(
@@ -131,10 +131,10 @@ def test_read_parquet_column_selection(columns):
 
     # Check nested columns
     if columns == ["nested.flux", "nested.t"]:
-        assert nf.nested.nest.fields == ["flux", "t"]
+        assert nf.nested.nest.columns == ["flux", "t"]
     elif columns == ["nested.band", "lincc.band"]:
-        assert nf.nested.nest.fields == ["band"]
-        assert nf.lincc.nest.fields == ["band"]
+        assert nf.nested.nest.columns == ["band"]
+        assert nf.lincc.nest.columns == ["band"]
 
 
 @pytest.mark.parametrize("reject", [["nested"], "nested"])
@@ -341,9 +341,9 @@ def test_read_parquet_list_autocast():
         nf = read_parquet(tmpfile.name, autocast_list=True)
 
         assert nf.nested_columns == ["c", "d"]
-        assert nf["c"].nest.fields == ["c"]
+        assert nf["c"].nest.columns == ["c"]
         assert len(nf["c"].nest.to_flat()) == 9
-        assert nf["d"].nest.fields == ["d"]
+        assert nf["d"].nest.columns == ["d"]
         assert len(nf["d"].nest.to_flat()) == 9
 
 

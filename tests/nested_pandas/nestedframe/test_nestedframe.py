@@ -59,7 +59,7 @@ def test_html_repr():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Check nested repr
     base._repr_html_()
@@ -85,7 +85,7 @@ def test_all_columns():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert list(base.all_columns.keys()) == ["base", "nested"]
     assert list(base.all_columns["nested"]) == list(nested.columns)
@@ -101,7 +101,7 @@ def test_nested_columns():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert base.nested_columns == ["nested"]
 
@@ -116,7 +116,7 @@ def test_is_known_hierarchical_column():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert base._is_known_hierarchical_column("nested.c")
     assert not base._is_known_hierarchical_column("nested.b")
@@ -135,7 +135,7 @@ def test_is_known_column():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert base._is_known_column("R. A.")
     assert base._is_known_column("`R. A.`")
@@ -164,7 +164,7 @@ def test_series_methods_on_nest_in_query_eval():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Prepare to test isna, notna
     base.loc[1, "nested"] = None
@@ -186,7 +186,7 @@ def test_get_nested_column():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     base_c = base["nested.c"]
 
@@ -204,26 +204,26 @@ def test_get_nested_columns():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     df = base[["a", "b", "nested.c"]]
     assert np.all(df.columns == ["a", "b", "nested"])
-    assert df.dtypes["nested"].field_names == ["c"]
+    assert list(df.dtypes["nested"].column_dtypes.keys()) == ["c"]
     assert np.all(df["nested"].iloc[0].columns == ["c"])
 
     df = base[["a", "b", "nested.c", "nested.d"]]
     assert np.all(df.columns == ["a", "b", "nested"])
-    assert df.dtypes["nested"].field_names == ["c", "d"]
+    assert list(df.dtypes["nested"].column_dtypes.keys()) == ["c", "d"]
     assert np.all(df["nested"].iloc[0].columns == ["c", "d"])
 
     df = base[["a", "b", "nested.d", "nested.c"]]
     assert np.all(df.columns == ["a", "b", "nested"])
-    assert df.dtypes["nested"].field_names == ["d", "c"]
+    assert list(df.dtypes["nested"].column_dtypes.keys()) == ["d", "c"]
     assert np.all(df["nested"].iloc[0].columns == ["d", "c"])
 
     df = base[["nested.c"]]
     assert np.all(df.columns == ["nested"])
-    assert df.dtypes["nested"].field_names == ["c"]
+    assert list(df.dtypes["nested"].column_dtypes.keys()) == ["c"]
     assert np.all(df["nested"].iloc[0].columns == ["c"])
 
     df = base[["a", "b"]]
@@ -231,7 +231,7 @@ def test_get_nested_columns():
 
     df = base[["a", "b", "nested"]]
     assert np.all(df.columns == ["a", "b", "nested"])
-    assert df.dtypes["nested"].field_names == ["c", "d"]
+    assert list(df.dtypes["nested"].column_dtypes.keys()) == ["c", "d"]
     assert np.all(df["nested"].iloc[0].columns == ["c", "d"])
 
 
@@ -244,7 +244,7 @@ def test_get_nested_columns_errors():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     with pytest.raises(KeyError):
         base[["a", "c"]]
@@ -265,7 +265,7 @@ def test_getitem_empty_bool_array():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     bool_index = np.array([], dtype=bool)
 
@@ -288,7 +288,7 @@ def test_set_or_replace_nested_col():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # test direct replacement
     base["nested.c"] = base["nested.c"] + 1
@@ -304,13 +304,13 @@ def test_set_or_replace_nested_col():
     # test new column assignment
     base["nested.e"] = base["nested.d"] * 2
 
-    assert "e" in base.nested.nest.fields
+    assert "e" in base.nested.nest.columns
     assert np.array_equal(base["nested.d"].values.to_numpy() * 2, base["nested.e"].values.to_numpy())
 
     # test assignment a new column with list-repeated values
     base["nested.a"] = base["a"]
 
-    assert "a" in base.nested.nest.fields
+    assert "a" in base.nested.nest.columns
     assert np.array_equal(np.unique(base["a"].to_numpy()), np.unique(base["nested.a"].to_numpy()))
 
     # rest replacement with a list-repeated column
@@ -327,13 +327,13 @@ def test_set_new_nested_col():
         data={"c": c, "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # assign column cd in new_nested from c+d in nested
     base["new_nested.cd"] = base["nested.c"] + base["nested.d"]
 
     assert "new_nested" in base.nested_columns
-    assert "cd" in base["new_nested"].nest.fields
+    assert "cd" in base["new_nested"].nest.columns
 
     assert np.array_equal(
         base["new_nested.cd"].values.to_numpy(),
@@ -358,8 +358,8 @@ def test_set_item_combine_nested():
     list_nf["nested"] = list_nf[["c", "d"]]
 
     assert "nested" in list_nf.columns
-    assert list_nf.nested.nest.fields == ["c", "d"]
-    assert len(list_nf.nested.nest.to_flat()) == 9
+    assert list_nf.nested.nest.columns == ["c", "d"]
+    assert len(list_nf.nested.explode()) == 9
 
 
 def test_set_list_struct_col():
@@ -372,10 +372,10 @@ def test_set_list_struct_col():
     list_struct_series = pd.Series(list_struct_array, dtype=pd.ArrowDtype(list_struct_array.type))
 
     nf["nested2"] = list_struct_series
-    assert_frame_equal(nf.nested.nest.to_flat(), nf.nested2.nest.to_flat())
+    assert_frame_equal(nf.nested.explode(), nf.nested2.explode())
 
     nf = nf.assign(nested3=list_struct_series)
-    assert_frame_equal(nf.nested.nest.to_flat(), nf.nested3.nest.to_flat())
+    assert_frame_equal(nf.nested.explode(), nf.nested3.explode())
 
 
 def test_get_dot_names():
@@ -404,8 +404,8 @@ def test_nesting_limit():
     nf["`nested.d`"] = nf["`.b.`"]
 
 
-def test_add_nested_with_flat_df():
-    """Test that add_nested correctly adds a nested column to the base df"""
+def test_join_nested_with_flat_df():
+    """Test that join_nested correctly adds a nested column to the base df"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
@@ -414,15 +414,15 @@ def test_add_nested_with_flat_df():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert "nested" in base.columns
     # to_flat() gives pd.ArrowDtype, so we skip dtype check here
-    assert_frame_equal(base.nested.nest.to_flat(), nested, check_dtype=False)
+    assert_frame_equal(base.nested.explode(), nested, check_dtype=False)
 
 
-def test_add_nested_with_flat_df_and_mismatched_index():
-    """Test add_nested when index values of base are missing matches in nested"""
+def test_join_nested_with_flat_df_and_mismatched_index():
+    """Test join_nested when index values of base are missing matches in nested"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "new_index": [0, 1, 3]}, index=[0, 1, 2])
 
@@ -439,7 +439,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
 
     # Add the nested frame in a "left" fashion, where the index of the "left"
     # frame (our base layer) is preserved
-    left_res = base.add_nested(nested, "nested", how="left")
+    left_res = base.join_nested(nested, "nested", how="left")
     assert "nested" in left_res.columns
     # Check that the index of the base layer is being used
     assert (left_res.index == base.index).all()
@@ -451,23 +451,23 @@ def test_add_nested_with_flat_df_and_mismatched_index():
             assert left_res.loc[idx]["nested"] is None
 
     # Test that the default behavior is the same as how="left" by comparing the pandas dataframes
-    default_res = base.add_nested(nested, "nested")
+    default_res = base.join_nested(nested, "nested")
     assert_frame_equal(left_res, default_res)
 
     # Test still adding the nested frame in a "left" fashion but on the "new_index" column
 
     # We currently don't support a list of columns for the 'on' argument
     with pytest.raises(ValueError):
-        left_res_on = base.add_nested(nested, "nested", how="left", on=["new_index"])
+        left_res_on = base.join_nested(nested, "nested", how="left", on=["new_index"])
     # Instead we should pass a single column name, "new_index" which exists in both frames.
-    left_res_on = base.add_nested(nested, "nested", how="left", on="new_index")
+    left_res_on = base.join_nested(nested, "nested", how="left", on="new_index")
     assert "nested" in left_res_on.columns
     # Check that the index of the base layer is still being used
     assert (left_res_on.index == base.index).all()
     # Assert that the new_index column we joined on was dropped from the nested layer
     # but is present in the base layer
     assert "new_index" in left_res_on.columns
-    assert "new_index" not in left_res_on["nested"].nest.to_flat().columns
+    assert "new_index" not in left_res_on["nested"].explode().columns
 
     # For each index in the columns we joined on, check that values are aligned correctly
     for i in range(len(left_res_on.new_index)):
@@ -477,15 +477,15 @@ def test_add_nested_with_flat_df_and_mismatched_index():
         if join_idx in nested["new_index"].values:
             assert left_res_on.iloc[i]["nested"] is not None
             # Check that it is present in new the index we constructed for the nested layer
-            assert join_idx in left_res_on["nested"].nest.to_flat().index
+            assert join_idx in left_res_on["nested"].explode().index
         else:
             # Use an iloc
             assert left_res_on.iloc[i]["nested"] is None
-            assert join_idx not in left_res_on["nested"].nest.to_flat().index
+            assert join_idx not in left_res_on["nested"].explode().index
 
     # Test adding the nested frame in a "right" fashion, where the index of the "right"
     # frame (our nested layer) is preserved
-    right_res = base.add_nested(nested, "nested", how="right")
+    right_res = base.join_nested(nested, "nested", how="right")
     assert "nested" in right_res.columns
     # Check that the index of the nested layer is being used. Note that separate
     # from a traditional join this will not be the same as our nested layer index
@@ -507,16 +507,16 @@ def test_add_nested_with_flat_df_and_mismatched_index():
                 assert not pd.isna(right_res.loc[idx][col])
 
     # Test still adding the nested frame in a "right" fashion but on the "new_index" column
-    right_res_on = base.add_nested(nested, "nested", how="right", on="new_index")
+    right_res_on = base.join_nested(nested, "nested", how="right", on="new_index")
     assert "nested" in right_res_on.columns
     # Check that rows were dropped if the base layer's "new_index" value is not present
     # in the "right" nested layer
     assert (right_res_on.new_index.values == np.unique(nested.new_index.values)).all()
 
     # Check that the new_index column we joined on was dropped from the nested layer
-    assert "new_index" not in right_res_on["nested"].nest.to_flat().columns
+    assert "new_index" not in right_res_on["nested"].explode().columns
     # Check that the flattend nested layer has the same index as the original column we joined on
-    all(right_res_on.nested.nest.to_flat().index.values == nested.new_index.values)
+    all(right_res_on.nested.explode().index.values == nested.new_index.values)
 
     # For each index check that the base layer is aligned correctly to the nested layer
     for i in range(len(right_res_on)):
@@ -536,7 +536,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
                     assert not pd.isna(right_res_on.iloc[i][col])
 
     # Test the "outer" behavior
-    outer_res = base.add_nested(nested, "nested", how="outer")
+    outer_res = base.join_nested(nested, "nested", how="outer")
     assert "nested" in outer_res.columns
     # We expect the new index to be the union of the base and nested indices
     assert set(outer_res.index) == set(base.index).union(set(nested.index))
@@ -556,18 +556,18 @@ def test_add_nested_with_flat_df_and_mismatched_index():
                 assert not pd.isna(outer_res.loc[idx][col])
 
     # Test still adding the nested frame in an "outer" fashion but with on the "new_index" column
-    outer_res_on = base.add_nested(nested, "nested", how="outer", on="new_index")
+    outer_res_on = base.join_nested(nested, "nested", how="outer", on="new_index")
     assert "nested" in outer_res_on.columns
     # We expect the result's new_index column to be the set union of the values of that column
     # in the base and nested frames
     assert set(outer_res_on.new_index) == set(base.new_index).union(set(nested.new_index))
 
     # Check that the new_index column we joined on was dropped from the nested layer
-    assert "new_index" not in outer_res_on["nested"].nest.to_flat().columns
+    assert "new_index" not in outer_res_on["nested"].explode().columns
     # Check that the flattend nested layer has the same index as the original column we joined on
     # Note that it does not have index values only present in the base layer since those empty rows
     # are dropped when we flatten the nested frame.
-    all(outer_res_on.nested.nest.to_flat().index.values == nested.new_index.values)
+    all(outer_res_on.nested.explode().index.values == nested.new_index.values)
 
     for i in range(len(outer_res_on)):
         # The actual "index" value we "joined" on.
@@ -588,7 +588,7 @@ def test_add_nested_with_flat_df_and_mismatched_index():
                     assert pd.isna(outer_res_on.iloc[i][col])
 
     # Test the "inner" behavior
-    inner_res = base.add_nested(nested, "nested", how="inner")
+    inner_res = base.join_nested(nested, "nested", how="inner")
     assert "nested" in inner_res.columns
     # We expect the new index to be the set intersection of the base and nested indices
     assert set(inner_res.index) == set(base.index).intersection(set(nested.index))
@@ -601,21 +601,21 @@ def test_add_nested_with_flat_df_and_mismatched_index():
             assert not pd.isna(inner_res.loc[idx][col])
 
     # Test still adding the nested frame in a "inner" fashion but on the "new_index" column
-    inner_res_on = base.add_nested(nested, "nested", how="inner", on="new_index")
+    inner_res_on = base.join_nested(nested, "nested", how="inner", on="new_index")
     assert "nested" in inner_res_on.columns
     # We expect the new index to be the set intersection of the base and nested column we used
     # for the 'on' argument
     assert set(inner_res_on.new_index) == set(base.new_index).intersection(set(nested.new_index))
     # Check that the new_index column we joined on was dropped from the nested layer
-    assert "new_index" not in right_res_on["nested"].nest.to_flat().columns
+    assert "new_index" not in right_res_on["nested"].explode().columns
 
     # Since we have confirmed that the "nex_index" column was the intersection that we expected
     # we know that none of the joined values should be none
     assert not inner_res_on.isnull().values.any()
 
 
-def test_add_nested_with_series():
-    """Test that add_nested correctly adds a nested column to the base df"""
+def test_join_nested_with_series():
+    """Test that join_nested correctly adds a nested column to the base df"""
 
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
@@ -625,15 +625,15 @@ def test_add_nested_with_series():
         name="c",
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert "nested" in base.columns
     for i in range(3):
         assert_frame_equal(base.iloc[i]["nested"], nested[i])
 
 
-def test_add_nested_with_series_and_mismatched_index():
-    """Test add_nested when index values of base are missing matches in nested"""
+def test_join_nested_with_series_and_mismatched_index():
+    """Test join_nested when index values of base are missing matches in nested"""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
 
     nested = pd.Series(
@@ -642,23 +642,23 @@ def test_add_nested_with_series_and_mismatched_index():
         name="c",
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     assert "nested" in base.columns
     assert pd.isna(base.loc[1]["nested"])
 
 
-def test_add_nested_for_empty_df():
-    """Test that .add_nested() works for empty frame and empty input"""
+def test_join_nested_for_empty_df():
+    """Test that .join_nested() works for empty frame and empty input"""
     base = NestedFrame(data={"a": [], "b": []}, index=[])
     nested = pd.DataFrame(data={"c": []}, index=[])
-    new_base = base.add_nested(nested, "nested")
+    new_base = base.join_nested(nested, "nested")
 
     # Check original frame is unchanged
     assert_frame_equal(base, NestedFrame(data={"a": [], "b": []}, index=[]))
 
     assert "nested" in new_base.columns
-    assert_frame_equal(new_base.nested.nest.to_flat(), nested.astype(pd.ArrowDtype(pa.float64())))
+    assert_frame_equal(new_base.nested.explode(), nested.astype(pd.ArrowDtype(pa.float64())))
 
 
 @pytest.mark.parametrize("pandas", [False, True])
@@ -681,15 +681,15 @@ def test_from_flat(on, pandas):
 
     if on is None:
         assert list(out_nf.columns) == ["a", "b", "new_nested"]
-        assert list(out_nf.new_nested.nest.fields) == ["c", "d"]
+        assert list(out_nf.new_nested.nest.columns) == ["c", "d"]
         assert len(out_nf) == 2
     elif on == "a":
         assert list(out_nf.columns) == ["b", "new_nested"]
-        assert list(out_nf.new_nested.nest.fields) == ["c", "d"]
+        assert list(out_nf.new_nested.nest.columns) == ["c", "d"]
         assert len(out_nf) == 2
     elif on == "c":  # not what a user likely wants, but should still work
         assert list(out_nf.columns) == ["a", "b", "new_nested"]
-        assert list(out_nf.new_nested.nest.fields) == ["d"]
+        assert list(out_nf.new_nested.nest.columns) == ["d"]
         assert len(out_nf) == 5
 
 
@@ -697,7 +697,7 @@ def test_recover_from_flat():
     """test that going to_flat and then from_flat recovers the same df"""
     nf = generate_data(5, 10, seed=1)
 
-    flat = nf["nested"].nest.to_flat()
+    flat = nf["nested"].explode()
 
     nf2 = NestedFrame.from_flat(nf[["a", "b"]].join(flat), base_columns=["a", "b"], name="nested")
 
@@ -714,12 +714,12 @@ def test_from_flat_omitting_columns():
     # omit a base column
     nf = NestedFrame.from_flat(flat, base_columns=["b"], nested_columns=["c", "d"])
     assert list(nf.columns) == ["b", "nested"]
-    assert list(nf.nested.nest.fields) == ["c", "d"]
+    assert list(nf.nested.nest.columns) == ["c", "d"]
 
     # omit a nested column
     nf = NestedFrame.from_flat(flat, base_columns=["a", "b"], nested_columns=["c"])
     assert list(nf.columns) == ["a", "b", "nested"]
-    assert list(nf.nested.nest.fields) == ["c"]
+    assert list(nf.nested.nest.columns) == ["c"]
 
 
 def test_from_lists():
@@ -770,7 +770,7 @@ def test_from_lists():
     res = NestedFrame.from_lists(nf2, list_columns=["e", "f"])
     assert list(res.columns) == ["c", "d", "nested"]
     assert list(res.nested_columns) == ["nested"]
-    assert list(res.nested.nest.fields) == ["e", "f"]
+    assert list(res.nested.nest.columns) == ["e", "f"]
 
     # Check for subsetting
     res = NestedFrame.from_lists(nf, base_columns=["c"], list_columns=["e"])
@@ -797,7 +797,7 @@ def test_query():
     )
 
     # Test vanilla queries
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
     assert len(base.query("a > 2")) == 1
 
     # Check for the multi-layer error
@@ -811,10 +811,10 @@ def test_query():
 
     # Test nested queries
     nest_queried = base.query("nested.c > 1")
-    assert len(nest_queried.nested.nest.to_flat()) == 7
+    assert len(nest_queried.nested.explode()) == 7
 
     nest_queried = base.query("(nested.c > 1) and (nested.d>2)")
-    assert len(nest_queried.nested.nest.to_flat()) == 5
+    assert len(nest_queried.nested.explode()) == 5
 
     # Check edge conditions
     with pytest.raises(ValueError):
@@ -853,21 +853,21 @@ def test_query_on_non_identifier_columns():
         data={"a": [0, 2, 4, 1, 4, 3, 1, 4, 1], "b": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    nf = nf.add_nested(nested, "bad dog")
+    nf = nf.join_nested(nested, "bad dog")
     nf2 = nf.query("`good dog` > 3")
     assert nf.shape == (3, 3)
     assert nf2.shape == (2, 3)
     nf3 = nf.query("`bad dog`.a > 2")
     assert nf3["bad dog"].nest["a"].size == 4
 
-    # And also for fields within the nested columns.
+    # And also for columns within the nested columns.
     # Taken from GH#176
     nf = NestedFrame(data={"dog": [1, 2, 3], "good dog": [2, 4, 6]}, index=[0, 1, 2])
     nested = pd.DataFrame(
         data={"n/a": [0, 2, 4, 1, 4, 3, 1, 4, 1], "n/b": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    nf = nf.add_nested(nested, "bad dog")
+    nf = nf.join_nested(nested, "bad dog")
     nf4 = nf.query("`bad dog`.`n/a` > 2")
     assert nf4["bad dog"].nest["n/a"].size == 4
 
@@ -882,27 +882,27 @@ def test_dropna():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test basic functionality
     dn_base = base.dropna(subset=["b"])
     assert len(dn_base) == 2
-    assert len(dn_base["nested"].nest.to_flat() == 6)
+    assert len(dn_base["nested"].explode() == 6)
 
     # Test on_nested kwarg
     dn_on_nested = base.dropna(on_nested="nested")
     assert len(dn_on_nested) == 3
-    assert len(dn_on_nested["nested"].nest.to_flat() == 8)
+    assert len(dn_on_nested["nested"].explode() == 8)
 
     # Test hierarchical column subset
     dn_hierarchical = base.dropna(subset="nested.c")
     assert len(dn_hierarchical) == 3
-    assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
+    assert len(dn_hierarchical["nested"].explode() == 8)
 
     # Test hierarchical column subset and on_nested
     dn_hierarchical = base.dropna(on_nested="nested", subset="nested.c")
     assert len(dn_hierarchical) == 3
-    assert len(dn_hierarchical["nested"].nest.to_flat() == 8)
+    assert len(dn_hierarchical["nested"].explode() == 8)
 
 
 def test_dropna_layer_as_base_column():
@@ -924,7 +924,7 @@ def test_dropna_inplace_base():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test inplace=False with base layer
     dn_base = base.dropna(subset=["b"], inplace=False)
@@ -945,11 +945,11 @@ def test_dropna_inplace_nested():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test inplace=False with nested layer
     dn_base = base.dropna(on_nested="nested", inplace=False)
-    assert not dn_base.nested.nest.to_flat().equals(base.nested.nest.to_flat())
+    assert not dn_base.nested.explode().equals(base.nested.explode())
 
     # Test inplace=True with nested layer
     base.dropna(on_nested="nested", inplace=True)
@@ -966,7 +966,7 @@ def test_dropna_errors():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test multi-target
     with pytest.raises(ValueError):
@@ -995,7 +995,7 @@ def test_sort_values():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test basic functionality
     sv_base = base.sort_values("b")
@@ -1024,7 +1024,7 @@ def test_sort_values_ascension():
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
 
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test ascending=False
     sv_base = base.sort_values("nested.d", ascending=False)
@@ -1075,7 +1075,7 @@ def test_reduce():
     )
 
     # Add two nested layers to pack into our dataframe
-    nf = nf.add_nested(to_pack, "packed").add_nested(to_pack2, "packed2")
+    nf = nf.join_nested(to_pack, "packed").join_nested(to_pack2, "packed2")
 
     # Define a simple custom function to apply to the nested data
     def get_max(col1, col2):
@@ -1194,7 +1194,7 @@ def test_reduce_duplicated_cols():
     )
 
     # Add two nested layers to pack into our dataframe
-    nf = nf.add_nested(to_pack, "packed").add_nested(to_pack2, "packed2")
+    nf = nf.join_nested(to_pack, "packed").join_nested(to_pack2, "packed2")
 
     def cols_allclose(col1, col2):
         return pd.Series([np.allclose(col1, col2)], index=["allclose"])
@@ -1224,7 +1224,7 @@ def test_reduce_infer_nesting():
 
     result = ndf.reduce(complex_output, "nested.flux")
     assert list(result.columns) == ["max_flux", "lc"]
-    assert list(result.lc.nest.fields) == ["flux_quantiles"]
+    assert list(result.lc.nest.columns) == ["flux_quantiles"]
 
     # Test multi-column nested output
     def complex_output(flux):
@@ -1236,7 +1236,7 @@ def test_reduce_infer_nesting():
 
     result = ndf.reduce(complex_output, "nested.flux")
     assert list(result.columns) == ["max_flux", "lc"]
-    assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
+    assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
     # Test integer names
     def complex_output(flux):
@@ -1256,8 +1256,8 @@ def test_reduce_infer_nesting():
 
     result = ndf.reduce(complex_output, "nested.flux")
     assert list(result.columns) == ["max_flux", "lc", "meta"]
-    assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
-    assert list(result.meta.nest.fields) == ["colors"]
+    assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
+    assert list(result.meta.nest.columns) == ["colors"]
 
     # Test only nested structure output
     def complex_output(flux):
@@ -1268,7 +1268,7 @@ def test_reduce_infer_nesting():
 
     result = ndf.reduce(complex_output, "nested.flux")
     assert list(result.columns) == ["lc"]
-    assert list(result.lc.nest.fields) == ["flux_quantiles", "labels"]
+    assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
 
 def test_reduce_arg_errors():
@@ -1313,7 +1313,7 @@ def test_drop():
         data={"e": [0, 2, 4, 1, 4, 3, 1, 4, 1], "f": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    base = base.add_nested(nested, "nested").add_nested(nested2, "nested2")
+    base = base.join_nested(nested, "nested").join_nested(nested2, "nested2")
 
     # test axis=0 drop
     dropped_base = base.drop(0, axis=0)
@@ -1327,7 +1327,7 @@ def test_drop():
     # Test dropping a nested column
     dropped_nested = base.drop("nested.c", axis=1)
     assert len(dropped_nested.columns) == len(base.columns)
-    assert "c" not in dropped_nested.nested.nest.fields
+    assert "c" not in dropped_nested.nested.nest.columns
 
     # Test dropping a non-existent column
     with pytest.raises(KeyError):
@@ -1337,32 +1337,32 @@ def test_drop():
     dropped_multiple = base.drop(["a", "nested.c"], axis=1)
     assert len(dropped_multiple.columns) == len(base.columns) - 1
     assert "a" not in dropped_multiple.columns
-    assert "c" not in dropped_multiple.nested.nest.fields
+    assert "c" not in dropped_multiple.nested.nest.columns
 
     # Test multiple nested structures
     dropped_multiple = base.drop(["nested.c", "nested2.f"], axis=1)
     assert len(dropped_multiple.columns) == len(base.columns)
-    assert "c" not in dropped_multiple.nested.nest.fields
-    assert "f" not in dropped_multiple.nested2.nest.fields
+    assert "c" not in dropped_multiple.nested.nest.columns
+    assert "f" not in dropped_multiple.nested2.nest.columns
 
     # Test inplace=True for both base and nested columns
     base2 = base.copy()
     base2.drop(["a", "nested.c"], axis=1, inplace=True)
     assert "a" not in base2.columns
-    assert "c" not in base2["nested"].nest.fields
+    assert "c" not in base2["nested"].nest.columns
     assert "b" in base2.columns
-    assert "d" in base2["nested"].nest.fields
+    assert "d" in base2["nested"].nest.columns
 
     # Test inplace=False for both base and nested columns
     base3 = base.copy()
     dropped = base3.drop(["a", "nested.c"], axis=1, inplace=False)
     assert "a" not in dropped.columns
-    assert "c" not in dropped["nested"].nest.fields
+    assert "c" not in dropped["nested"].nest.columns
     assert "b" in dropped.columns
-    assert "d" in dropped["nested"].nest.fields
+    assert "d" in dropped["nested"].nest.columns
     # Original is unchanged
     assert "a" in base3.columns
-    assert "c" in base3["nested"].nest.fields
+    assert "c" in base3["nested"].nest.columns
 
     # Test error for missing columns in multi-drop
     with pytest.raises(KeyError):
@@ -1392,7 +1392,7 @@ def test_min():
     nested_clean = pd.DataFrame(
         data={"g": [1, 0, 3, 4, 5, 6], "h": [1, 2, 3, 4, 5, 6]}, index=[0, 0, 1, 1, 2, 2]
     )
-    base_clean = base.add_nested(nested_clean, "nested_clean")
+    base_clean = base.join_nested(nested_clean, "nested_clean")
     min_clean = base_clean.min()
     expected_clean = pd.Series({"a": 1, "b": 2, "c": "x", "nested_clean.g": 0, "nested_clean.h": 1})
     assert (min_clean == expected_clean).all()
@@ -1400,14 +1400,14 @@ def test_min():
     nested_nan = pd.DataFrame(
         data={"g": [1, np.nan, 3, 4, 5, 6], "h": [np.nan, np.nan, 3, 4, np.nan, 6]}, index=[0, 0, 1, 1, 2, 2]
     )
-    base_nan = base.add_nested(nested_nan, "nested_nan")
+    base_nan = base.join_nested(nested_nan, "nested_nan")
     min_nan = base_nan.min()
     assert isinstance(min_nan, pd.Series)
     expected_nan = pd.Series({"a": 1, "b": 2, "c": "x", "nested_nan.g": 1, "nested_nan.h": 3})
     assert (min_nan == expected_nan).all()
 
     # 1 nested column
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
     r2 = base.min(exclude_nest=True, numeric_only=True)
     assert (r2 == pd.Series({"a": 1, "b": 2})).all()
     r3 = base.min(exclude_nest=True)
@@ -1417,7 +1417,7 @@ def test_min():
     assert (r4 == expected4).all()
 
     # 2 nested columns
-    base = base.add_nested(nested2, "nested2")
+    base = base.join_nested(nested2, "nested2")
     r5 = base.min(exclude_nest=True, numeric_only=True)
     assert (r5 == pd.Series({"a": 1, "b": 2})).all()
     r6 = base.min(exclude_nest=True)
@@ -1439,7 +1439,7 @@ def test_min():
     # only nested column
     base2 = NestedFrame(data={"x": [0, 1, 2]}, index=[0, 1, 2])
     nested3 = NestedFrame(data={"a": [1, 2, 3, 4, 5, 6], "b": [2, 4, 6, 8, 9, 0]}, index=[0, 0, 1, 1, 1, 2])
-    base2 = base2.add_nested(nested3, "nested3")
+    base2 = base2.join_nested(nested3, "nested3")
     base2 = base2.drop(["x"], axis=1)
     r8 = base2.min(exclude_nest=True)
     assert isinstance(r8, pd.Series)
@@ -1469,7 +1469,7 @@ def test_max():
     nested_clean = pd.DataFrame(
         data={"g": [1, 0, 3, 4, 5, 6], "h": [1, 2, 3, 4, 5, 6]}, index=[0, 0, 1, 1, 2, 2]
     )
-    base_clean = base.add_nested(nested_clean, "nested_clean")
+    base_clean = base.join_nested(nested_clean, "nested_clean")
     max_clean = base_clean.max()
     expected_clean = pd.Series({"a": 3, "b": 6, "c": "z", "nested_clean.g": 6, "nested_clean.h": 6})
     assert (max_clean == expected_clean).all()
@@ -1478,14 +1478,14 @@ def test_max():
         data={"g": [1, np.nan, 3, 4, np.nan, np.nan], "h": [np.nan, np.nan, 3, 4, 5, np.nan]},
         index=[0, 0, 1, 1, 2, 2],
     )
-    base_nan = base.add_nested(nested_nan, "nested_nan")
+    base_nan = base.join_nested(nested_nan, "nested_nan")
     max_nan = base_nan.max()
     assert isinstance(max_nan, pd.Series)
     expected_nan = pd.Series({"a": 3, "b": 6, "c": "z", "nested_nan.g": 4, "nested_nan.h": 5})
     assert (max_nan == expected_nan).all()
 
     # 1 nested column
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
     r2 = base.max(exclude_nest=True, numeric_only=True)
     assert (r2 == pd.Series({"a": 3, "b": 6})).all()
     r3 = base.max(exclude_nest=True)
@@ -1495,7 +1495,7 @@ def test_max():
     assert (r4 == expected4).all()
 
     # 2 nested columns
-    base = base.add_nested(nested2, "nested2")
+    base = base.join_nested(nested2, "nested2")
     r5 = base.max(exclude_nest=True, numeric_only=True)
     assert (r5 == pd.Series({"a": 3, "b": 6})).all()
     r6 = base.max(exclude_nest=True)
@@ -1517,7 +1517,7 @@ def test_max():
     # only nested column
     base2 = NestedFrame(data={"x": [0, 1, 2]}, index=[0, 1, 2])
     nested3 = NestedFrame(data={"a": [1, 2, 3, 4, 5, 6], "b": [2, 4, 6, 8, 9, 0]}, index=[0, 0, 1, 1, 1, 2])
-    base2 = base2.add_nested(nested3, "nested3")
+    base2 = base2.join_nested(nested3, "nested3")
     base2 = base2.drop(["x"], axis=1)
     r8 = base2.max(exclude_nest=True)
     assert isinstance(r8, pd.Series)
@@ -1592,7 +1592,7 @@ def test_describe():
         base_num.describe(exclude=np.number)
 
     # adding number nested columns
-    base_mix = base_mix.add_nested(nested_num, "nested_num")
+    base_mix = base_mix.join_nested(nested_num, "nested_num")
     r6 = base_mix.describe()
     assert isinstance(r6, NestedFrame)
     assert r6.shape[1] == 3
@@ -1620,12 +1620,12 @@ def test_describe():
     assert "a" in r10.columns
     assert "b" in r10.columns
 
-    base_num = base_num.add_nested(nested_num, "nested_num")
+    base_num = base_num.join_nested(nested_num, "nested_num")
     with pytest.raises(ValueError):
         base_num.describe(exclude=np.number)
 
     # adding mixed type nested columns
-    base_mix = base_mix.add_nested(nested_mix, "nested_mix")
+    base_mix = base_mix.join_nested(nested_mix, "nested_mix")
     r11 = base_mix.describe()
     assert isinstance(r11, NestedFrame)
     assert r11.shape[1] == 4
@@ -1664,7 +1664,7 @@ def test_describe():
 
     # only nested column
     base2 = NestedFrame(data={"x": [0, 1, 2]}, index=[0, 1, 2])
-    base2 = base2.add_nested(nested_mix, "nested_mix").add_nested(nested_num, "nested_num")
+    base2 = base2.join_nested(nested_mix, "nested_mix").join_nested(nested_num, "nested_num")
     base2 = base2.drop(["x"], axis=1)
     r17 = base2.describe()
     assert isinstance(r17, NestedFrame)
@@ -1676,7 +1676,7 @@ def test_describe():
         base2.describe(include=object)
 
     # edge case: object base with numeric nest
-    base_obj = base_obj.add_nested(nested_mix, "nested_mix").add_nested(nested_num, "nested_num")
+    base_obj = base_obj.join_nested(nested_mix, "nested_mix").join_nested(nested_num, "nested_num")
     r18 = base_obj.describe()
     assert isinstance(r18, NestedFrame)
     assert r18.shape[1] == 3
@@ -1702,7 +1702,7 @@ def test_explode_1():
         data={"f": ["A", "B", "C", "D", "E", "A", "A", "B"], "g": [5, 4, 7, 5, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 2, 2, 2],
     )
-    base = base.add_nested(nested_num, "nested_num").add_nested(nested_mix, "nested_mix")
+    base = base.join_nested(nested_num, "nested_num").join_nested(nested_mix, "nested_mix")
 
     # explode on base columns
     r1 = base.explode(column=["a"])
@@ -1852,7 +1852,7 @@ def test_fillna():
     assert (r0["b"] == pd.Series([2, 0, 6])).all()
 
     # 1 nested column
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
     r1 = base.fillna(0)
     expected1 = pd.Series([0, 4, 0, 5, 3, 1, 0, 3, 4], index=[0, 0, 0, 1, 1, 1, 2, 2, 2])
     assert (r1["nested.d"] == expected1).all()
@@ -1866,7 +1866,7 @@ def test_fillna():
     assert np.isnan(r3["a"][1])
 
     # 2 nested columns
-    base = base.add_nested(nested2, "nested2")
+    base = base.join_nested(nested2, "nested2")
     r4 = base.fillna(0)
     expected4 = pd.Series([0, 0, 0, 1, 4, 0, 4, 1], index=[0, 0, 0, 1, 1, 2, 2, 2])
     assert (r4["nested2.e"] == expected4).all()
@@ -1899,7 +1899,7 @@ def test_eval():
         index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
     )
 
-    nf = nf.add_nested(to_pack, "packed")
+    nf = nf.join_nested(to_pack, "packed")
     p5 = nf.eval("packed.d > 5")
     assert isinstance(p5, _SeriesFromNest)
     assert p5.any()
@@ -1948,7 +1948,7 @@ def test_mixed_eval_funcs():
         index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
     )
     # Reduction
-    nf = nf.add_nested(to_pack, "packed")
+    nf = nf.join_nested(to_pack, "packed")
     assert (nf.eval("a + packed.c.median()") == pd.Series([4, 5, 6])).all()
 
     # Across the nest: each base column element applies to each of its indexes
@@ -1972,7 +1972,7 @@ def test_eval_assignment():
         },
         index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
     )
-    nf = nf.add_nested(to_pack, "packed")
+    nf = nf.join_nested(to_pack, "packed")
     # Assigning to new base columns from old base columns
     nf_b = nf.eval("c = a + 1")
     assert len(nf_b.columns) == len(nf.columns) + 1
@@ -1980,17 +1980,17 @@ def test_eval_assignment():
 
     # Assigning to new nested columns from old nested columns
     nf_nc = nf.eval("packed.e = packed.c + 1")
-    assert len(nf_nc.packed.nest.fields) == len(nf["packed"].nest.fields) + 1
+    assert len(nf_nc.packed.nest.columns) == len(nf["packed"].nest.columns) + 1
     assert (nf_nc["packed.e"] == nf["packed.c"] + 1).all()
 
     # Verify that overwriting a nested column works
     nf_nc_2 = nf_nc.eval("packed.e = packed.c * 2")
-    assert len(nf_nc_2.packed.nest.fields) == len(nf_nc["packed"].nest.fields)
+    assert len(nf_nc_2.packed.nest.columns) == len(nf_nc["packed"].nest.columns)
     assert (nf_nc_2["packed.e"] == nf["packed.c"] * 2).all()
 
     # Assigning to new nested columns from a combo of base and nested
     nf_nx = nf.eval("packed.f = a + packed.c")
-    assert len(nf_nx.packed.nest.fields) == len(nf["packed"].nest.fields) + 1
+    assert len(nf_nx.packed.nest.columns) == len(nf["packed"].nest.columns) + 1
     assert (nf_nx["packed.f"] == nf["a"] + nf["packed.c"]).all()
     assert (nf_nx["packed.f"] == pd.Series([1, 3, 5, 12, 6, 5, 4, 7, 4], index=to_pack.index)).all()
 
@@ -2006,15 +2006,15 @@ def test_eval_assignment():
 
     # Create new nests via eval()
     nf_n2 = nf.eval("p2.c2 = packed.c * 2")
-    assert len(nf_n2.p2.nest.fields) == 1
+    assert len(nf_n2.p2.nest.columns) == 1
     assert (nf_n2["p2.c2"] == nf["packed.c"] * 2).all()
     assert (nf_n2["p2.c2"] == pd.Series([0, 4, 8, 20, 8, 6, 2, 8, 2], index=to_pack.index)).all()
     assert len(nf_n2.columns) == len(nf.columns) + 1  # new packed column
-    assert len(nf_n2.p2.nest.fields) == 1
+    assert len(nf_n2.p2.nest.columns) == 1
 
     # Assigning to new columns across two different nests
     nf_n3 = nf_n2.eval("p2.d = p2.c2 + packed.d * 2 + b")
-    assert len(nf_n3.p2.nest.fields) == 2
+    assert len(nf_n3.p2.nest.columns) == 2
     assert (nf_n3["p2.d"] == nf_n2["p2.c2"] + nf["packed.d"] * 2 + nf["b"]).all()
 
     # Now test multiline and inplace=True
@@ -2031,8 +2031,8 @@ def test_eval_assignment():
         inplace=True,
     )
     assert set(nf.nested_columns) == {"packed", "p2"}
-    assert set(nf.packed.nest.fields) == {"c", "d", "e", "time"}
-    assert set(nf.p2.nest.fields) == {"e", "f"}
+    assert set(nf.packed.nest.columns) == {"c", "d", "e", "time"}
+    assert set(nf.p2.nest.columns) == {"e", "f"}
     assert (nf["p2.e"] == nf["packed.d"] * 2 + nf.c).all()
     assert (nf["p2.f"] == nf["p2.e"] + nf.b).all()
 
@@ -2044,7 +2044,7 @@ def test_eval_assignment():
         data={"n/a": [0, 2, 4, 1, 4, 3, 1, 4, 1], "n/b": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    nf = nf.add_nested(nested, "bad dog")
+    nf = nf.join_nested(nested, "bad dog")
     nfx = nf.eval("`bad dog`.`n/c` = `bad dog`.`n/b` + 2.5")
     # The number of columns at the top should not have changed
     assert len(nfx.columns) == len(nf.columns)
@@ -2080,15 +2080,15 @@ def test_nest_lists():
     empty_ndf = NestedFrame({"a": [], "b": [], "c": []})
     empty_ndf = empty_ndf.nest_lists(columns=["b", "c"], name="nested")
     assert len(empty_ndf) == 0
-    assert empty_ndf.nested.nest.to_flat().shape == (0, 2)
-    assert empty_ndf.nested.nest.fields == ["b", "c"]
+    assert empty_ndf.nested.explode().shape == (0, 2)
+    assert empty_ndf.nested.nest.columns == ["b", "c"]
     assert set(empty_ndf.columns) == set(["a", "nested"])
 
     # Test packing empty lists as columns.
     empty_list_ndf = NestedFrame({"a": [1], "b": [[]], "c": [[]]})
     empty_list_ndf = empty_list_ndf.nest_lists(columns=["b", "c"], name="nested")
-    assert empty_list_ndf.nested.nest.to_flat().shape == (0, 2)
-    assert empty_list_ndf.nested.nest.fields == ["b", "c"]
+    assert empty_list_ndf.nested.explode().shape == (0, 2)
+    assert empty_list_ndf.nested.nest.columns == ["b", "c"]
     assert set(empty_list_ndf.columns) == {"a", "nested"}
 
     # Test that we raise an error if the columns are not lists
@@ -2143,11 +2143,11 @@ def test_delitem_base_and_nested():
         data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
-    # Delete a nested field
+    # Delete a nested column
     del base["nested.c"]
-    assert "c" not in base["nested"].nest.fields
+    assert "c" not in base["nested"].nest.columns
     # Delete a base column
     del base["a"]
     assert "a" not in base.columns
@@ -2174,7 +2174,7 @@ def test_auto_nest_on_dataframe_assignment():
         assert "nested" in base.nested_columns
 
         # The flat representation should match the original DataFrame (ignoring dtype)
-        flat = base["nested"].nest.to_flat()
+        flat = base["nested"].explode()
         assert (flat.values == nested.values).all()
         assert list(flat.columns) == list(nested.columns)
         assert list(flat.index) == list(nested.index)

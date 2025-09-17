@@ -21,7 +21,7 @@ def test_count_nested(join):
         },
         index=[100, 100, 100, 101, 101, 101, 102, 102, 102],
     )
-    base = base.add_nested(nested, "nested")
+    base = base.join_nested(nested, "nested")
 
     # Test general count
     total_counts = count_nested(base, "nested", join=join)
@@ -64,12 +64,12 @@ def test_check_expr_nesting():
         },
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    b1 = base.add_nested(nested, "nested")
+    b1 = base.join_nested(nested, "nested")
     assert b1.extract_nest_names("a > 2 & nested.c > 1") == {"", "nested"}
     assert b1.extract_nest_names("(nested.c > 1) and (nested.d>2)") == {"nested"}
     assert b1.extract_nest_names("-1.52e-5 < b < 35.2e2") == {""}
 
-    b2 = base.add_nested(nested.copy(), "n")
+    b2 = base.join_nested(nested.copy(), "n")
     assert b2.extract_nest_names("(n.c > 1) and ((b + a) > (b - 1e-8)) or n.d > a") == {"n", ""}
 
     abc = pd.DataFrame(
@@ -80,7 +80,7 @@ def test_check_expr_nesting():
         },
         index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
     )
-    b3 = base.add_nested(abc, "abc").add_nested(abc, "c")
+    b3 = base.join_nested(abc, "abc").join_nested(abc, "c")
     assert b3.extract_nest_names("abc.c > 2 & c.d < 5") == {"abc", "c"}
 
     assert b3.extract_nest_names("(abc.d > 3) & (abc.c == [2, 5])") == {"abc"}
@@ -90,6 +90,6 @@ def test_check_expr_nesting():
     assert b1.extract_nest_names("a>3") == {""}
     assert b1.extract_nest_names("a > 3") == {""}
 
-    b4 = base.add_nested(nested, "test")
+    b4 = base.join_nested(nested, "test")
     assert b4.extract_nest_names("test.c>5&b==2") == {"test", ""}
     assert b4.extract_nest_names("test.c > 5 & b == 2") == {"test", ""}

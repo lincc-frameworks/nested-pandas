@@ -17,6 +17,6 @@ Functions
 
     NestedDtype.construct_array_type
     NestedDtype.construct_from_string
-    NestedDtype.from_fields
+    NestedDtype.from_columns
     NestedDtype.from_pandas_arrow_dtype
     NestedDtype.to_pandas_arrow_dtype
