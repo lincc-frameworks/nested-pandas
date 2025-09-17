@@ -18,9 +18,9 @@ Functions
     NestSeriesAccessor.to_lists
     NestSeriesAccessor.to_flat
     NestSeriesAccessor.to_flatten_inner
-    NestSeriesAccessor.add_column
-    NestSeriesAccessor.add_flat_column
-    NestSeriesAccessor.add_list_column
-    NestSeriesAccessor.add_filled_column
+    NestSeriesAccessor.set_column
+    NestSeriesAccessor.set_flat_column
+    NestSeriesAccessor.set_list_column
+    NestSeriesAccessor.set_filled_column
     NestSeriesAccessor.drop
     NestSeriesAccessor.query
