@@ -1039,8 +1039,8 @@ def test_sort_values_ascension():
     assert list(sv_base.iloc[0]["nested"]["d"]) == [7, 5, 4]
 
 
-def test_reduce():
-    """Tests that we can call reduce on a NestedFrame with a custom function."""
+def test_map_rows():
+    """Tests that we can call map_rows on a NestedFrame with a custom function."""
     nf = NestedFrame(
         data={"a": [1, 2, 3], "b": [2, 4, 6]},
         index=pd.Index([0, 1, 2], name="idx"),
@@ -1078,21 +1078,17 @@ def test_reduce():
     nf = nf.join_nested(to_pack, "packed").join_nested(to_pack2, "packed2")
 
     # Define a simple custom function to apply to the nested data
-    def get_max(col1, col2):
-        # returns the max value within each specified colun
-        return pd.Series([col1.max(), col2.max()], index=["max_col1", "max_col2"])
+    def get_max(row):
+        # returns the max value within each specified column
+        return pd.Series([row["packed.c"].max(), row["packed.d"].max()], index=["max_col1", "max_col2"])
 
     # The expected max values for of our nested columns
     expected_max_c = [4, 10, 4]
     expected_max_d = [7, 5, 9]
     expected_max_e = [9, 23, 4]
 
-    # Test that we raise an error when no arguments are provided
-    with pytest.raises(ValueError):
-        nf.reduce(get_max)
-
     # Batch only on columns in the first packed layer
-    result = nf.reduce(get_max, "packed.c", "packed.d")
+    result = nf.map_rows(get_max, columns=["packed.c", "packed.d"])
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
@@ -1100,8 +1096,28 @@ def test_reduce():
         assert result["max_col1"].values[i] == expected_max_c[i]
         assert result["max_col2"].values[i] == expected_max_d[i]
 
+    # Test that columns=None gives the same result
+    result_none = nf.map_rows(get_max, columns=None)
+    assert result.equals(result_none)
+
+    # As does columns="packed"
+    result_packed = nf.map_rows(get_max, columns="packed")
+    assert result.equals(result_packed)
+
+    # Test the "args" input container
+    def get_max(col1, col2):
+        # returns the max value within each specified column
+        return pd.Series([col1.max(), col2.max()], index=["max_col1", "max_col2"])
+
+    result_args = nf.map_rows(get_max, columns=["packed.c", "packed.d"], row_container="args")
+    assert result.equals(result_args)
+
+    def get_max2(row):
+        # returns the max value within each specified column
+        return pd.Series([row["packed.c"].max(), row["packed2.e"].max()], index=["max_col1", "max_col2"])
+
     # Batch on columns in the first and second packed layers
-    result = nf.reduce(get_max, "packed.c", "packed2.e")
+    result = nf.map_rows(get_max2, columns=["packed.c", "packed2.e"])
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
@@ -1109,7 +1125,7 @@ def test_reduce():
         assert result["max_col1"].values[i] == expected_max_c[i]
         assert result["max_col2"].values[i] == expected_max_e[i]
 
-    # Test that we can pass a scalar from the base layer to the reduce function and that
+    # Test that we can pass a scalar from the base layer to the map_rows function and that
     # the user can also provide non-column arguments (in this case, the list of column names)
     def offset_avg(offset, col_to_avg, column_names):
         # A simple function which adds a scalar 'offset' to a column which is then averaged.
@@ -1121,26 +1137,28 @@ def test_reduce():
         sum([7, 10, 7]) / 3.0,
     ]
 
-    result = nf.reduce(offset_avg, "b", "packed.c", column_names=["offset_avg"])
+    result = nf.map_rows(
+        offset_avg, columns=["b", "packed.c"], row_container="args", column_names=["offset_avg"]
+    )
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
     for i in range(len(result)):
         assert result["offset_avg"].values[i] == expected_offset_avg[i]
 
-    # Verify that we can understand a string argument to the reduce function,
+    # Verify that we can understand a string argument to the map_rows function,
     # so long as it isn't a column name.
-    def make_id(col1, prefix_str):
-        return f"{prefix_str}{col1}"
+    def make_id(row, prefix_str):
+        return f"{prefix_str}{row["b"]}"
 
-    result = nf.reduce(make_id, "b", prefix_str="some_id_")
+    result = nf.map_rows(make_id, columns="b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
 
     # Verify that append_columns=True works as expected.
     # Ensure that even with non-unique indexes, the final result retains
     # the original index (nested-pandas#301)
     nf.index = pd.Index([0, 1, 1], name="non-unique")
-    result = nf.reduce(get_max, "packed.c", "packed.d", append_columns=True)
+    result = nf.map_rows(get_max, columns=["packed.c", "packed.d"], append_columns=True, row_container="args")
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     result_c = list(result.columns)
@@ -1158,8 +1176,8 @@ def test_reduce():
         assert result["packed.d"].values[i] == to_pack["d"].values[i]
 
 
-def test_reduce_duplicated_cols():
-    """Tests nf.reduce() to correctly handle duplicated column names."""
+def test_map_rows_duplicated_cols():
+    """Tests nf.map_rows() to correctly handle duplicated column names."""
     nf = NestedFrame(
         data={"a": [1, 2, 3], "b": [2, 4, 6]},
         index=pd.Index([0, 1, 2], name="idx"),
@@ -1199,19 +1217,19 @@ def test_reduce_duplicated_cols():
     def cols_allclose(col1, col2):
         return pd.Series([np.allclose(col1, col2)], index=["allclose"])
 
-    result = nf.reduce(cols_allclose, "packed.time", "packed2.f")
+    result = nf.map_rows(cols_allclose, columns=["packed.time", "packed2.f"], row_container="args")
     assert_frame_equal(
         result, pd.DataFrame({"allclose": [False, False, False]}, index=pd.Index([0, 1, 2], name="idx"))
     )
 
-    result = nf.reduce(cols_allclose, "packed.c", "packed.c")
+    result = nf.map_rows(cols_allclose, columns=["packed.c", "packed.c"], row_container="args")
     assert_frame_equal(
         result, pd.DataFrame({"allclose": [True, True, True]}, index=pd.Index([0, 1, 2], name="idx"))
     )
 
 
-def test_reduce_infer_nesting():
-    """Test that nesting inference works in reduce"""
+def test_map_rows_infer_nesting():
+    """Test that nesting inference works in map_rows"""
 
     ndf = generate_data(3, 20, seed=1)
 
@@ -1222,7 +1240,7 @@ def test_reduce_infer_nesting():
             "lc.flux_quantiles": np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]),
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == ["max_flux", "lc"]
     assert list(result.lc.nest.columns) == ["flux_quantiles"]
 
@@ -1234,7 +1252,7 @@ def test_reduce_infer_nesting():
             "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns=["nested.flux"], row_container="args")
     assert list(result.columns) == ["max_flux", "lc"]
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
@@ -1242,7 +1260,7 @@ def test_reduce_infer_nesting():
     def complex_output(flux):
         return np.max(flux), np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]), [0.1, 0.2, 0.3, 0.4, 0.5]
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == [0, 1, 2]
 
     # Test multiple nested structures output
@@ -1254,7 +1272,7 @@ def test_reduce_infer_nesting():
             "meta.colors": ["green", "red", "blue"],
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == ["max_flux", "lc", "meta"]
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
     assert list(result.meta.nest.columns) == ["colors"]
@@ -1266,13 +1284,13 @@ def test_reduce_infer_nesting():
             "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == ["lc"]
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
 
-def test_reduce_arg_errors():
-    """Test that reduce errors based on non-column args trigger as expected"""
+def test_map_rows_arg_errors():
+    """Test that map_rows errors based on non-column args trigger as expected"""
 
     ndf = generate_data(10, 10, seed=1)
 
@@ -1283,13 +1301,13 @@ def test_reduce_arg_errors():
         return {"nested2.flux": flux + a}
 
     with pytest.raises(TypeError):
-        ndf.reduce(func, "a", "nested.flux", True)
+        ndf.map_rows(func, columns=["a", "nested.flux", True], row_container="args")
 
     with pytest.raises(ValueError):
-        ndf.reduce(func, "ab", "nested.flux", add=True)
+        ndf.map_rows(func, columns=["ab", "nested.flux"], add=True, row_container="args")
 
     # this should work
-    ndf.reduce(func, "a", "nested.flux", add=True)
+    ndf.map_rows(func, ["a", "nested.flux"], add=True, row_container="args")
 
 
 def test_scientific_notation():
@@ -1748,8 +1766,8 @@ def test_explode_non_unique_index():
     # Add a new nested column which has the same element length as the "nested"
     nf["aligned_nested.aligned_t"] = nf["nested.t"]
     # Add a new nested column which has different lengths
-    nf["unaligned_nested"] = nf.reduce(
-        lambda x: {"unaligned_nested.unaligned_t": x[:2]}, "nested.t"
+    nf["unaligned_nested"] = nf.map_rows(
+        lambda x: {"unaligned_nested.unaligned_t": x[:2]}, columns="nested.t", row_container="args"
     ).reset_index(drop=True)
     # Add a list column which has the same lengths
     nf["aligned_list_t"] = nf["nested"].nest.to_lists("t")["t"]
@@ -2215,5 +2233,5 @@ def test_issue350():
     """https://github.com/lincc-frameworks/nested-pandas/issues/350"""
     nf = generate_data(3, 2)
     nf = nf.set_index(np.array([100, 100, 101]))
-    result = nf.reduce(lambda flux: {"new.flux": flux}, "nested.flux")
+    result = nf.map_rows(lambda flux: {"new.flux": flux}, columns="nested.flux", row_container="args")
     assert len(result) == 3

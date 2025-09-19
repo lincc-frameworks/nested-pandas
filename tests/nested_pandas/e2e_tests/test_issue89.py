@@ -28,4 +28,4 @@ def test_issue89():
     object_ndf = object_ndf.join_nested(source_ndf, "ztf_source")
 
     nf = object_ndf
-    nf.reduce(np.mean, "ztf_source.mjd")
+    nf.map_rows(np.mean, "ztf_source.mjd", row_container="args")
