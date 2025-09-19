@@ -2055,7 +2055,7 @@ class NestedFrame(pd.DataFrame):
 
         >>> # define a custom user function that returns nested structure
         >>> def example_func(row):
-        ...     '''reduce will return a NestedFrame with nested structure'''
+        ...     '''map_rows will return a NestedFrame with nested structure'''
         ...     return {"offsets.t_a": row["nested.t"] - row["a"],
         ...             "offsets.t_b": row["nested.t"] - row["b"]}
 

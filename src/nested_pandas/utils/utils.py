@@ -60,8 +60,10 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     if by is None:
         counts = pd.Series(df[nested].nest.list_lengths, name=f"n_{nested}", index=df.index)
     else:
-        counts = df.reduce(
-            lambda x: dict(zip(*np.unique(x, return_counts=True), strict=False)), f"{nested}.{by}"
+        counts = df.map_rows(
+            lambda x: dict(zip(*np.unique(x, return_counts=True), strict=False)),
+            columns=f"{nested}.{by}",
+            row_container="args",
         )
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
         counts = counts.reindex(sorted(counts.columns), axis=1)

@@ -1125,7 +1125,7 @@ def test_map_rows():
         assert result["max_col1"].values[i] == expected_max_c[i]
         assert result["max_col2"].values[i] == expected_max_e[i]
 
-    # Test that we can pass a scalar from the base layer to the reduce function and that
+    # Test that we can pass a scalar from the base layer to the map_rows function and that
     # the user can also provide non-column arguments (in this case, the list of column names)
     def offset_avg(offset, col_to_avg, column_names):
         # A simple function which adds a scalar 'offset' to a column which is then averaged.
@@ -1146,7 +1146,7 @@ def test_map_rows():
     for i in range(len(result)):
         assert result["offset_avg"].values[i] == expected_offset_avg[i]
 
-    # Verify that we can understand a string argument to the reduce function,
+    # Verify that we can understand a string argument to the map_rows function,
     # so long as it isn't a column name.
     def make_id(row, prefix_str):
         return f"{prefix_str}{row["b"]}"
@@ -1158,7 +1158,7 @@ def test_map_rows():
     # Ensure that even with non-unique indexes, the final result retains
     # the original index (nested-pandas#301)
     nf.index = pd.Index([0, 1, 1], name="non-unique")
-    result = nf.reduce(get_max, "packed.c", "packed.d", append_columns=True)
+    result = nf.map_rows(get_max, columns=["packed.c", "packed.d"], append_columns=True, row_container="args")
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     result_c = list(result.columns)
@@ -1229,7 +1229,7 @@ def test_map_rows_duplicated_cols():
 
 
 def test_map_rows_infer_nesting():
-    """Test that nesting inference works in reduce"""
+    """Test that nesting inference works in map_rows"""
 
     ndf = generate_data(3, 20, seed=1)
 
@@ -1290,7 +1290,7 @@ def test_map_rows_infer_nesting():
 
 
 def test_map_rows_arg_errors():
-    """Test that reduce errors based on non-column args trigger as expected"""
+    """Test that map_rows errors based on non-column args trigger as expected"""
 
     ndf = generate_data(10, 10, seed=1)
 
@@ -1304,7 +1304,7 @@ def test_map_rows_arg_errors():
         ndf.map_rows(func, columns=["a", "nested.flux", True], row_container="args")
 
     with pytest.raises(ValueError):
-        ndf.reduce(func, columns=["ab", "nested.flux"], add=True, row_container="args")
+        ndf.map_rows(func, columns=["ab", "nested.flux"], add=True, row_container="args")
 
     # this should work
     ndf.map_rows(func, ["a", "nested.flux"], add=True, row_container="args")
@@ -1766,8 +1766,8 @@ def test_explode_non_unique_index():
     # Add a new nested column which has the same element length as the "nested"
     nf["aligned_nested.aligned_t"] = nf["nested.t"]
     # Add a new nested column which has different lengths
-    nf["unaligned_nested"] = nf.reduce(
-        lambda x: {"unaligned_nested.unaligned_t": x[:2]}, "nested.t"
+    nf["unaligned_nested"] = nf.map_rows(
+        lambda x: {"unaligned_nested.unaligned_t": x[:2]}, columns="nested.t", row_container="args"
     ).reset_index(drop=True)
     # Add a list column which has the same lengths
     nf["aligned_list_t"] = nf["nested"].nest.to_lists("t")["t"]
@@ -2233,5 +2233,5 @@ def test_issue350():
     """https://github.com/lincc-frameworks/nested-pandas/issues/350"""
     nf = generate_data(3, 2)
     nf = nf.set_index(np.array([100, 100, 101]))
-    result = nf.reduce(lambda flux: {"new.flux": flux}, "nested.flux")
+    result = nf.map_rows(lambda flux: {"new.flux": flux}, columns="nested.flux", row_container="args")
     assert len(result) == 3
