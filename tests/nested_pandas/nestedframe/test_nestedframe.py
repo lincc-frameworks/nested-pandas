@@ -1176,8 +1176,8 @@ def test_map_rows():
         assert result["packed.d"].values[i] == to_pack["d"].values[i]
 
 
-def test_reduce_duplicated_cols():
-    """Tests nf.reduce() to correctly handle duplicated column names."""
+def test_map_rows_duplicated_cols():
+    """Tests nf.map_rows() to correctly handle duplicated column names."""
     nf = NestedFrame(
         data={"a": [1, 2, 3], "b": [2, 4, 6]},
         index=pd.Index([0, 1, 2], name="idx"),
@@ -1217,18 +1217,18 @@ def test_reduce_duplicated_cols():
     def cols_allclose(col1, col2):
         return pd.Series([np.allclose(col1, col2)], index=["allclose"])
 
-    result = nf.reduce(cols_allclose, "packed.time", "packed2.f")
+    result = nf.map_rows(cols_allclose, columns=["packed.time", "packed2.f"], row_container="args")
     assert_frame_equal(
         result, pd.DataFrame({"allclose": [False, False, False]}, index=pd.Index([0, 1, 2], name="idx"))
     )
 
-    result = nf.reduce(cols_allclose, "packed.c", "packed.c")
+    result = nf.map_rows(cols_allclose, columns=["packed.c", "packed.c"], row_container="args")
     assert_frame_equal(
         result, pd.DataFrame({"allclose": [True, True, True]}, index=pd.Index([0, 1, 2], name="idx"))
     )
 
 
-def test_reduce_infer_nesting():
+def test_map_rows_infer_nesting():
     """Test that nesting inference works in reduce"""
 
     ndf = generate_data(3, 20, seed=1)
@@ -1240,7 +1240,7 @@ def test_reduce_infer_nesting():
             "lc.flux_quantiles": np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]),
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == ["max_flux", "lc"]
     assert list(result.lc.nest.columns) == ["flux_quantiles"]
 
@@ -1252,7 +1252,7 @@ def test_reduce_infer_nesting():
             "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns=["nested.flux"], row_container="args")
     assert list(result.columns) == ["max_flux", "lc"]
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
@@ -1260,7 +1260,7 @@ def test_reduce_infer_nesting():
     def complex_output(flux):
         return np.max(flux), np.quantile(flux, [0.1, 0.2, 0.3, 0.4, 0.5]), [0.1, 0.2, 0.3, 0.4, 0.5]
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == [0, 1, 2]
 
     # Test multiple nested structures output
@@ -1272,7 +1272,7 @@ def test_reduce_infer_nesting():
             "meta.colors": ["green", "red", "blue"],
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == ["max_flux", "lc", "meta"]
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
     assert list(result.meta.nest.columns) == ["colors"]
@@ -1284,12 +1284,12 @@ def test_reduce_infer_nesting():
             "lc.labels": [0.1, 0.2, 0.3, 0.4, 0.5],
         }
 
-    result = ndf.reduce(complex_output, "nested.flux")
+    result = ndf.map_rows(complex_output, columns="nested.flux", row_container="args")
     assert list(result.columns) == ["lc"]
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
 
-def test_reduce_arg_errors():
+def test_map_rows_arg_errors():
     """Test that reduce errors based on non-column args trigger as expected"""
 
     ndf = generate_data(10, 10, seed=1)
@@ -1301,13 +1301,13 @@ def test_reduce_arg_errors():
         return {"nested2.flux": flux + a}
 
     with pytest.raises(TypeError):
-        ndf.reduce(func, "a", "nested.flux", True)
+        ndf.map_rows(func, columns=["a", "nested.flux", True], row_container="args")
 
     with pytest.raises(ValueError):
-        ndf.reduce(func, "ab", "nested.flux", add=True)
+        ndf.reduce(func, columns=["ab", "nested.flux"], add=True, row_container="args")
 
     # this should work
-    ndf.reduce(func, "a", "nested.flux", add=True)
+    ndf.map_rows(func, ["a", "nested.flux"], add=True, row_container="args")
 
 
 def test_scientific_notation():

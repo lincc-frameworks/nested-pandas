@@ -2099,7 +2099,6 @@ class NestedFrame(pd.DataFrame):
             )
 
         # Check arg validity
-        # import pdb;pdb.set_trace()
         requested_columns = []
         for arg in columns:
             if not isinstance(arg, str):
