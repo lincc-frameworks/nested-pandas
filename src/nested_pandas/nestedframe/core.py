@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import warnings
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -1962,13 +1963,9 @@ class NestedFrame(pd.DataFrame):
     def map_rows(
         self,
         func: Callable[..., Any],
-        # list of the columns to pass, None - all, str - single , list[str] - few
         args: None | str | list[str],
-        # how udf will be called: dict - udf({"col1": value, ...}, **kwargs), args - udf(value, ..., **kwargs)
-        row_container: Literal[dict] | Literal[args] = "dict",
-        # None - output should be a dict (or 0, 1, 2 will be used for columns), str or list[str] - output is single value or a tuple, names are specified by this arg
+        row_container: Literal[dict] | Literal["args"] = "dict",
         output_names: None | str | list[str] = None,
-        # Respects output_names
         infer_nesting: bool = True,
         append_columns: bool = False,
         **kwargs,
@@ -2042,12 +2039,12 @@ class NestedFrame(pd.DataFrame):
 
         You may want the result of a `map_rows` call to have nested structure,
         we can achieve this by using the `infer_nesting` kwarg:
-
+        d
         >>> # define a custom user function that returns nested structure
         >>> def example_func(row):
-        ...    '''reduce will return a NestedFrame with nested structure'''
-               return {"offsets.t_a": row["nested.t"] - row["a"],
-        ...            "offsets.t_b": row["nested.t"] - row["b"]
+        ...     '''reduce will return a NestedFrame with nested structure'''
+        ...     return {"offsets.t_a": row["nested.t"] - row["a"],
+        ...             "offsets.t_b": row["nested.t"] - row["b"]}
 
         By giving both output columns the prefix "offsets.", we signal
         to map_rows to infer that these should be packed into a nested column
@@ -2082,10 +2079,7 @@ class NestedFrame(pd.DataFrame):
             args = base_cols + nested_cols
         elif args is str:
             # If it's a nested column, grab all sub-columns
-            if args in self.nested_columns:
-                args = [f"{args}.{col}" for col in self[args].columns]
-            else:
-                args = [args]
+            args = [f"{args}.{col}" for col in self[args].columns] if args in self.nested_columns else [args]
 
         # Check arg validity
         requested_columns = []
