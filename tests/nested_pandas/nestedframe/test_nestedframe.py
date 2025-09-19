@@ -1039,8 +1039,8 @@ def test_sort_values_ascension():
     assert list(sv_base.iloc[0]["nested"]["d"]) == [7, 5, 4]
 
 
-def test_reduce():
-    """Tests that we can call reduce on a NestedFrame with a custom function."""
+def test_map_rows():
+    """Tests that we can call map_rows on a NestedFrame with a custom function."""
     nf = NestedFrame(
         data={"a": [1, 2, 3], "b": [2, 4, 6]},
         index=pd.Index([0, 1, 2], name="idx"),
@@ -1078,21 +1078,17 @@ def test_reduce():
     nf = nf.join_nested(to_pack, "packed").join_nested(to_pack2, "packed2")
 
     # Define a simple custom function to apply to the nested data
-    def get_max(col1, col2):
-        # returns the max value within each specified colun
-        return pd.Series([col1.max(), col2.max()], index=["max_col1", "max_col2"])
+    def get_max(row):
+        # returns the max value within each specified column
+        return pd.Series([row["packed.c"].max(), row["packed.d"].max()], index=["max_col1", "max_col2"])
 
     # The expected max values for of our nested columns
     expected_max_c = [4, 10, 4]
     expected_max_d = [7, 5, 9]
     expected_max_e = [9, 23, 4]
 
-    # Test that we raise an error when no arguments are provided
-    with pytest.raises(ValueError):
-        nf.reduce(get_max)
-
     # Batch only on columns in the first packed layer
-    result = nf.reduce(get_max, "packed.c", "packed.d")
+    result = nf.map_rows(get_max, columns=["packed.c", "packed.d"])
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
@@ -1100,8 +1096,28 @@ def test_reduce():
         assert result["max_col1"].values[i] == expected_max_c[i]
         assert result["max_col2"].values[i] == expected_max_d[i]
 
+    # Test that columns=None gives the same result
+    result_none = nf.map_rows(get_max, columns=None)
+    assert result.equals(result_none)
+
+    # As does columns="packed"
+    result_packed = nf.map_rows(get_max, columns="packed")
+    assert result.equals(result_packed)
+
+    # Test the "args" input container
+    def get_max(col1, col2):
+        # returns the max value within each specified column
+        return pd.Series([col1.max(), col2.max()], index=["max_col1", "max_col2"])
+
+    result_args = nf.map_rows(get_max, columns=["packed.c", "packed.d"], row_container="args")
+    assert result.equals(result_args)
+
+    def get_max2(row):
+        # returns the max value within each specified column
+        return pd.Series([row["packed.c"].max(), row["packed2.e"].max()], index=["max_col1", "max_col2"])
+
     # Batch on columns in the first and second packed layers
-    result = nf.reduce(get_max, "packed.c", "packed2.e")
+    result = nf.map_rows(get_max2, columns=["packed.c", "packed2.e"])
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
@@ -1121,7 +1137,9 @@ def test_reduce():
         sum([7, 10, 7]) / 3.0,
     ]
 
-    result = nf.reduce(offset_avg, "b", "packed.c", column_names=["offset_avg"])
+    result = nf.map_rows(
+        offset_avg, columns=["b", "packed.c"], row_container="args", column_names=["offset_avg"]
+    )
     assert len(result) == len(nf)
     assert isinstance(result, NestedFrame)
     assert result.index.name == "idx"
@@ -1130,10 +1148,10 @@ def test_reduce():
 
     # Verify that we can understand a string argument to the reduce function,
     # so long as it isn't a column name.
-    def make_id(col1, prefix_str):
-        return f"{prefix_str}{col1}"
+    def make_id(row, prefix_str):
+        return f"{prefix_str}{row["b"]}"
 
-    result = nf.reduce(make_id, "b", prefix_str="some_id_")
+    result = nf.map_rows(make_id, columns="b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
 
     # Verify that append_columns=True works as expected.

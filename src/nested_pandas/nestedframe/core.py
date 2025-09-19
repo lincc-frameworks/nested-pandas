@@ -1963,7 +1963,7 @@ class NestedFrame(pd.DataFrame):
     def map_rows(
         self,
         func: Callable[..., Any],
-        args: None | str | list[str],
+        columns: None | str | list[str],
         row_container: Literal[dict] | Literal["args"] = "dict",
         output_names: None | str | list[str] = None,
         infer_nesting: bool = True,
@@ -1983,7 +1983,7 @@ class NestedFrame(pd.DataFrame):
             Function to apply to each nested dataframe. The first arguments to `func` should be which
             columns to apply the function to. See the Notes for recommendations
             on writing func outputs.
-        args : None | str | list of str
+        columns : None | str | list of str
             Specifies which columns to pass to the function in the row_container format.
             If None, all columns are passed. If str, a single column is passed.
             If list of str, those columns are passed. Access nested columns using
@@ -2029,7 +2029,7 @@ class NestedFrame(pd.DataFrame):
         ...     return np.mean(row["nested.t"]), np.mean(row["nested.t"]) - row["a"]
         >>>
         >>> # apply the function
-        >>> nf.map_rows(example_func, args=["a", "nested.t"], output_names=["mean", "mean_minus_base"])
+        >>> nf.map_rows(example_func, columns=["a", "nested.t"], output_names=["mean", "mean_minus_base"])
                 mean  mean_minus_base
         0  11.533440        11.116418
         1  10.307751         9.587426
@@ -2037,9 +2037,22 @@ class NestedFrame(pd.DataFrame):
         3   9.655291         9.352958
         4  10.687591        10.540836
 
+        Additional arguments that don't depend on row data can be passed as kwargs:
+
+        >>> def example_func(row, scale):
+        ...     return np.mean(row["nested.t"]) * scale
+
+        >>> nf.map_rows(example_func, columns=["nested.t"], output_names="mean", scale=1)
+                mean
+        0  11.533440
+        1  10.307751
+        2   8.294042
+        3   9.655291
+        4  10.687591
+
         You may want the result of a `map_rows` call to have nested structure,
         we can achieve this by using the `infer_nesting` kwarg:
-        d
+
         >>> # define a custom user function that returns nested structure
         >>> def example_func(row):
         ...     '''reduce will return a NestedFrame with nested structure'''
@@ -2051,7 +2064,7 @@ class NestedFrame(pd.DataFrame):
         called "offsets".
 
         >>> # apply the function with `infer_nesting` (True by default)
-        >>> nf.map_rows(example_func, args=["a", "b", "nested.t"], infer_nesting=True)
+        >>> nf.map_rows(example_func, columns=["a", "b", "nested.t"], infer_nesting=True)
                                                   offsets
         0    [{t_a: 7.966868, t_b: 8.199213}; …] (5 rows)
         1   [{t_a: 12.984066, t_b: 13.33187}; …] (5 rows)
@@ -2072,18 +2085,23 @@ class NestedFrame(pd.DataFrame):
         `map_rows` (as shown above).
         """
         # Determine args
-        if args is None:
+        if columns is None:
             base_cols = [col for col in self.columns if col not in self.nested_columns]
             # TODO: Limited to two layer nests
             nested_cols = [f"{nest}.{col}" for nest in self.nested_columns for col in self[nest].columns]
-            args = base_cols + nested_cols
-        elif args is str:
+            columns = base_cols + nested_cols
+        elif isinstance(columns, str):
             # If it's a nested column, grab all sub-columns
-            args = [f"{args}.{col}" for col in self[args].columns] if args in self.nested_columns else [args]
+            columns = (
+                [f"{columns}.{col}" for col in self[columns].columns]
+                if columns in self.nested_columns
+                else [columns]
+            )
 
         # Check arg validity
+        # import pdb;pdb.set_trace()
         requested_columns = []
-        for arg in args:
+        for arg in columns:
             if not isinstance(arg, str):
                 raise TypeError(
                     f"Received an argument '{arg}' that is not a string. "
