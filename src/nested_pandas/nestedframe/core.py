@@ -2037,6 +2037,23 @@ class NestedFrame(pd.DataFrame):
         3   9.655291         9.352958
         4  10.687591        10.540836
 
+        Alternatively, we can pass along the row data as positional arguments
+        instead of a dictionary by setting `row_container="args"` and adjusting
+        our function signature accordingly:
+        >>> def example_func(a, time):
+        ...     return np.mean(time), np.mean(time) - a
+
+        >>> nf.map_rows(example_func,
+        ...             columns=["a", "nested.t"],
+        ...             output_names=["mean", "mean_minus_base"],
+        ...             row_container="args")
+                mean  mean_minus_base
+        0  11.533440        11.116418
+        1  10.307751         9.587426
+        2   8.294042         8.293928
+        3   9.655291         9.352958
+        4  10.687591        10.540836
+
         Additional arguments that don't depend on row data can be passed as kwargs:
 
         >>> def example_func(row, scale):
