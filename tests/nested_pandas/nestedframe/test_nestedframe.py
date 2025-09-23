@@ -2144,10 +2144,6 @@ def test_nest_lists():
     with pytest.raises(ValueError):
         ndf.nest_lists(columns=["c", "d"], name="nested")
 
-    # Test nest_lists ordering deprecation warning
-    with pytest.warns(DeprecationWarning):
-        res = ndf.nest_lists("nested", ["c", "b"])
-
 
 def test_nestlists_nonunique_index():
     """Test that nest_lists works with a non-unique index."""
