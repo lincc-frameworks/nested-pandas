@@ -1,4 +1,3 @@
-import warnings
 from functools import wraps
 
 import pandas as pd
@@ -34,15 +33,14 @@ class NestedSeries(pd.Series):
 
     @property
     @nested_only
+    @deprecated(
+        version="0.6.0",
+        reason="The `fields` property is deprecated and will be removed in version 0.7.0,"
+        "use `columns` instead.",
+    )
     def fields(self):
         """Returns the fields of the nested series as a list."""
-        warnings.warn(
-            "The `fields` property is deprecated and will be removed in a future release. "
-            "Use the `columns` property instead.",
-            DeprecationWarning,
-            stacklevel=2,  # Ensures the warning points to the caller
-        )
-        return self.nest.fields
+        return self.columns
 
     @property
     @nested_only
