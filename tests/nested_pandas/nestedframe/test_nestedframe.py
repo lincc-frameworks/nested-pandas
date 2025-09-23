@@ -1149,7 +1149,7 @@ def test_map_rows():
     # Verify that we can understand a string argument to the map_rows function,
     # so long as it isn't a column name.
     def make_id(row, prefix_str):
-        return f"{prefix_str}{row["b"]}"
+        return f"{prefix_str}{row['b']}"
 
     result = nf.map_rows(make_id, columns="b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
