@@ -104,6 +104,11 @@ class NestedFrame(pd.DataFrame):
                 nest_cols.append(column)
         return nest_cols
 
+    @property
+    def _base_columns(self) -> list[str]:
+        """Returns a list of base (non-nested) column names"""
+        return [col for col in self.columns if col not in self.nested_columns]
+
     def _repr_html_(self) -> str | None:
         """Override html representation"""
 
@@ -219,6 +224,18 @@ class NestedFrame(pd.DataFrame):
         if ".".join(components) in self.columns:
             return True
         return self._is_known_hierarchical_column(components)
+
+    def _get_subcolumns(self, nested_cols) -> list[str]:
+        """Returns a set of all subcolumn names from a set of nested columns, including dot notation"""
+        if isinstance(nested_cols, str):
+            nested_cols = [nested_cols]
+        subcols = []
+        for nested_col in nested_cols:
+            subcols += [f"{nested_col}.{col}" for col in self[nested_col].columns]
+
+        # I don't believe we need an error if we don't find any, as upstream errors will always trigger
+        # on wrong column names
+        return subcols
 
     def __getitem__(self, item):
         """Adds custom __getitem__ behavior for nested columns"""
@@ -1963,7 +1980,7 @@ class NestedFrame(pd.DataFrame):
     def map_rows(
         self,
         func: Callable[..., Any],
-        columns: None | str | list[str],
+        columns: None | str | list[str] = None,
         row_container: Literal[dict] | Literal["args"] = "dict",
         output_names: None | str | list[str] = None,
         infer_nesting: bool = True,
@@ -1985,10 +2002,10 @@ class NestedFrame(pd.DataFrame):
             on writing func outputs.
         columns : None | str | list of str
             Specifies which columns to pass to the function in the row_container format.
-            If None, all columns are passed. If str, a single column is passed.
-            If list of str, those columns are passed. Access nested columns using
-            `nested_df.nested_col` (where `nested_df` refers to a particular nested
-            dataframe and `nested_col` is a column of that nested dataframe).
+            If None, all columns are passed. If list of str, those columns are passed.
+            If str, a single column is passed or if the string is a nested column, then all nested sub-columns
+            are passed (e.g. columns="nested" passes all columns of the nested dataframe "nested"). To pass
+            individual nested sub-columns, use the hierarchical column name (e.g. columns=["nested.t",...]).
         row_container : 'dict' or 'args', default 'dict'
             Specifies how the row data will be packaged when passed as an input to the function.
             If 'dict', the function will be called as `func({"col1": value, ...}, **kwargs)`, so func should
@@ -1998,7 +2015,9 @@ class NestedFrame(pd.DataFrame):
         output_names : None | str | list of str
             Specifies the names of the output columns in the resulting NestedFrame. If None, the function
             will return whatever names the user function returns. If specified will override any names
-            returned by the user function provided the number of names matches the number of outputs.
+            returned by the user function provided the number of names matches the number of outputs. When not
+            specified and the user function returns values without names (e.g. a list or tuple), the output
+            columns will be enumerated (e.g. "0", "1", ...).
         infer_nesting : bool, default True
             If True, the function will pack output columns into nested
             structures based on column names adhering to a nested naming
@@ -2029,6 +2048,16 @@ class NestedFrame(pd.DataFrame):
         ...     return np.mean(row["nested.t"]), np.mean(row["nested.t"]) - row["a"]
         >>>
         >>> # apply the function
+        >>> nf.map_rows(example_func, output_names=["mean", "mean_minus_base"])
+                mean  mean_minus_base
+        0  11.533440        11.116418
+        1  10.307751         9.587426
+        2   8.294042         8.293928
+        3   9.655291         9.352958
+        4  10.687591        10.540836
+
+        We can pass along only the columns we need for the function using the `columns` argument, which
+        removes the performance overhead of packaging all columns for each row:
         >>> nf.map_rows(example_func, columns=["a", "nested.t"], output_names=["mean", "mean_minus_base"])
                 mean  mean_minus_base
         0  11.533440        11.116418
@@ -2067,6 +2096,20 @@ class NestedFrame(pd.DataFrame):
         3   9.655291
         4  10.687591
 
+        Functions that target a single nested structure can just pass along
+        the nested column name and all sub-columns will be available:
+
+        >>> def first_val(row):
+        ...     return (row[key][0] for key in row.keys())
+
+        >>> nf.map_rows(first_val, columns="nested", output_names=["first_t", "first_flux", "first_band"])
+             first_t  first_flux first_band
+        0   8.383890   31.551563          r
+        1  13.704390   68.650093          g
+        2   4.089045   83.462567          g
+        3  17.562349    1.828828          g
+        4   0.547752   75.014431          g
+
         You may want the result of a `map_rows` call to have nested structure,
         we can achieve this by using the `infer_nesting` kwarg:
 
@@ -2100,20 +2143,26 @@ class NestedFrame(pd.DataFrame):
         to either specify `output_names` or have `func` return a dictionary
         where each key is an output column of the dataframe returned by
         `map_rows` (as shown above).
+
+        >>> def example_func(row):
+        ...     return np.mean(row["nested.t"]), np.mean(row["nested.t"]) - row["a"]
+        >>>
+        >>> # first output column will be named "0", second "1"
+        >>> nf.map_rows(example_func)
+                   0          1
+        0  11.533440  11.116418
+        1  10.307751   9.587426
+        2   8.294042   8.293928
+        3   9.655291   9.352958
+        4  10.687591  10.540836
         """
         # Determine args
         if columns is None:
-            base_cols = [col for col in self.columns if col not in self.nested_columns]
-            # TODO: Limited to two layer nests
-            nested_cols = [f"{nest}.{col}" for nest in self.nested_columns for col in self[nest].columns]
-            columns = base_cols + nested_cols
+            # If None, pass all columns, with nested columns expanded to sub-columns
+            columns = self._base_columns + self._get_subcolumns(self.nested_columns)
         elif isinstance(columns, str):
             # If it's a nested column, grab all sub-columns
-            columns = (
-                [f"{columns}.{col}" for col in self[columns].columns]
-                if columns in self.nested_columns
-                else [columns]
-            )
+            columns = self._get_subcolumns(columns) if columns in self.nested_columns else [columns]
 
         # Check arg validity
         requested_columns = []
