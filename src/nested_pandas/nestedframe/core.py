@@ -1989,7 +1989,7 @@ class NestedFrame(pd.DataFrame):
             If list of str, those columns are passed. Access nested columns using
             `nested_df.nested_col` (where `nested_df` refers to a particular nested
             dataframe and `nested_col` is a column of that nested dataframe).
-        row_container : dict | args, default 'dict'
+        row_container : 'dict' or 'args', default 'dict'
             Specifies how the row data will be packaged when passed as an input to the function.
             If 'dict', the function will be called as `func({"col1": value, ...}, **kwargs)`, so func should
             expect a single dictionary input with keys corresponding to column names.
@@ -2091,7 +2091,7 @@ class NestedFrame(pd.DataFrame):
 
         Notes
         -----
-        If concerned about performance, specify `args` to only include the columns
+        If concerned about performance, specify `columns` to only include the columns
         needed for the function, as this will avoid the overhead of packaging
         all columns for each row.
 
@@ -2144,7 +2144,7 @@ class NestedFrame(pd.DataFrame):
                 else:
                     arg_dict[".".join([layer, col])] = self[layer].array.iter_field_lists(col)
             results = [
-                func({col: val for col, val in zip(arg_dict.keys(), row, strict=False)}, **kwargs)
+                func({col: val for col, val in zip(arg_dict.keys(), row, strict=True)}, **kwargs)
                 for row in zip(*arg_dict.values(), strict=True)
             ]
 
