@@ -1,7 +1,6 @@
 # Python 3.9 doesn't support "|" for types
 from __future__ import annotations
 
-import warnings
 from collections.abc import Generator, Mapping
 from typing import cast
 
