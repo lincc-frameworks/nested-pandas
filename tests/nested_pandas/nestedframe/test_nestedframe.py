@@ -1156,10 +1156,9 @@ def test_map_rows():
 
     # Check for output_names length error
     with pytest.raises(ValueError):
-        result = nf.map_rows(get_max,
-                             columns=["packed.c", "packed.d"],
-                             output_names=["only_one_name"],
-                             row_container="args")
+        result = nf.map_rows(
+            get_max, columns=["packed.c", "packed.d"], output_names=["only_one_name"], row_container="args"
+        )
 
     # Verify that append_columns=True works as expected.
     # Ensure that even with non-unique indexes, the final result retains

@@ -1,7 +1,6 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
-import warnings
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from typing import Literal
