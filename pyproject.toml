@@ -24,6 +24,7 @@ dependencies = [
     "pyarrow>=16",  # remove struct_field_names when upgraded to 18+
     "universal_pathlib>=0.2",
     "Deprecated>=1.2.0",
+    "wrapt>=1.12.1",
 ]
 
 [project.urls]
