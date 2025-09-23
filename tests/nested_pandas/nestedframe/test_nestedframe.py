@@ -1154,6 +1154,13 @@ def test_map_rows():
     result = nf.map_rows(make_id, columns="b", prefix_str="some_id_")
     assert result[0][1] == "some_id_4"
 
+    # Check for output_names length error
+    with pytest.raises(ValueError):
+        result = nf.map_rows(get_max,
+                             columns=["packed.c", "packed.d"],
+                             output_names=["only_one_name"],
+                             row_container="args")
+
     # Verify that append_columns=True works as expected.
     # Ensure that even with non-unique indexes, the final result retains
     # the original index (nested-pandas#301)

@@ -155,9 +155,6 @@ class NestSeriesAccessor(Mapping):
     )
     def fields(self) -> list[str]:
         """Names of the nested columns"""
-        warnings.warn(
-            ".nest.fields is deprecated, use .nest.columns instead", DeprecationWarning, stacklevel=2
-        )
         return self.columns
 
     @property
