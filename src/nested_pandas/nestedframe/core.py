@@ -2041,12 +2041,11 @@ class NestedFrame(pd.DataFrame):
         >>> from nested_pandas.datasets.generation import generate_data
         >>> import numpy as np
         >>> nf = generate_data(5,5, seed=1)
-        >>>
         >>> # define a custom user function
         >>> # map_rows will return a NestedFrame with two columns
         >>> def example_func(row):
         ...     return np.mean(row["nested.t"]), np.mean(row["nested.t"]) - row["a"]
-        >>>
+
         >>> # apply the function
         >>> nf.map_rows(example_func, output_names=["mean", "mean_minus_base"])
                 mean  mean_minus_base
@@ -2058,6 +2057,7 @@ class NestedFrame(pd.DataFrame):
 
         We can pass along only the columns we need for the function using the `columns` argument, which
         removes the performance overhead of packaging all columns for each row:
+
         >>> nf.map_rows(example_func, columns=["a", "nested.t"], output_names=["mean", "mean_minus_base"])
                 mean  mean_minus_base
         0  11.533440        11.116418
@@ -2069,6 +2069,7 @@ class NestedFrame(pd.DataFrame):
         Alternatively, we can pass along the row data as positional arguments
         instead of a dictionary by setting `row_container="args"` and adjusting
         our function signature accordingly:
+
         >>> def example_func(a, time):
         ...     return np.mean(time), np.mean(time) - a
 
@@ -2146,7 +2147,7 @@ class NestedFrame(pd.DataFrame):
 
         >>> def example_func(row):
         ...     return np.mean(row["nested.t"]), np.mean(row["nested.t"]) - row["a"]
-        >>>
+
         >>> # first output column will be named "0", second "1"
         >>> nf.map_rows(example_func)
                    0          1
