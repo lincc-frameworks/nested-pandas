@@ -399,3 +399,62 @@ def test__transform_read_parquet_data_arg():
                 "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet",
             ]
         )
+
+
+def test_read_parquet_with_open_file_options():
+    """Test that read_parquet accepts and handles open_file_options correctly."""
+    # Test with local file
+    local_path = "tests/test_data/nested.parquet"
+    
+    # Test basic open_file_options acceptance
+    open_file_options = {"precache_options": {"method": "parquet"}}
+    nf1 = read_parquet(local_path, open_file_options=open_file_options)
+    
+    # Should work identically to version without options for local files
+    nf2 = read_parquet(local_path)
+    
+    # Data should be the same
+    assert len(nf1) == len(nf2)
+    assert list(nf1.columns) == list(nf2.columns)
+    assert nf1.nested_columns == nf2.nested_columns
+    
+    # Test with additional kwargs
+    nf3 = read_parquet(
+        local_path, 
+        columns=["a", "nested.flux"],
+        open_file_options={"precache_options": {"method": "parquet"}},
+        use_threads=True
+    )
+    
+    assert len(nf3) == len(nf1)
+    assert "a" in nf3.columns
+    assert "nested" in nf3.columns
+
+
+def test_transform_read_parquet_data_arg_with_open_file_options():
+    """Test _transform_read_parquet_data_arg handles open_file_options."""
+    # Test backward compatibility
+    local_path = "tests/test_data/nested.parquet"
+    
+    # Single argument (original)
+    path1, fs1 = _transform_read_parquet_data_arg(local_path)
+    
+    # Two arguments with None
+    path2, fs2 = _transform_read_parquet_data_arg(local_path, None)
+    
+    assert path1 == path2 == local_path
+    assert fs1 == fs2 is None
+    
+    # With UPath and options
+    local_upath = UPath(local_path)
+    path3, fs3 = _transform_read_parquet_data_arg(local_upath)
+    
+    open_file_options = {"precache_options": {"method": "parquet"}, "block_size": 1024}
+    path4, fs4 = _transform_read_parquet_data_arg(local_upath, open_file_options)
+    
+    assert path3 == path4 == local_path
+    # fs4 should have the additional options
+    assert hasattr(fs4, 'storage_options')
+    assert 'precache_options' in fs4.storage_options
+    assert fs4.storage_options['precache_options']['method'] == 'parquet'
+    assert fs4.storage_options['block_size'] == 1024

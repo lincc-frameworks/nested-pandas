@@ -49,7 +49,9 @@ def read_parquet(
     autocast_list: bool, default=True
         If True, automatically cast list columns to nested columns with NestedDType.
     kwargs: dict
-        Keyword arguments passed to `pyarrow.parquet.read_table`
+        Keyword arguments passed to `pyarrow.parquet.read_table`. Special handling:
+        - `open_file_options`: dict of options for fsspec filesystem optimization.
+          Commonly used for remote storage performance (e.g., {"precache_options": {"method": "parquet"}}).
 
     Returns
     -------
@@ -93,13 +95,21 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
+    # Extract open_file_options if present, as they need special handling
+    open_file_options = kwargs.pop("open_file_options", None)
+    
     # First load through pyarrow
     # If `filesystem` is specified - use it
     if kwargs.get("filesystem") is not None:
+        # Apply open_file_options to the existing filesystem if provided
+        if open_file_options is not None:
+            filesystem = kwargs["filesystem"]
+            filesystem = _apply_open_file_options_to_filesystem(filesystem, open_file_options, data)
+            kwargs["filesystem"] = filesystem
         table = pq.read_table(data, columns=columns, **kwargs)
     # Otherwise convert with a special function
     else:
-        data, filesystem = _transform_read_parquet_data_arg(data)
+        data, filesystem = _transform_read_parquet_data_arg(data, open_file_options)
         table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
 
     # Resolve partial loading of nested structures
@@ -160,14 +170,53 @@ def read_parquet(
     return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
 
 
-def _transform_read_parquet_data_arg(data):
+def _apply_open_file_options_to_filesystem(filesystem, open_file_options, data_path):
+    """Apply open_file_options to an existing filesystem by creating a new enhanced filesystem.
+    
+    Parameters
+    ----------
+    filesystem : pyarrow.fs.FileSystem or fsspec filesystem
+        The existing filesystem object
+    open_file_options : dict
+        Options to apply to the filesystem (e.g., precache_options)
+    data_path : str
+        The data path, used to determine the appropriate filesystem type
+        
+    Returns
+    -------
+    Enhanced filesystem with the new options applied
+    """
+    # For PyArrow filesystems, we need to convert to fsspec approach
+    if hasattr(filesystem, 'type_name'):  # PyArrow filesystem
+        # Convert back to UPath approach for consistency
+        try:
+            from upath import UPath
+            upath = UPath(data_path, **open_file_options)
+            return upath.fs
+        except Exception:
+            # If conversion fails, return original filesystem
+            return filesystem
+    
+    # For fsspec filesystems, try to create a new one with combined options
+    try:
+        existing_options = getattr(filesystem, 'storage_options', {})
+        combined_options = {**existing_options, **open_file_options}
+        # Create new filesystem of the same type with enhanced options
+        filesystem_class = type(filesystem)
+        return filesystem_class(**combined_options)
+    except Exception:
+        # If enhancement fails, return original filesystem
+        return filesystem
+
+
+def _transform_read_parquet_data_arg(data, open_file_options=None):
     """Transform `data` argument of read_parquet to pq.read_parquet's `source` and `filesystem`"""
     # Check if a list, run the function recursively and check that filesystems are all the same
     if isinstance(data, list):
         paths = []
         first_fs = None
         for i, d in enumerate(data):
-            path, fs = _transform_read_parquet_data_arg(d)
+            path, fs = _transform_read_parquet_data_arg(d, open_file_options)
             paths.append(path)
             if i == 0:
                 first_fs = fs
@@ -181,6 +230,11 @@ def _transform_read_parquet_data_arg(data):
         return data, None
     # Check if `data` is a UPath and use it
     if isinstance(data, UPath):
+        if open_file_options is not None:
+            # Combine existing UPath options with new open_file_options
+            combined_options = {**data.storage_options, **open_file_options}
+            enhanced_upath = UPath(data, **combined_options)
+            return enhanced_upath.path, enhanced_upath.fs
         return data.path, data.fs
     # Check if `data` is a Path (Path is a superclass for UPath, so this order of checks)
     if isinstance(data, Path):
@@ -206,7 +260,13 @@ def _transform_read_parquet_data_arg(data):
         return upath.path, None
     # If HTTP, change the default UPath object to use a smaller block size
     if upath.protocol in ("http", "https"):
-        upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
+        base_options = {"block_size": FSSPEC_BLOCK_SIZE}
+        if open_file_options is not None:
+            base_options.update(open_file_options)
+        upath = UPath(upath, **base_options)
+    elif open_file_options is not None:
+        # For non-HTTP protocols, apply open_file_options if provided
+        upath = UPath(upath, **open_file_options)
     return upath.path, upath.fs
 
 
