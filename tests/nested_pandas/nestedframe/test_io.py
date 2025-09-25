@@ -399,3 +399,65 @@ def test__transform_read_parquet_data_arg():
                 "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet",
             ]
         )
+
+
+def test_read_parquet_with_fsspec_optimization():
+    """Test that read_parquet handles open_file_options using fsspec optimization."""
+    # Test with local file (should not use fsspec optimization)
+    local_path = "tests/test_data/nested.parquet"
+    
+    # Test basic open_file_options acceptance
+    open_file_options = {"precache_options": {"method": "parquet"}}
+    nf1 = read_parquet(local_path, open_file_options=open_file_options)
+    
+    # Should work identically to version without options for local files
+    nf2 = read_parquet(local_path)
+    
+    # Data should be the same
+    assert len(nf1) == len(nf2)
+    assert list(nf1.columns) == list(nf2.columns)
+    assert nf1.nested_columns == nf2.nested_columns
+    
+    # Test with additional kwargs
+    nf3 = read_parquet(
+        local_path, 
+        columns=["a", "nested.flux"],
+        open_file_options={"precache_options": {"method": "parquet"}},
+        use_threads=True
+    )
+    
+    assert len(nf3) == len(nf1)
+    assert "a" in nf3.columns
+    assert "nested" in nf3.columns
+
+
+def test_fsspec_optimization_path_detection():
+    """Test _should_use_fsspec_optimization correctly identifies remote paths."""
+    from nested_pandas.nestedframe.io import _should_use_fsspec_optimization
+    from pathlib import Path
+    
+    # Test cases that should NOT use optimization
+    assert not _should_use_fsspec_optimization("local_file.parquet", None)
+    assert not _should_use_fsspec_optimization("/path/to/file.parquet", None)  
+    assert not _should_use_fsspec_optimization(Path("local_file.parquet"), None)
+    assert not _should_use_fsspec_optimization(UPath("local_file.parquet"), None)
+    assert not _should_use_fsspec_optimization("https://example.com/file.parquet", "some_filesystem")
+    
+    # Test file-like object
+    import io
+    assert not _should_use_fsspec_optimization(io.BytesIO(b"test"), None)
+    
+    # Test cases that SHOULD use optimization  
+    assert _should_use_fsspec_optimization("https://example.com/file.parquet", None)
+    assert _should_use_fsspec_optimization("s3://bucket/file.parquet", None)
+    assert _should_use_fsspec_optimization("gs://bucket/file.parquet", None)
+    assert _should_use_fsspec_optimization(UPath("https://example.com/file.parquet"), None)
+    assert _should_use_fsspec_optimization(UPath("s3://bucket/file.parquet"), None)
+
+
+def test_docstring_includes_fsspec_options():
+    """Test that the docstring mentions the new fsspec optimization options."""
+    docstring = read_parquet.__doc__
+    assert "open_file_options" in docstring
+    assert "precache_options" in docstring
+    assert "fsspec" in docstring

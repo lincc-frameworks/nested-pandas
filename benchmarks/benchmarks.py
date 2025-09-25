@@ -254,3 +254,26 @@ class ReadFewColumnsHTTPS:
     def peakmem_run(self):
         """Benchmark the memory usage of read_parquet(self.path, columns=self.columns)"""
         self.run()
+
+
+class ReadFewColumnsHTTPSWithOptimization:
+    """Benchmark read_parquet("https://", columns=[...]) with fsspec optimization"""
+
+    path = "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet"
+    columns = ["_healpix_29", "ra", "astrometric_primary_flag"]
+
+    def run(self):
+        """Run the benchmark with fsspec optimization."""
+        _ = read_parquet(
+            self.path, 
+            columns=self.columns,
+            open_file_options={"precache_options": {"method": "parquet"}}
+        )
+
+    def time_run(self):
+        """Benchmark the runtime with fsspec optimization"""
+        self.run()
+
+    def peakmem_run(self):
+        """Benchmark the memory usage with fsspec optimization"""
+        self.run()
