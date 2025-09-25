@@ -401,9 +401,9 @@ def test__transform_read_parquet_data_arg():
         )
 
 
-def test_read_parquet_with_open_file_options():
-    """Test that read_parquet accepts and handles open_file_options correctly."""
-    # Test with local file
+def test_read_parquet_with_fsspec_optimization():
+    """Test that read_parquet handles open_file_options using fsspec optimization."""
+    # Test with local file (should not use fsspec optimization)
     local_path = "tests/test_data/nested.parquet"
     
     # Test basic open_file_options acceptance
@@ -431,30 +431,33 @@ def test_read_parquet_with_open_file_options():
     assert "nested" in nf3.columns
 
 
-def test_transform_read_parquet_data_arg_with_open_file_options():
-    """Test _transform_read_parquet_data_arg handles open_file_options."""
-    # Test backward compatibility
-    local_path = "tests/test_data/nested.parquet"
+def test_fsspec_optimization_path_detection():
+    """Test _should_use_fsspec_optimization correctly identifies remote paths."""
+    from nested_pandas.nestedframe.io import _should_use_fsspec_optimization
+    from pathlib import Path
     
-    # Single argument (original)
-    path1, fs1 = _transform_read_parquet_data_arg(local_path)
+    # Test cases that should NOT use optimization
+    assert not _should_use_fsspec_optimization("local_file.parquet", None)
+    assert not _should_use_fsspec_optimization("/path/to/file.parquet", None)  
+    assert not _should_use_fsspec_optimization(Path("local_file.parquet"), None)
+    assert not _should_use_fsspec_optimization(UPath("local_file.parquet"), None)
+    assert not _should_use_fsspec_optimization("https://example.com/file.parquet", "some_filesystem")
     
-    # Two arguments with None
-    path2, fs2 = _transform_read_parquet_data_arg(local_path, None)
+    # Test file-like object
+    import io
+    assert not _should_use_fsspec_optimization(io.BytesIO(b"test"), None)
     
-    assert path1 == path2 == local_path
-    assert fs1 == fs2 is None
-    
-    # With UPath and options
-    local_upath = UPath(local_path)
-    path3, fs3 = _transform_read_parquet_data_arg(local_upath)
-    
-    open_file_options = {"precache_options": {"method": "parquet"}, "block_size": 1024}
-    path4, fs4 = _transform_read_parquet_data_arg(local_upath, open_file_options)
-    
-    assert path3 == path4 == local_path
-    # fs4 should have the additional options
-    assert hasattr(fs4, 'storage_options')
-    assert 'precache_options' in fs4.storage_options
-    assert fs4.storage_options['precache_options']['method'] == 'parquet'
-    assert fs4.storage_options['block_size'] == 1024
+    # Test cases that SHOULD use optimization  
+    assert _should_use_fsspec_optimization("https://example.com/file.parquet", None)
+    assert _should_use_fsspec_optimization("s3://bucket/file.parquet", None)
+    assert _should_use_fsspec_optimization("gs://bucket/file.parquet", None)
+    assert _should_use_fsspec_optimization(UPath("https://example.com/file.parquet"), None)
+    assert _should_use_fsspec_optimization(UPath("s3://bucket/file.parquet"), None)
+
+
+def test_docstring_includes_fsspec_options():
+    """Test that the docstring mentions the new fsspec optimization options."""
+    docstring = read_parquet.__doc__
+    assert "open_file_options" in docstring
+    assert "precache_options" in docstring
+    assert "fsspec" in docstring
