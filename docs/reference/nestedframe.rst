@@ -15,7 +15,7 @@ Nesting
 .. autosummary::
     :toctree: api/
     
-    NestedFrame.add_nested
+    NestedFrame.join_nested
     NestedFrame.nest_lists
     NestedFrame.from_flat
     NestedFrame.from_lists
@@ -37,7 +37,7 @@ Extended Pandas.DataFrame Interface
     NestedFrame.query
     NestedFrame.dropna
     NestedFrame.sort_values
-    NestedFrame.reduce
+    NestedFrame.map_rows
     NestedFrame.drop
     NestedFrame.min
     NestedFrame.max

@@ -32,7 +32,7 @@ def test_nestedonly_decorator():
     series = NestedSeries([1, 2, 3, 4, 5])
 
     # Check nested only properties for decorator functionality
-    for prop in ["fields", "flat_length", "list_lengths"]:
+    for prop in ["columns", "flat_length", "list_lengths"]:
         with pytest.raises(TypeError, match=f"'{prop}' can only be used with a NestedDtype"):
             getattr(series, prop)
 
@@ -42,8 +42,8 @@ def test_nestedonly_decorator():
             getattr(series, func)()
 
 
-def test_nestedseries_fields():
-    """Test fields property of NestedSeries."""
+def test_nestedseries_columns():
+    """Test columns property of NestedSeries."""
     series = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
@@ -53,7 +53,7 @@ def test_nestedseries_fields():
         dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
     )
 
-    assert series.fields == ["a", "b"]
+    assert series.columns == ["a", "b"]
 
 
 def test_nestedseries_flat_length():
@@ -84,8 +84,8 @@ def test_nestedseries_list_lengths():
     assert list(series.list_lengths) == [2, 2]
 
 
-def test_nestedseries_getitem_single_field():
-    """Test getitem for a single field in NestedSeries."""
+def test_nestedseries_getitem_single_column():
+    """Test getitem for a single column in NestedSeries."""
     series = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
@@ -100,8 +100,8 @@ def test_nestedseries_getitem_single_field():
     pd.testing.assert_series_equal(result, expected)
 
 
-def test_nestedseries_getitem_multiple_fields():
-    """Test getitem for multiple fields in NestedSeries."""
+def test_nestedseries_getitem_multiple_columns():
+    """Test getitem for multiple columns in NestedSeries."""
     series = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
@@ -172,8 +172,8 @@ def test_nestedseries_setitem_non_nested_dtype():
     assert series[0] == 10
 
 
-def test_nestedseries_setitem_single_field():
-    """Test setitem for a single field in NestedSeries."""
+def test_nestedseries_setitem_single_column():
+    """Test setitem for a single column in NestedSeries."""
     series = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
@@ -192,8 +192,8 @@ def test_nestedseries_setitem_single_field():
     pd.testing.assert_series_equal(series["a"], expected)
 
 
-def test_nestedseries_to_flat():
-    """Test to_flat method of NestedSeries."""
+def test_nestedseries_explode():
+    """Test explode method of NestedSeries."""
     series = NestedSeries(
         data=[
             (np.array([1, 2]), np.array([0, 1])),
@@ -203,7 +203,7 @@ def test_nestedseries_to_flat():
         dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
     )
 
-    flat_df = series.to_flat()
+    flat_df = series.explode()
     assert isinstance(flat_df, pd.DataFrame)
     assert list(flat_df.columns) == ["a", "b"]
     assert flat_df.shape == (4, 2)

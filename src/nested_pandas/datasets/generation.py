@@ -50,7 +50,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
                 "index": np.arange(layer_size * n_base) % n_base,
             }
             layer_nf = NestedFrame(data=layer_data).set_index("index")
-            base_nf = base_nf.add_nested(layer_nf, key)
+            base_nf = base_nf.join_nested(layer_nf, key)
         return base_nf
     else:
         raise TypeError("Input to n_layer is not an int or dict.")
