@@ -2088,9 +2088,9 @@ class NestedFrame(pd.DataFrame):
         the nested column name and all sub-columns will be available:
 
         >>> def first_val(row):
-        ...     return (row[key][0] for key in row.keys())
+        ...     return {"first_"+key.split(".")[1]:row[key][0] for key in row.keys()}
 
-        >>> nf.map_rows(first_val, columns="nested", output_names=["first_t", "first_flux", "first_band"])
+        >>> nf.map_rows(first_val, columns="nested")
              first_t  first_flux first_band
         0   8.383890   31.551563          r
         1  13.704390   68.650093          g
