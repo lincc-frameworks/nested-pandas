@@ -20,6 +20,15 @@ def struct_field_names(struct_type: pa.StructType) -> list[str]:
     return [f.name for f in struct_type]
 
 
+def struct_fields(struct_type: pa.StructType) -> list[pa.Field]:
+    """Return fields of a pyarrow.StructType in a pyarrow<18-compatible way.
+
+    Note: Once we bump our pyarrow requirement to ">=18", this helper can be
+    replaced with direct usage of ``struct_type.fields`` throughout the codebase.
+    """
+    return [struct_type.field(i) for i in range(struct_type.num_fields)]
+
+
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     """Check if the given pyarrow type is a list type.
 
@@ -108,7 +117,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
             value_lengths = list_array.value_lengths()
         elif not value_lengths.equals(list_array.value_lengths()):
             raise ValueError(
-                f"List lengths do not match for struct fields {array.type.fields[0].name} and {field.name}",
+                f"List lengths do not match for struct fields {array.type.field(0).name} and {field.name}",
             )
 
         list_arrays.append(
@@ -119,7 +128,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
         )
     new_array = pa.StructArray.from_arrays(
         arrays=list_arrays,
-        fields=array.type.fields,
+        fields=struct_fields(array.type),
     )
     return new_array
 
@@ -286,7 +295,7 @@ def validate_struct_list_type(t: pa.StructType) -> None:
     if not pa.types.is_struct(t):
         raise ValueError(f"Expected a StructType, got {t}")
 
-    for field in t.fields:
+    for field in struct_fields(t):
         if not is_pa_type_a_list(field.type):
             raise ValueError(f"Expected a ListType for field {field.name}, got {field.type}")
 
