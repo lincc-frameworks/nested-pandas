@@ -12,6 +12,7 @@ from nested_pandas.series.utils import (
     transpose_list_struct_type,
     transpose_struct_list_array,
     transpose_struct_list_type,
+    validate_struct_list_type,
 )
 
 
@@ -114,6 +115,26 @@ def test_align_chunked_struct_list_offsets():
     )
     output_array = align_chunked_struct_list_offsets(input_array)
     assert output_array.equals(input_array)
+
+
+def test_validate_struct_list_type():
+    """Test validate_struct_list_type function."""
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.float64())
+
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.list_(pa.struct({"a": pa.int64()})))
+
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.struct({"a": pa.float64()}))
+
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.struct({"a": pa.list_(pa.float64()), "b": pa.float64()}))
+
+    assert (
+        validate_struct_list_type(pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.float64())}))
+        is None
+    )
 
 
 def test_transpose_struct_list_type():

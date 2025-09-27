@@ -119,7 +119,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
         )
     new_array = pa.StructArray.from_arrays(
         arrays=list_arrays,
-        type=array.type,
+        fields=array.type.fields,
     )
     return new_array
 
@@ -281,7 +281,7 @@ def validate_list_struct_type(t: pa.ListType) -> None:
         raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
 
 
-def validate_struct_list_type(t: pa.ListType) -> None:
+def validate_struct_list_type(t: pa.StructType) -> None:
     """Raise a ValueError if not a struct-list-type."""
     if not pa.types.is_struct(t):
         raise ValueError(f"Expected a StructType, got {t}")
