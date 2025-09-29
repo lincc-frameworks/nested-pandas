@@ -104,8 +104,8 @@ class NestedFrame(pd.DataFrame):
         return nest_cols
 
     @property
-    def _base_columns(self) -> list[str]:
-        """Returns a list of base (non-nested) column names"""
+    def base_columns(self) -> list[str]:
+        """Returns the list of base (non-nested) column names"""
         return [col for col in self.columns if col not in self.nested_columns]
 
     def _repr_html_(self) -> str | None:
@@ -2173,7 +2173,7 @@ class NestedFrame(pd.DataFrame):
         # Determine args
         if columns is None:
             # If None, pass all columns, with nested columns expanded to sub-columns
-            columns = self._base_columns + self.get_subcolumns(nested_columns="all")
+            columns = self.base_columns + self.get_subcolumns(nested_columns="all")
         elif isinstance(columns, str):
             # If it's a nested column, grab all sub-columns
             columns = self.get_subcolumns(columns) if columns in self.nested_columns else [columns]
