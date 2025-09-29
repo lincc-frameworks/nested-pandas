@@ -1813,6 +1813,16 @@ def test_pop_fields_raises_for_some_invalid_fields():
         ext_array.pop_fields(["a", "c"])
 
 
+def test_pop_fields_zero_chunks():
+    """Tests that we can pop fields even when the underlying array has no chunks."""
+    ext_array = NestedExtensionArray(
+        pa.chunked_array([], type=pa.struct({"a": pa.list_(pa.int64()), "b": pa.list_(pa.int64())}))
+    )
+    assert ext_array.num_chunks == 0, "Test setup is invalid"
+    ext_array.pop_fields(["a"])
+    assert ext_array._pyarrow_dtype == pa.struct({"b": pa.list_(pa.int64())})
+
+
 def test_delete_last_field_raises():
     """Tests that we raise an error when trying to delete the last field left."""
     struct_array = pa.StructArray.from_arrays(
