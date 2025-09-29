@@ -224,18 +224,6 @@ class NestedFrame(pd.DataFrame):
             return True
         return self._is_known_hierarchical_column(components)
 
-    def _get_subcolumns(self, nested_cols) -> list[str]:
-        """Returns a set of all subcolumn names from a set of nested columns, including dot notation"""
-        if isinstance(nested_cols, str):
-            nested_cols = [nested_cols]
-        subcols = []
-        for nested_col in nested_cols:
-            subcols += [f"{nested_col}.{col}" for col in self[nested_col].columns]
-
-        # I don't believe we need an error if we don't find any, as upstream errors will always trigger
-        # on wrong column names
-        return subcols
-
     def __getitem__(self, item):
         """Adds custom __getitem__ behavior for nested columns"""
         if isinstance(item, str):
@@ -355,6 +343,44 @@ class NestedFrame(pd.DataFrame):
     def __delitem__(self, key):
         """Delete a column or a nested field using dot notation (e.g., del nf['nested.x'])"""
         self.drop([key], axis=1, inplace=True)
+
+    def get_subcolumns(self, nested_columns="all") -> list[str]:
+        """Returns a set of all subcolumn names from a set of nested columns, including dot notation
+
+        Parameters
+        ----------
+        nested_columns : 'all' or str or list of str, optional
+            The nested columns to get subcolumns from. Default is 'all', which means all nested columns.
+
+        Returns
+        -------
+        list of str
+            A list of subcolumn names in dot notation, e.g. 'nested.a'
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets import generate_data
+
+        >>> nf = generate_data(5,10, seed=1)
+        >>> nf["nested2"] = nf["nested"]  # create a second nested column for demonstration
+        >>> nf.get_subcolumns()
+        ['nested.t', 'nested.flux', 'nested.band', 'nested2.t', 'nested2.flux', 'nested2.band']
+
+        >>> nf.get_subcolumns("nested")
+        ['nested.t', 'nested.flux', 'nested.band']
+        """
+        # By default, get all subcolumns from all nested columns
+        if nested_columns == "all":
+            nested_columns = self.nested_columns
+        if isinstance(nested_columns, str):
+            nested_columns = [nested_columns]
+        subcols = []
+        for nested_column in nested_columns:
+            subcols += [f"{nested_column}.{col}" for col in self[nested_column].columns]
+
+        # I don't believe we need an error if we don't find any, as upstream errors will always trigger
+        # on wrong column names
+        return subcols
 
     @deprecated(
         version="0.6.0", reason="`add_nested` will be removed in version 0.7.0, " "use `join_nested` instead."
@@ -2147,10 +2173,10 @@ class NestedFrame(pd.DataFrame):
         # Determine args
         if columns is None:
             # If None, pass all columns, with nested columns expanded to sub-columns
-            columns = self._base_columns + self._get_subcolumns(self.nested_columns)
+            columns = self._base_columns + self.get_subcolumns(nested_columns="all")
         elif isinstance(columns, str):
             # If it's a nested column, grab all sub-columns
-            columns = self._get_subcolumns(columns) if columns in self.nested_columns else [columns]
+            columns = self.get_subcolumns(columns) if columns in self.nested_columns else [columns]
 
         # Check arg validity
         requested_columns = []

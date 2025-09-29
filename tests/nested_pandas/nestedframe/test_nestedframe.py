@@ -1039,6 +1039,23 @@ def test_sort_values_ascension():
     assert list(sv_base.iloc[0]["nested"]["d"]) == [7, 5, 4]
 
 
+def test_get_subcolumns():
+    """Tests that we can get subcolumns from a NestedFrame"""
+    nf = generate_data(5, 10, seed=1)
+    nf["nested2"] = nf["nested"]
+
+    assert nf.get_subcolumns("nested") == ["nested.t", "nested.flux", "nested.band"]
+    assert nf.get_subcolumns(["nested", "nested2"]) == [
+        "nested.t",
+        "nested.flux",
+        "nested.band",
+        "nested2.t",
+        "nested2.flux",
+        "nested2.band",
+    ]
+    assert nf.get_subcolumns() == nf.get_subcolumns(nf.nested_columns)
+
+
 def test_map_rows():
     """Tests that we can call map_rows on a NestedFrame with a custom function."""
     nf = NestedFrame(

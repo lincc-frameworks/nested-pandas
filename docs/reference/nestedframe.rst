@@ -25,7 +25,8 @@ Extended Pandas.DataFrame Interface
 
 .. note:: 
    The NestedFrame extends the Pandas.DataFrame interface, so all methods
-   of Pandas.DataFrame are available. The following methods are extended
+   of Pandas.DataFrame are available. The following methods are a mix of
+   newly added methods and extended methods from Pandas DataFrame
    to support NestedFrame functionality. Please reference the Pandas
    documentation for more information.
    https://pandas.pydata.org/docs/reference/frame.html
@@ -33,6 +34,7 @@ Extended Pandas.DataFrame Interface
 .. autosummary::
     :toctree: api/
 
+    NestedFrame.get_subcolumns
     NestedFrame.eval
     NestedFrame.query
     NestedFrame.dropna
