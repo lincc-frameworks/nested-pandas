@@ -10,6 +10,15 @@ Constructor
 
    NestedFrame
 
+Helpful Properties
+~~~~~~~~~~~~~~~~~~
+.. autosummary::
+    :toctree: api/
+
+    NestedFrame.nested_columns
+    NestedFrame.base_columns
+    NestedFrame.all_columns
+
 Nesting
 ~~~~~~~~~
 .. autosummary::
