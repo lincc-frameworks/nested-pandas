@@ -28,9 +28,36 @@ class NestedDtype(ExtensionDtype):
 
     Parameters
     ----------
-    pyarrow_dtype : pyarrow.StructType or pd.ArrowDtype
-        The pyarrow data type to use for the nested type. It must be a struct
-        type where all fields are list types.
+    pyarrow_dtype : pyarrow.StructType, pd.ArrowDtype, or Mapping[str, pa.DataType]
+        The pyarrow data type to use for the nested type. It may be provided as
+        a pyarrow.StructType, a pandas.ArrowDtype, or a mapping of column names to
+        pyarrow data types (such as a dictionary).
+
+    Examples
+    --------
+    >>> import pyarrow as pa
+    >>> from nested_pandas import NestedDtype
+
+    From pa.StructType:
+
+    >>> dtype = NestedDtype(pa.struct([pa.field("a", pa.list_(pa.int64())),
+    ...                                pa.field("b", pa.list_(pa.float64()))]))
+    >>> dtype
+    nested<a: [int64], b: [double]>
+
+    From pd.ArrowDtype:
+
+    >>> import pandas as pd
+    >>> dtype = NestedDtype(pd.ArrowDtype(pa.struct([pa.field("a", pa.list_(pa.int64())),
+    ...                                           pa.field("b", pa.list_(pa.float64()))])))
+    >>> dtype
+    nested<a: [int64], b: [double]>
+
+    From mapping of column names to pyarrow data types:
+
+    >>> dtype = NestedDtype({"a": pa.int64(), "b": pa.float64()})
+    >>> dtype
+    nested<a: [int64], b: [double]>
     """
 
     # ExtensionDtype overrides #
@@ -160,6 +187,15 @@ class NestedDtype(ExtensionDtype):
     pyarrow_dtype: pa.StructType
 
     def __init__(self, pyarrow_dtype: pa.DataType) -> None:
+        # Allow pd.ArrowDtypes on init
+        if isinstance(pyarrow_dtype, pd.ArrowDtype):
+            pyarrow_dtype = pyarrow_dtype.pyarrow_dtype
+
+        # Allow from_columns-style mapping inputs
+        if isinstance(pyarrow_dtype, Mapping):
+            pyarrow_dtype = pa.struct({col: pa.list_(pa_type) for col, pa_type in pyarrow_dtype.items()})
+            pyarrow_dtype = cast(pa.StructType, pyarrow_dtype)
+
         self.pyarrow_dtype, self.list_struct_pa_dtype = self._validate_dtype(pyarrow_dtype)
 
     @property
