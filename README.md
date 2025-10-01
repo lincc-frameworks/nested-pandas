@@ -46,7 +46,7 @@ Allowing powerful and straightforward operations, like:
 ```python
    # Compute the mean flux for each row of "object_nf"
    import numpy as np
-   object_nf.reduce(np.mean, "nested_sources.flux")
+   object_nf.map_rows(np.mean, "nested_sources.flux", row_container="args")
 ```
 
 <p align="center">
