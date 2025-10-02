@@ -20,6 +20,15 @@ def struct_field_names(struct_type: pa.StructType) -> list[str]:
     return [f.name for f in struct_type]
 
 
+def struct_fields(struct_type: pa.StructType) -> list[pa.Field]:
+    """Return fields of a pyarrow.StructType in a pyarrow<18-compatible way.
+
+    Note: Once we bump our pyarrow requirement to ">=18", this helper can be
+    replaced with direct usage of ``struct_type.fields`` throughout the codebase.
+    """
+    return [struct_type.field(i) for i in range(struct_type.num_fields)]
+
+
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     """Check if the given pyarrow type is a list type.
 
@@ -58,36 +67,97 @@ def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
     return is_pa_type_a_list(pa_type) and pa.types.is_struct(pa_type.value_type)
 
 
-def validate_struct_list_array_for_equal_lengths(array: pa.StructArray) -> None:
-    """Check if the given struct array has lists of equal length.
+def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
+    """Checks if all struct-list offsets are the same, and reallocates if needed
 
     Parameters
     ----------
     array : pa.StructArray
         Input struct array.
 
+    Returns
+    -------
+    pa.StructArray
+        Array with all struct-list offsets aligned. May be the input,
+        if it was valid.
+
     Raises
     ------
     ValueError
-        If the struct array has lists of unequal length or type of the input
-        array is not a StructArray or fields are not ListArrays.
+        If the input is not a valid "nested" StructArray.
     """
     if not pa.types.is_struct(array.type):
         raise ValueError(f"Expected a StructArray, got {array.type}")
 
-    first_list_array: pa.ListArray | None = None
+    first_offsets: pa.ListArray | None = None
     for field in array.type:
         inner_array = array.field(field.name)
         if not is_pa_type_a_list(inner_array.type):
             raise ValueError(f"Expected a ListArray, got {inner_array.type}")
         list_array = cast(pa.ListArray, inner_array)
 
-        if first_list_array is None:
-            first_list_array = list_array
+        if first_offsets is None:
+            first_offsets = list_array.offsets
             continue
         # compare offsets from the first list array with the current one
-        if not first_list_array.offsets.equals(list_array.offsets):
-            raise ValueError("Offsets of all ListArrays must be the same")
+        if not first_offsets.equals(list_array.offsets):
+            break
+    else:
+        # Return the original array if all offsets match
+        return array
+
+    new_offsets = pa.compute.subtract(first_offsets, first_offsets[0])
+    value_lengths = None
+    list_arrays = []
+    for field in array.type:
+        inner_array = array.field(field.name)
+        list_array = cast(pa.ListArray, inner_array)
+
+        if value_lengths is None:
+            value_lengths = list_array.value_lengths()
+        elif not value_lengths.equals(list_array.value_lengths()):
+            raise ValueError(
+                f"List lengths do not match for struct fields {array.type.field(0).name} and {field.name}",
+            )
+
+        list_arrays.append(
+            pa.ListArray.from_arrays(
+                values=list_array.values[list_array.offsets[0].as_py() : list_array.offsets[-1].as_py()],
+                offsets=new_offsets,
+            )
+        )
+    new_array = pa.StructArray.from_arrays(
+        arrays=list_arrays,
+        fields=struct_fields(array.type),
+    )
+    return new_array
+
+
+def align_chunked_struct_list_offsets(array: pa.Array | pa.ChunkedArray) -> pa.ChunkedArray:
+    """Checks if all struct-list offsets are the same, and reallocates if needed
+
+    Parameters
+    ----------
+    array : pa.ChunkedArray or pa.Array
+        Input chunked array, it must be a valid "nested" struct-list array,
+        e.g. all list lengths must match. Non-chunked arrays are allowed,
+        but the return array will always be chunked.
+
+    Returns
+    -------
+    pa.ChunkedArray
+        Chunked array with all struct-list offsets aligned.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a valid "nested" struct-list-array.
+    """
+    if isinstance(array, pa.Array):
+        array = pa.chunked_array([array])
+    chunks = [align_struct_list_offsets(chunk) for chunk in array.iterchunks()]
+    # Provide type for the case of zero-chunks array
+    return pa.chunked_array(chunks, type=array.type)
 
 
 def transpose_struct_list_type(t: pa.StructType) -> pa.ListType:
@@ -139,7 +209,7 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
         List array of structs.
     """
     if validate:
-        validate_struct_list_array_for_equal_lengths(array)
+        array = align_struct_list_offsets(array)
 
     mask = array.is_null()
     if not pa.compute.any(mask).as_py():
@@ -218,6 +288,16 @@ def validate_list_struct_type(t: pa.ListType) -> None:
 
     if not pa.types.is_struct(t.value_type):
         raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
+
+
+def validate_struct_list_type(t: pa.StructType) -> None:
+    """Raise a ValueError if not a struct-list-type."""
+    if not pa.types.is_struct(t):
+        raise ValueError(f"Expected a StructType, got {t}")
+
+    for field in struct_fields(t):
+        if not is_pa_type_a_list(field.type):
+            raise ValueError(f"Expected a ListType for field {field.name}, got {field.type}")
 
 
 def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:

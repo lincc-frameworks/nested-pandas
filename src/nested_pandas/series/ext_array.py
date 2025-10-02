@@ -622,7 +622,7 @@ class NestedExtensionArray(ExtensionArray):
 
     def __arrow_array__(self, type=None):
         """Convert the extension array to a PyArrow array."""
-        # struct_array is the default "external" representation
+        # list_array is the default "external" representation
         if type is None:
             return self.list_array
         if pa.types.is_struct(type):
@@ -1003,17 +1003,9 @@ class NestedExtensionArray(ExtensionArray):
         if not set(fields).issubset(self.field_names):
             raise ValueError(f"Some fields are not found, given: {fields}, available: {self.field_names}")
 
-        chunks = []
-        for chunk in self.struct_array.iterchunks():
-            chunk = cast(pa.StructArray, chunk)
-            struct_dict = {}
-            for field in fields:
-                struct_dict[field] = chunk.field(field)
-            struct_array = pa.StructArray.from_arrays(struct_dict.values(), struct_dict.keys())
-            chunks.append(struct_array)
-        pa_array = pa.chunked_array(chunks)
-
-        return type(self)(pa_array, validate=False)
+        new = self.copy()
+        new.pa_table = new.pa_table.select(fields)
+        return new
 
     def set_flat_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from flat-array of values
@@ -1171,16 +1163,9 @@ class NestedExtensionArray(ExtensionArray):
         if not fields.issubset(self.field_names):
             raise ValueError(f"Some fields are not found, given: {fields}, available: {self.field_names}")
 
-        if len(self.field_names) - len(fields) == 0:
+        fields_to_keep = [field for field in self.field_names if field not in fields]
+
+        if len(fields_to_keep) == 0:
             raise ValueError("Cannot delete all fields")
 
-        chunks = []
-        for chunk in self.struct_array.iterchunks():
-            chunk = cast(pa.StructArray, chunk)
-            struct_dict = {}
-            for pa_field in chunk.type:
-                if pa_field.name not in fields:
-                    struct_dict[pa_field.name] = chunk.field(pa_field.name)
-            struct_array = pa.StructArray.from_arrays(struct_dict.values(), struct_dict.keys())
-            chunks.append(struct_array)
-        self.struct_array = pa.chunked_array(chunks)
+        self.pa_table = self.pa_table.select(fields_to_keep)

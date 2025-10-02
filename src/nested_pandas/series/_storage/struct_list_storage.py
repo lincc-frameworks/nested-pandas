@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from nested_pandas.series.utils import (
+    align_chunked_struct_list_offsets,
     table_to_struct_array,
     transpose_list_struct_chunked,
-    validate_struct_list_array_for_equal_lengths,
 )
 
 if TYPE_CHECKING:
@@ -25,7 +25,9 @@ class StructListStorage:
         Pyarrow struct-array with all fields to be list-arrays.
         All list-values must be "aligned", e.g., have the same length.
     validate : bool (default True)
-        Check that all the lists have the same lengths for each struct-value.
+        Check that all the lists have the same lengths for each struct-value,
+        and if all list offset arrays are the same. Fails for the first check,
+        and reallocates the data for the second check.
     """
 
     _data: pa.ChunkedArray
@@ -37,8 +39,7 @@ class StructListStorage:
             raise ValueError("array must be a StructArray or ChunkedArray")
 
         if validate:
-            for chunk in array.chunks:
-                validate_struct_list_array_for_equal_lengths(chunk)
+            array = align_chunked_struct_list_offsets(array)
 
         self._data = array
 

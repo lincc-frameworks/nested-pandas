@@ -3,6 +3,8 @@ import pyarrow as pa
 import pytest
 from nested_pandas import NestedDtype
 from nested_pandas.series.utils import (
+    align_chunked_struct_list_offsets,
+    align_struct_list_offsets,
     nested_types_mapper,
     struct_field_names,
     transpose_list_struct_array,
@@ -10,27 +12,27 @@ from nested_pandas.series.utils import (
     transpose_list_struct_type,
     transpose_struct_list_array,
     transpose_struct_list_type,
-    validate_struct_list_array_for_equal_lengths,
+    validate_struct_list_type,
 )
 
 
-def test_validate_struct_list_array_for_equal_lengths():
-    """Test validate_struct_list_array_for_equal_lengths function."""
+def test_align_struct_list_offsets():
+    """Test align_struct_list_offsets function."""
     # Raises for wrong types
     with pytest.raises(ValueError):
-        validate_struct_list_array_for_equal_lengths(pa.array([], type=pa.int64()))
+        align_struct_list_offsets(pa.array([], type=pa.int64()))
     with pytest.raises(ValueError):
-        validate_struct_list_array_for_equal_lengths(pa.array([], type=pa.list_(pa.int64())))
+        align_struct_list_offsets(pa.array([], type=pa.list_(pa.int64())))
 
     # Raises if one of the fields is not a ListArray
     with pytest.raises(ValueError):
-        validate_struct_list_array_for_equal_lengths(
+        align_struct_list_offsets(
             pa.StructArray.from_arrays([pa.array([[1, 2], [3, 4, 5]]), pa.array([1, 2])], ["a", "b"])
         )
 
     # Raises for mismatched lengths
     with pytest.raises(ValueError):
-        validate_struct_list_array_for_equal_lengths(
+        align_struct_list_offsets(
             pa.StructArray.from_arrays(
                 [pa.array([[1, 2], [3, 4, 5]]), pa.array([[1, 2, 3], [4, 5]])], ["a", "b"]
             )
@@ -43,7 +45,96 @@ def test_validate_struct_list_array_for_equal_lengths():
         ],
         names=["a", "b"],
     )
-    assert validate_struct_list_array_for_equal_lengths(input_array) is None
+    assert align_struct_list_offsets(input_array) is input_array
+
+    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]])[1:]
+    assert a.offsets[0].as_py() == 3
+    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]])
+    assert b.offsets[0].as_py() == 0
+    input_array = pa.StructArray.from_arrays(
+        arrays=[a, b],
+        names=["a", "b"],
+    )
+    aligned_array = align_struct_list_offsets(input_array)
+    assert aligned_array is not input_array
+    assert aligned_array.equals(input_array)
+
+
+def test_align_chunked_struct_list_offsets():
+    """Test align_chunked_struct_list_offsets function."""
+    # Input is an array, output is chunked array
+    a = pa.array([[1, 2], [3, 4], [], [5, 6, 7]])
+    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]])
+    input_array = pa.StructArray.from_arrays(
+        arrays=[a, b],
+        names=["a", "b"],
+    )
+    output_array = align_chunked_struct_list_offsets(input_array)
+    assert isinstance(output_array, pa.ChunkedArray)
+    assert output_array.equals(pa.chunked_array([input_array]))
+
+    # Input is an "aligned" chunked array
+    input_array = pa.chunked_array(
+        [
+            pa.StructArray.from_arrays(
+                arrays=[a, b],
+                names=["a", "b"],
+            )
+        ]
+        * 2
+    )
+    output_array = align_chunked_struct_list_offsets(input_array)
+    assert output_array.equals(input_array)
+
+    # Input is an "aligned" chunked array, but offsets do not start with zero
+    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]])[1:]
+    b = pa.array([["a", "a", "a", "a"], ["x", "y"], ["y", "x"], [], ["d", "e", "f"]])[1:]
+    input_array = pa.chunked_array(
+        [
+            pa.StructArray.from_arrays(
+                arrays=[a, b],
+                names=["a", "b"],
+            )
+        ]
+        * 3
+    )
+    output_array = align_chunked_struct_list_offsets(input_array)
+    assert output_array.equals(input_array)
+
+    # Input is a "non-aligned" chunked array
+    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]])[1:]
+    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]])
+    input_array = pa.chunked_array(
+        [
+            pa.StructArray.from_arrays(
+                arrays=[a, b],
+                names=["a", "b"],
+            )
+        ]
+        * 4
+    )
+    output_array = align_chunked_struct_list_offsets(input_array)
+    assert output_array.equals(input_array)
+
+
+def test_validate_struct_list_type():
+    """Test validate_struct_list_type function."""
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.float64())
+
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.list_(pa.struct({"a": pa.int64()})))
+
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.struct({"a": pa.float64()}))
+
+    with pytest.raises(ValueError):
+        validate_struct_list_type(pa.struct({"a": pa.list_(pa.float64()), "b": pa.float64()}))
+
+    assert (
+        validate_struct_list_type(pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.float64())}))
+        is None
+    )
 
 
 def test_transpose_struct_list_type():

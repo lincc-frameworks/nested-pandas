@@ -21,10 +21,12 @@ dependencies = [
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
     "pandas>=2.2.3,<2.4",
-    "pyarrow>=16",  # remove struct_field_names when upgraded to 18+
-    "universal_pathlib>=0.2",
+    "pyarrow>=16",  # remove struct_field_names() and struct_fields() when upgraded to 18+
     "Deprecated>=1.2.0",
     "wrapt>=1.12.1",
+
+    # NOTE: package PINNED at <0.3.0, see https://github.com/astronomy-commons/lsdb/issues/1047
+    "universal_pathlib>=0.2,<0.3.0",
 ]
 
 [project.urls]

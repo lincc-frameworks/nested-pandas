@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from nested_pandas.series.utils import (
+    align_chunked_struct_list_offsets,
     table_from_struct_array,
     table_to_struct_array,
-    validate_struct_list_array_for_equal_lengths,
 )
 
 if TYPE_CHECKING:
@@ -30,8 +30,8 @@ class TableStorage:
     def __init__(self, table: pa.Table, validate: bool = True) -> None:
         if validate:
             struct_array = table_to_struct_array(table)
-            for chunk in struct_array.iterchunks():
-                validate_struct_list_array_for_equal_lengths(chunk)
+            aligned_struct_array = align_chunked_struct_list_offsets(struct_array)
+            table = table_from_struct_array(aligned_struct_array)
 
         self._data = table
 
