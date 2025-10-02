@@ -253,7 +253,7 @@ class NestedFrame(pd.DataFrame):
         if self._is_known_hierarchical_column(components):
             nested = components[0]
             field = ".".join(components[1:])
-            return self[nested].explode()[field]
+            return self[nested].nest.to_flat(columns=[field])[field]
         else:
             raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
 

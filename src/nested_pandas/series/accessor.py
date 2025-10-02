@@ -136,6 +136,7 @@ class NestSeriesAccessor(Mapping):
                 dtype=dtype,
             )
 
+        # TODO: Consider returning a NestedSeries if only one column is present
         return pd.DataFrame(flat_series)
 
     @property
