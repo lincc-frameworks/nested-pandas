@@ -25,7 +25,7 @@ def test_issue89():
         partitioning=None,
     ).set_index("ps1_objid")
 
-    object_ndf = object_ndf.add_nested(source_ndf, "ztf_source")
+    object_ndf = object_ndf.join_nested(source_ndf, "ztf_source")
 
     nf = object_ndf
-    nf.reduce(np.mean, "ztf_source.mjd")
+    nf.map_rows(np.mean, "ztf_source.mjd", row_container="args")

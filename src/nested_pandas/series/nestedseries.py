@@ -1,6 +1,7 @@
 from functools import wraps
 
 import pandas as pd
+from deprecated import deprecated
 
 from nested_pandas.series.dtype import NestedDtype
 
@@ -32,9 +33,20 @@ class NestedSeries(pd.Series):
 
     @property
     @nested_only
+    @deprecated(
+        version="0.6.0",
+        reason="The `fields` property is deprecated and will be removed in version 0.7.0,"
+        "use `columns` instead.",
+    )
     def fields(self):
         """Returns the fields of the nested series as a list."""
-        return self.nest.fields
+        return self.columns
+
+    @property
+    @nested_only
+    def columns(self):
+        """Returns the names of the nested columns of the nested series as a list."""
+        return self.nest.columns
 
     @property
     @nested_only
@@ -55,8 +67,8 @@ class NestedSeries(pd.Series):
         if not isinstance(self.dtype, NestedDtype):
             return super().__getitem__(key)
 
-        # Return a flattened series for a single field
-        if isinstance(key, str) and key in self.fields:
+        # Return a flattened series for a single column
+        if isinstance(key, str) and key in self.columns:
             return self.nest[key]
 
         # For list-like keys, perform sub-column selection
@@ -77,13 +89,16 @@ class NestedSeries(pd.Series):
             return super().__setitem__(key, value)
 
         # Use nest setitem when setting on a single field
-        if isinstance(key, str) and key in self.fields:
+        if isinstance(key, str) and key in self.columns:
             self.nest[key] = value
             return
 
         return super().__setitem__(key, value)
 
     @nested_only
+    @deprecated(
+        version="0.6.0", reason="`to_flat` will be removed in version 0.7.0, " "use `explode` instead."
+    )
     def to_flat(self, fields: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of flat arrays.
 
@@ -117,16 +132,52 @@ class NestedSeries(pd.Series):
         4    3.96203   87.81425    r
 
         """
-        return self.nest.to_flat(fields=fields)
+        return self.explode(columns=fields)
 
     @nested_only
-    def to_lists(self, fields: list[str] | None = None) -> pd.DataFrame:
+    def explode(self, columns: list[str] | None = None) -> pd.DataFrame:
+        """Unpack nested series into dataframe of flat arrays.
+
+        Parameters
+        ----------
+        columns : list[str] or None, optional
+            Names of the columns to include. Default is None, which means all columns.
+
+        Returns
+        -------
+        pd.DataFrame
+            Dataframe of flat arrays.
+
+        Examples
+        --------
+
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 2, seed=1)
+
+        >>> nf["nested"].explode()
+                   t       flux band
+        0    8.38389  80.074457    r
+        0   13.40935  89.460666    g
+        1   13.70439  96.826158    g
+        1   8.346096   8.504421    g
+        2   4.089045  31.342418    g
+        2  11.173797   3.905478    g
+        3  17.562349  69.232262    r
+        3   2.807739  16.983042    r
+        4   0.547752  87.638915    g
+        4    3.96203   87.81425    r
+
+        """
+        return self.nest.to_flat(columns=columns)
+
+    @nested_only
+    def to_lists(self, columns: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns.
 
         Parameters
         ----------
-        fields : list[str] or None, optional
-            Names of the fields to include. Default is None, which means all fields.
+        columns : list[str] or None, optional
+            Names of the columns to include. Default is None, which means all columns.
 
         Returns
         -------
@@ -147,4 +198,4 @@ class NestedSeries(pd.Series):
         3  [17.56234873  2.80773877]  [69.23226157 16.98304196]  ['r' 'r']
         4    [0.54775186 3.96202978]  [87.63891523 87.81425034]  ['g' 'r']
         """
-        return self.nest.to_lists(fields=fields)
+        return self.nest.to_lists(columns=columns)

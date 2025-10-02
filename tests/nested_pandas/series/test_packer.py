@@ -38,7 +38,7 @@ def test_pack_with_flat_df():
             (np.array([2, 4]), np.array([1, 1])),
         ],
         index=pd.MultiIndex.from_arrays(([1, 1], [1, 2])),
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
     offsets_reused(series)
@@ -62,7 +62,7 @@ def test_pack_with_flat_df_and_index():
             (np.array([2, 4]), np.array([1, 1])),
         ],
         index=[101, 102],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
     offsets_reused(series)
@@ -91,7 +91,7 @@ def test_pack_with_flat_df_and_on():
         # Since we packed on 'c', we expect to see the unique sorted
         # values of 'c' as the index
         index=[0, 1],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
     # The index name should be the same as the column we packed on
@@ -122,7 +122,7 @@ def test_pack_with_flat_df_and_on_and_index():
         ],
         # We still expect to see the overriden index despite packing on 'c'
         index=new_index,
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
     offsets_reused(series)
@@ -158,7 +158,7 @@ def test_pack_with_series_of_dfs():
         ],
         index=[1, 2],
         name="nested",
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
     )
     offsets_reused(series)
     assert_series_equal(series, desired)
@@ -183,7 +183,7 @@ def test_pack_flat():
             (np.array([7, 8, 9]), np.array([0, 1, 0])),
         ],
         index=[1, 2, 3, 4],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
     )
     offsets_reused(actual)
     assert_series_equal(actual, desired)
@@ -216,7 +216,7 @@ def test_pack_flat_with_on():
             ),
         ],
         index=[0, 1],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
     )
     desired.index.name = "c"
     offsets_reused(actual)
@@ -242,7 +242,7 @@ def test_pack_sorted_df_into_struct():
             (np.array([7, 8, 9]), np.array([0, 1, 0])),
         ],
         index=[1, 2, 3, 4],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
     )
     offsets_reused(actual)
     assert_series_equal(actual, desired)
@@ -285,7 +285,7 @@ def test_pack_lists():
     offsets_reused(series)
 
     for field_name in packed_df.columns:
-        assert_series_equal(series.nest.get_list_series(field_name), packed_df[field_name])
+        assert_series_equal(series.nest.to_lists()[field_name], packed_df[field_name])
 
 
 def test_pack_lists_with_chunked_arrays():
@@ -302,8 +302,8 @@ def test_pack_lists_with_chunked_arrays():
     )
     list_df = pd.DataFrame({"a": chunked_a, "b": chunked_b}, index=[0, 1, 2, 3, 4, 5])
     series = packer.pack_lists(list_df)
-    assert_series_equal(series.nest.get_list_series("a"), chunked_a)
-    assert_series_equal(series.nest.get_list_series("b"), chunked_b)
+    assert_series_equal(series.nest.to_lists()["a"], chunked_a)
+    assert_series_equal(series.nest.to_lists()["b"], chunked_b)
 
 
 def test_pack_lists_with_uneven_chunked_arrays():
@@ -320,8 +320,8 @@ def test_pack_lists_with_uneven_chunked_arrays():
     )
     list_df = pd.DataFrame({"a": chunked_a, "b": chunked_b}, index=[0, 1, 2, 3, 4, 5])
     series = packer.pack_lists(list_df)
-    assert_series_equal(series.nest.get_list_series("a"), chunked_a)
-    assert_series_equal(series.nest.get_list_series("b"), chunked_b)
+    assert_series_equal(series.nest.to_lists()["a"], chunked_a)
+    assert_series_equal(series.nest.to_lists()["b"], chunked_b)
 
 
 def test_pack_seq_with_dfs_and_index():
@@ -366,7 +366,7 @@ def test_pack_seq_with_dfs_and_index():
             (np.array([7, 8, 9]), np.array([0, 1, 0])),
         ],
         index=[100, 101, 102, 103],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
     )
     offsets_reused(series)
     assert_series_equal(series, desired)
@@ -395,7 +395,7 @@ def test_pack_seq_with_different_elements_and_index():
             pd.NA,
         ],
         index=[100, 101, 102, 103],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
     )
     offsets_reused(series)
     assert_series_equal(series, desired)
@@ -436,7 +436,7 @@ def test_pack_seq_with_series_of_dfs():
             (np.array([5, 6]), np.array([0, 1])),
         ],
         index=[100, 101, 102],
-        dtype=NestedDtype.from_fields(dict(a=pa.int64(), b=pa.int64())),
+        dtype=NestedDtype.from_columns(dict(a=pa.int64(), b=pa.int64())),
         name="series",
     )
     offsets_reused(series)

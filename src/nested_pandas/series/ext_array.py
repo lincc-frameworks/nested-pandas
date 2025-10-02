@@ -768,7 +768,7 @@ class NestedExtensionArray(ExtensionArray):
             return na_value
         series = {}
         for name, list_scalar in value.items():
-            dtype: pd.ArrowDtype | NestedDtype | None = self.dtype.field_dtype(name)
+            dtype: pd.ArrowDtype | NestedDtype | None = self.dtype.column_dtype(name)
             # It gave pd.ArrowDtype for non-NestedDtype fields,
             # make it None if we'd like to use pandas "ordinary" dtypes.
             if not pyarrow_dtypes and not isinstance(dtype, NestedDtype):

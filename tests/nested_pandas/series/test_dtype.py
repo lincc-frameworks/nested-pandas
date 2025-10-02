@@ -65,7 +65,7 @@ def test_from_pyarrow_dtype_raises(pyarrow_dtype):
 
 def test_to_pandas_arrow_dtype():
     """Test that NestedDtype.to_pandas_arrow_dtype() returns the correct pyarrow struct type."""
-    dtype = NestedDtype.from_fields({"a": pa.int64(), "b": pa.float64()})
+    dtype = NestedDtype.from_columns({"a": pa.int64(), "b": pa.float64()})
     assert dtype.to_pandas_arrow_dtype() == pd.ArrowDtype(
         pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
     )
@@ -83,18 +83,35 @@ def test_from_pandas_arrow_dtype():
     assert dtype_from_list.pyarrow_dtype == pa.struct([pa.field("a", pa.list_(pa.int64()))])
 
 
+def test_init_from_pandas_arrow_dtype():
+    """Test that we can construct NestedDtype from pandas.ArrowDtype in __init__."""
+    dtype_from_struct = NestedDtype(pd.ArrowDtype(pa.struct([pa.field("a", pa.list_(pa.int64()))])))
+    assert dtype_from_struct.pyarrow_dtype == pa.struct([pa.field("a", pa.list_(pa.int64()))])
+    dtype_from_list = NestedDtype(pd.ArrowDtype(pa.list_(pa.struct([pa.field("a", pa.int64())]))))
+    assert dtype_from_list.pyarrow_dtype == pa.struct([pa.field("a", pa.list_(pa.int64()))])
+
+
 def test_to_pandas_list_struct_arrow_dtype():
     """Test that NestedDtype.to_pandas_arrow_dtype(list_struct=True) returns the correct pyarrow type."""
-    dtype = NestedDtype.from_fields({"a": pa.list_(pa.int64()), "b": pa.float64()})
+    dtype = NestedDtype.from_columns({"a": pa.list_(pa.int64()), "b": pa.float64()})
     assert dtype.to_pandas_arrow_dtype(list_struct=True) == pd.ArrowDtype(
         pa.list_(pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.float64())]))
     )
 
 
-def test_from_fields():
-    """Test NestedDtype.from_fields()."""
-    fields = {"a": pa.int64(), "b": pa.float64()}
-    dtype = NestedDtype.from_fields(fields)
+def test_from_columns():
+    """Test NestedDtype.from_columns()."""
+    columns = {"a": pa.int64(), "b": pa.float64()}
+    dtype = NestedDtype.from_columns(columns)
+    assert dtype.pyarrow_dtype == pa.struct(
+        [pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]
+    )
+
+
+def test_init_from_columns():
+    """Test NestedDtype.__init__ with columns dict."""
+    columns = {"a": pa.int64(), "b": pa.float64()}
+    dtype = NestedDtype(columns)
     assert dtype.pyarrow_dtype == pa.struct(
         [pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]
     )
@@ -106,12 +123,12 @@ def test_na_value():
     assert dtype.na_value is pd.NA
 
 
-def test_fields():
-    """Test NestedDtype.fields property"""
+def test_column_dtypes():
+    """Test NestedDtype.column_dtypes property"""
     dtype = NestedDtype(
         pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
     )
-    assert dtype.fields == {"a": pa.int64(), "b": pa.float64()}
+    assert dtype.column_dtypes == {"a": pa.int64(), "b": pa.float64()}
 
 
 def test_field_names():
@@ -119,11 +136,11 @@ def test_field_names():
     dtype = NestedDtype(
         pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
     )
-    assert dtype.field_names == ["a", "b"]
+    assert list(dtype.column_dtypes.keys()) == ["a", "b"]
 
 
 @pytest.mark.parametrize(
-    "fields",
+    "columns",
     [
         {"a": pa.int64(), "b": pa.float64()},
         {"a": pa.int64(), "b": pa.float64(), "c": pa.int64()},
@@ -134,9 +151,9 @@ def test_field_names():
         # {"a": pa.struct([pa.field("a", pa.int64())]), "b": pa.list_(pa.int64())},
     ],
 )
-def test_name_vs_construct_from_string(fields):
+def test_name_vs_construct_from_string(columns):
     """Test that dtype.name is consistent with dtype.construct_from_string(dtype.name)."""
-    dtype = NestedDtype.from_fields(fields)
+    dtype = NestedDtype.from_columns(columns)
     assert dtype == NestedDtype.construct_from_string(dtype.name)
 
 
