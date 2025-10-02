@@ -294,10 +294,9 @@ class NestedFrame(pd.DataFrame):
                         new_nested = value[col]
                     else:
                         # there must be a better way than through list columns
+                        list_cols = value[col].to_lists()
                         for column in value[col].columns:
-                            new_nested = new_nested.nest.set_list_column(
-                                column, value[col].to_lists()[column]
-                            )
+                            new_nested = new_nested.nest.set_list_column(column, list_cols[column])
                 value = new_nested
             # Assign a DataFrame as a new column, auto-nesting it
             elif key not in self.columns:
