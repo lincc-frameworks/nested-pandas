@@ -234,7 +234,7 @@ class NestedFrame(pd.DataFrame):
         return super().__getitem__(item)
 
     def _getitem_str(self, item):
-        if item in self.nested_columns:
+        if self._is_nested_column(item):
             return NestedSeries(super().__getitem__(item))
         # Preempt the nested check if the item is a base column, with or without
         # dots and backticks.
