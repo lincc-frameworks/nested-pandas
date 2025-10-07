@@ -49,11 +49,7 @@ def read_parquet(
     autocast_list: bool, default=True
         If True, automatically cast list columns to nested columns with NestedDType.
     kwargs: dict
-        Keyword arguments passed to `pyarrow.parquet.read_table`. Special handling:
-        - `open_file_options`: dict of options for fsspec filesystem optimization.
-          For remote storage (S3, GCS, HTTP), these options can improve performance.
-          Common example: {"precache_options": {"method": "parquet"}} enables
-          intelligent precaching for better remote access performance.
+        Keyword arguments passed to `pyarrow.parquet.read_table`
 
     Returns
     -------
@@ -61,6 +57,11 @@ def read_parquet(
 
     Notes
     -----
+    For remote storage (S3, GCS, HTTP/HTTPS), this function automatically uses
+    fsspec.parquet.open_parquet_file for optimized access with intelligent
+    precaching, which can significantly improve performance compared to standard
+    PyArrow reading.
+
     pyarrow supports partial loading of nested structures from parquet, for
     example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
     load the "a" column of the "nested" column. Standard pandas/pyarrow
@@ -97,13 +98,10 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # Check if optimization options are provided for remote storage
-    open_file_options = kwargs.pop("open_file_options", None)
-    
     # First load through pyarrow
-    # If optimization options are provided and data is remote, use fsspec.parquet for better performance
-    if open_file_options is not None and _should_use_fsspec_optimization(data, kwargs.get("filesystem")):
-        table = _read_with_fsspec_optimization(data, open_file_options, columns, kwargs)
+    # If data is remote, use fsspec.parquet for better performance
+    if _should_use_fsspec_optimization(data, kwargs.get("filesystem")):
+        table = _read_with_fsspec_optimization(data, columns, kwargs)
     # If `filesystem` is specified - use it
     elif kwargs.get("filesystem") is not None:
         table = pq.read_table(data, columns=columns, **kwargs)
@@ -341,15 +339,13 @@ def _should_use_fsspec_optimization(data, explicit_filesystem):
     return False
 
 
-def _read_with_fsspec_optimization(data, open_file_options, columns, kwargs):
+def _read_with_fsspec_optimization(data, columns, kwargs):
     """Read parquet using fsspec optimization for better remote storage performance.
     
     Parameters
     ----------
     data : str, UPath, or path-like
         Path to the parquet file
-    open_file_options : dict
-        Options for fsspec filesystem optimization (e.g., precache_options)
     columns : list or None
         Columns to read
     kwargs : dict
@@ -370,11 +366,11 @@ def _read_with_fsspec_optimization(data, open_file_options, columns, kwargs):
     # Convert UPath to string if needed
     if isinstance(data, UPath):
         path_str = str(data)
-        # Combine UPath storage options with open_file_options
-        storage_options = {**data.storage_options, **open_file_options}
+        # Use UPath storage options for fsspec
+        storage_options = data.storage_options if data.storage_options else None
     else:
         path_str = str(data)
-        storage_options = open_file_options
+        storage_options = None
     
     # Use fsspec.parquet.open_parquet_file for optimized access
     try:

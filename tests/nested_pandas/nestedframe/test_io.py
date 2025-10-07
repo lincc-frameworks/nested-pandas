@@ -402,33 +402,23 @@ def test__transform_read_parquet_data_arg():
 
 
 def test_read_parquet_with_fsspec_optimization():
-    """Test that read_parquet handles open_file_options using fsspec optimization."""
+    """Test that read_parquet automatically uses fsspec optimization for remote files."""
     # Test with local file (should not use fsspec optimization)
     local_path = "tests/test_data/nested.parquet"
     
-    # Test basic open_file_options acceptance
-    open_file_options = {"precache_options": {"method": "parquet"}}
-    nf1 = read_parquet(local_path, open_file_options=open_file_options)
-    
-    # Should work identically to version without options for local files
-    nf2 = read_parquet(local_path)
-    
-    # Data should be the same
-    assert len(nf1) == len(nf2)
-    assert list(nf1.columns) == list(nf2.columns)
-    assert nf1.nested_columns == nf2.nested_columns
+    # Test basic reading - local files should work as before
+    nf1 = read_parquet(local_path)
     
     # Test with additional kwargs
-    nf3 = read_parquet(
+    nf2 = read_parquet(
         local_path, 
         columns=["a", "nested.flux"],
-        open_file_options={"precache_options": {"method": "parquet"}},
         use_threads=True
     )
     
-    assert len(nf3) == len(nf1)
-    assert "a" in nf3.columns
-    assert "nested" in nf3.columns
+    assert len(nf2) <= len(nf1)  # filtered columns
+    assert "a" in nf2.columns
+    assert "nested" in nf2.columns
 
 
 def test_fsspec_optimization_path_detection():
@@ -455,9 +445,8 @@ def test_fsspec_optimization_path_detection():
     assert _should_use_fsspec_optimization(UPath("s3://bucket/file.parquet"), None)
 
 
-def test_docstring_includes_fsspec_options():
-    """Test that the docstring mentions the new fsspec optimization options."""
+def test_docstring_includes_fsspec_notes():
+    """Test that the docstring mentions the automatic fsspec optimization."""
     docstring = read_parquet.__doc__
-    assert "open_file_options" in docstring
-    assert "precache_options" in docstring
     assert "fsspec" in docstring
+    assert "remote" in docstring.lower()

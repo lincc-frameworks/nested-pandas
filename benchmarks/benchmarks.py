@@ -257,23 +257,24 @@ class ReadFewColumnsHTTPS:
 
 
 class ReadFewColumnsHTTPSWithOptimization:
-    """Benchmark read_parquet("https://", columns=[...]) with fsspec optimization"""
+    """Benchmark read_parquet("https://", columns=[...])
+    
+    Note: fsspec optimization is now automatic for remote URLs,
+    so this benchmark is equivalent to ReadFewColumnsHTTPS.
+    Kept for historical comparison purposes.
+    """
 
     path = "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet"
     columns = ["_healpix_29", "ra", "astrometric_primary_flag"]
 
     def run(self):
-        """Run the benchmark with fsspec optimization."""
-        _ = read_parquet(
-            self.path, 
-            columns=self.columns,
-            open_file_options={"precache_options": {"method": "parquet"}}
-        )
+        """Run the benchmark (fsspec optimization is automatic for remote URLs)."""
+        _ = read_parquet(self.path, columns=self.columns)
 
     def time_run(self):
-        """Benchmark the runtime with fsspec optimization"""
+        """Benchmark the runtime with automatic fsspec optimization"""
         self.run()
 
     def peakmem_run(self):
-        """Benchmark the memory usage with fsspec optimization"""
+        """Benchmark the memory usage with automatic fsspec optimization"""
         self.run()
