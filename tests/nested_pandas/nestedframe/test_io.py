@@ -10,16 +10,18 @@ import pyarrow as pa
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
+from pandas.testing import assert_frame_equal
+from upath import UPath
+
 from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
     FSSPEC_BLOCK_SIZE,
     _get_storage_options_and_path,
+    _is_directory,
     _transform_read_parquet_data_arg,
     from_pyarrow,
 )
-from pandas.testing import assert_frame_equal
-from upath import UPath
 
 
 def test_read_parquet():
@@ -497,3 +499,31 @@ def test__get_storage_options_and_path():
     # Test with invalid type
     with pytest.raises(TypeError):
         _get_storage_options_and_path(123)
+
+
+def test__is_directory():
+    """Test _is_directory function with various input types."""
+    # Test with Path object pointing to a directory
+    dir_path = Path("tests/test_data")
+    assert _is_directory(dir_path) is True
+
+    # Test with Path object pointing to a file
+    file_path = Path("tests/test_data/nested.parquet")
+    assert _is_directory(file_path) is False
+
+    # Test with string pointing to a directory
+    str_dir_path = "tests/test_data"
+    assert _is_directory(str_dir_path) is True
+
+    # Test with string pointing to a file
+    str_file_path = "tests/test_data/nested.parquet"
+    assert _is_directory(str_file_path) is False
+
+    # Test with non-existent path (should return False)
+    non_existent = Path("tests/non_existent_directory")
+    assert _is_directory(non_existent) is False
+
+    # Test with other types (should return False)
+    assert _is_directory(123) is False
+    assert _is_directory(None) is False
+    assert _is_directory([]) is False
