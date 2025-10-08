@@ -10,11 +10,17 @@ import pyarrow as pa
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
-from nested_pandas import NestedFrame, read_parquet
-from nested_pandas.datasets import generate_data
-from nested_pandas.nestedframe.io import _transform_read_parquet_data_arg, from_pyarrow
 from pandas.testing import assert_frame_equal
 from upath import UPath
+
+from nested_pandas import NestedFrame, read_parquet
+from nested_pandas.datasets import generate_data
+from nested_pandas.nestedframe.io import (
+    FSSPEC_BLOCK_SIZE,
+    _get_storage_options_and_path,
+    _transform_read_parquet_data_arg,
+    from_pyarrow,
+)
 
 
 def test_read_parquet():
@@ -422,3 +428,73 @@ def test_docstring_includes_fsspec_notes():
     docstring = read_parquet.__doc__
     assert "fsspec" in docstring
     assert "remote" in docstring.lower()
+
+
+def test__get_storage_options_and_path():
+    """Test _get_storage_options_and_path function with various input types."""
+    # Test with Path objects (local files)
+    local_path = "tests/test_data/nested.parquet"
+    path_obj = Path(local_path)
+    storage_opts, path_str = _get_storage_options_and_path(path_obj)
+    assert storage_opts is None  # Local paths should have no storage options
+    assert path_str == str(path_obj)
+
+    # Test with UPath objects (local files)
+    local_upath = UPath(local_path)
+    storage_opts, path_str = _get_storage_options_and_path(local_upath)
+    assert storage_opts is None  # Local UPath should have no storage options
+    assert path_str == str(local_upath)
+
+    # Test with UPath objects (HTTP)
+    http_url = "http://example.com/data.parquet"
+    http_upath = UPath(http_url)
+    storage_opts, path_str = _get_storage_options_and_path(http_upath)
+    assert storage_opts is not None
+    assert storage_opts.get("block_size") == FSSPEC_BLOCK_SIZE
+    assert path_str == http_url
+
+    # Test with UPath objects (HTTPS)
+    https_url = "https://example.com/data.parquet"
+    https_upath = UPath(https_url)
+    storage_opts, path_str = _get_storage_options_and_path(https_upath)
+    assert storage_opts is not None
+    assert storage_opts.get("block_size") == FSSPEC_BLOCK_SIZE
+    assert path_str == https_url
+
+    # Test with UPath objects (S3)
+    s3_url = "s3://bucket/path/data.parquet"
+    s3_upath = UPath(s3_url)
+    storage_opts, path_str = _get_storage_options_and_path(s3_upath)
+    assert storage_opts is not None
+    # S3 should NOT have the block_size override (only HTTP/HTTPS)
+    assert storage_opts.get("block_size") != FSSPEC_BLOCK_SIZE
+    assert path_str == s3_url
+
+    # Test with string (local path)
+    storage_opts, path_str = _get_storage_options_and_path(local_path)
+    assert storage_opts is None
+    assert path_str == local_path
+
+    # Test with string (HTTP URL)
+    storage_opts, path_str = _get_storage_options_and_path("http://example.com/data.parquet")
+    assert storage_opts == {"block_size": FSSPEC_BLOCK_SIZE}
+    assert path_str == "http://example.com/data.parquet"
+
+    # Test with string (HTTPS URL)
+    storage_opts, path_str = _get_storage_options_and_path("https://example.com/data.parquet")
+    assert storage_opts == {"block_size": FSSPEC_BLOCK_SIZE}
+    assert path_str == "https://example.com/data.parquet"
+
+    # Test with string (S3 URL)
+    storage_opts, path_str = _get_storage_options_and_path("s3://bucket/path/data.parquet")
+    assert storage_opts == {}  # S3 should have empty dict, not None
+    assert path_str == "s3://bucket/path/data.parquet"
+
+    # Test with string (GCS URL)
+    storage_opts, path_str = _get_storage_options_and_path("gs://bucket/path/data.parquet")
+    assert storage_opts == {}
+    assert path_str == "gs://bucket/path/data.parquet"
+
+    # Test with invalid type
+    with pytest.raises(TypeError):
+        _get_storage_options_and_path(123)
