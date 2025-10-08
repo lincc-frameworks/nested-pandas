@@ -417,32 +417,6 @@ def test_read_parquet_with_fsspec_optimization():
     assert "nested" in nf2.columns
 
 
-def test_fsspec_optimization_path_detection():
-    """Test _should_use_fsspec_optimization correctly identifies remote paths."""
-    from pathlib import Path
-
-    from nested_pandas.nestedframe.io import _should_use_fsspec_optimization
-
-    # Test cases that should NOT use optimization
-    assert not _should_use_fsspec_optimization("local_file.parquet", None)
-    assert not _should_use_fsspec_optimization("/path/to/file.parquet", None)
-    assert not _should_use_fsspec_optimization(Path("local_file.parquet"), None)
-    assert not _should_use_fsspec_optimization(UPath("local_file.parquet"), None)
-    assert not _should_use_fsspec_optimization("https://example.com/file.parquet", "some_filesystem")
-
-    # Test file-like object
-    import io
-
-    assert not _should_use_fsspec_optimization(io.BytesIO(b"test"), None)
-
-    # Test cases that SHOULD use optimization
-    assert _should_use_fsspec_optimization("https://example.com/file.parquet", None)
-    assert _should_use_fsspec_optimization("s3://bucket/file.parquet", None)
-    assert _should_use_fsspec_optimization("gs://bucket/file.parquet", None)
-    assert _should_use_fsspec_optimization(UPath("https://example.com/file.parquet"), None)
-    assert _should_use_fsspec_optimization(UPath("s3://bucket/file.parquet"), None)
-
-
 def test_docstring_includes_fsspec_notes():
     """Test that the docstring mentions the automatic fsspec optimization."""
     docstring = read_parquet.__doc__

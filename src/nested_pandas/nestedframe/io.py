@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import fsspec.parquet
 import pandas as pd
 import pyarrow as pa
 import pyarrow.fs
@@ -99,16 +100,27 @@ def read_parquet(
         reject_nesting = [reject_nesting]
 
     # First load through pyarrow
-    # If data is remote, use fsspec.parquet for better performance
-    if _should_use_fsspec_optimization(data, kwargs.get("filesystem")):
-        table = _read_with_fsspec_optimization(data, columns, kwargs)
-    # If `filesystem` is specified - use it
+    # Handle file-like objects directly with pq.read_table (open_parquet_file doesn't support them)
+    if hasattr(data, "read"):
+        table = pq.read_table(data, columns=columns, **kwargs)
+    # If `filesystem` is explicitly specified, use pq.read_table directly
     elif kwargs.get("filesystem") is not None:
         table = pq.read_table(data, columns=columns, **kwargs)
-    # Otherwise convert with a special function
-    else:
+    # Handle lists - open_parquet_file doesn't support lists, so convert and use pq.read_table
+    elif isinstance(data, list):
         data, filesystem = _transform_read_parquet_data_arg(data)
         table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
+    # Check if data is a directory - open_parquet_file doesn't support directories
+    elif _is_directory(data):
+        data, filesystem = _transform_read_parquet_data_arg(data)
+        table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
+    # For all other cases (single file paths, URLs, UPath), use fsspec.parquet.open_parquet_file
+    else:
+        storage_options, path_str = _get_storage_options_and_path(data)
+        with fsspec.parquet.open_parquet_file(
+            path_str, columns=columns, storage_options=storage_options, engine="pyarrow"
+        ) as parquet_file:
+            table = pq.read_table(parquet_file, columns=columns, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -166,6 +178,74 @@ def read_parquet(
             table = table.append_column(col, struct)
 
     return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
+
+
+def _is_directory(data):
+    """Check if data represents a directory.
+    
+    Parameters
+    ----------
+    data : str, Path, or UPath
+        The data source to check
+        
+    Returns
+    -------
+    bool
+        True if data is a directory
+    """
+    if isinstance(data, Path):
+        return data.is_dir()
+    elif isinstance(data, str):
+        # Check if it's a local path that's a directory
+        return Path(data).is_dir()
+    return False
+
+
+def _get_storage_options_and_path(data):
+    """Get storage options and path for fsspec.parquet.open_parquet_file.
+    
+    Parameters
+    ----------
+    data : str, Path, or UPath
+        The data source
+        
+    Returns
+    -------
+    tuple[dict | None, str]
+        Storage options (or None) and path string
+    """
+    # Handle UPath objects (check before Path since UPath inherits from Path)
+    if isinstance(data, UPath):
+        path_str = str(data)
+        # For remote UPath, use storage options with block_size
+        if data.protocol not in ("", "file"):
+            storage_options = data.storage_options or {}
+            # For HTTP/HTTPS, use smaller block size
+            if data.protocol in ("http", "https"):
+                storage_options = {**storage_options, "block_size": FSSPEC_BLOCK_SIZE}
+            return storage_options, path_str
+        else:
+            # Local UPath
+            return None, path_str
+    
+    # Handle Path objects (local files)
+    if isinstance(data, Path):
+        return None, str(data)
+    
+    # Handle strings
+    if isinstance(data, str):
+        # Check if it's a remote URL
+        if data.startswith(("http://", "https://", "s3://", "gs://", "gcs://", "azure://", "adl://")):
+            # For HTTP/HTTPS, use smaller block size
+            if data.startswith(("http://", "https://")):
+                return {"block_size": FSSPEC_BLOCK_SIZE}, data
+            # For other remote protocols, use default options
+            return {}, data
+        else:
+            # Local path
+            return None, data
+    
+    raise TypeError(f"data must be a Path, UPath, or str, got {type(data)}")
 
 
 def _transform_read_parquet_data_arg(data):
@@ -301,86 +381,4 @@ def _cast_list_cols_to_nested(df):
     return df
 
 
-def _should_use_fsspec_optimization(data, explicit_filesystem):
-    """Determine if fsspec optimization should be used.
 
-    Parameters
-    ----------
-    data : str, Path, UPath, or file-like object
-        The data source
-    explicit_filesystem : filesystem or None
-        Explicitly provided filesystem
-
-    Returns
-    -------
-    bool
-        True if fsspec optimization should be used for this data source
-    """
-    # Don't use optimization if explicit filesystem is provided
-    if explicit_filesystem is not None:
-        return False
-
-    # Don't use for file-like objects
-    if hasattr(data, "read"):
-        return False
-
-    # For UPath objects, check if they're remote (check before Path since UPath inherits from Path)
-    if isinstance(data, UPath):
-        return data.protocol not in ("", "file")
-
-    # Don't use for Path objects (local files)
-    if isinstance(data, Path):
-        return False
-
-    # For strings, check if they look like remote URLs
-    if isinstance(data, str):
-        return data.startswith(("http://", "https://", "s3://", "gs://", "gcs://", "azure://", "adl://"))
-
-    return False
-
-
-def _read_with_fsspec_optimization(data, columns, kwargs):
-    """Read parquet using fsspec optimization for better remote storage performance.
-
-    Parameters
-    ----------
-    data : str, UPath, or path-like
-        Path to the parquet file
-    columns : list or None
-        Columns to read
-    kwargs : dict
-        Additional kwargs for reading
-
-    Returns
-    -------
-    pyarrow.Table
-        The loaded table
-    """
-    try:
-        import fsspec.parquet
-    except ImportError:
-        # Fall back to regular method if fsspec.parquet not available
-        data_converted, filesystem = _transform_read_parquet_data_arg(data)
-        return pq.read_table(data_converted, filesystem=filesystem, columns=columns, **kwargs)
-
-    # Convert UPath to string if needed
-    if isinstance(data, UPath):
-        path_str = str(data)
-        # Use UPath storage options for fsspec
-        storage_options = data.storage_options if data.storage_options else None
-    else:
-        path_str = str(data)
-        storage_options = None
-
-    # Use fsspec.parquet.open_parquet_file for optimized access
-    try:
-        with fsspec.parquet.open_parquet_file(
-            path_str, columns=columns, storage_options=storage_options, engine="pyarrow"
-        ) as parquet_file:
-            # Read the table using PyArrow with the optimized file handle
-            table = pq.read_table(parquet_file, columns=columns, **kwargs)
-            return table
-    except Exception:
-        # Fall back to regular method if optimization fails
-        data_converted, filesystem = _transform_read_parquet_data_arg(data)
-        return pq.read_table(data_converted, filesystem=filesystem, columns=columns, **kwargs)
