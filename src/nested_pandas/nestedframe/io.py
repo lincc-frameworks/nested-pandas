@@ -182,12 +182,12 @@ def read_parquet(
 
 def _is_directory(data):
     """Check if data represents a directory.
-    
+
     Parameters
     ----------
     data : str, Path, or UPath
         The data source to check
-        
+
     Returns
     -------
     bool
@@ -203,12 +203,12 @@ def _is_directory(data):
 
 def _get_storage_options_and_path(data):
     """Get storage options and path for fsspec.parquet.open_parquet_file.
-    
+
     Parameters
     ----------
     data : str, Path, or UPath
         The data source
-        
+
     Returns
     -------
     tuple[dict | None, str]
@@ -227,11 +227,11 @@ def _get_storage_options_and_path(data):
         else:
             # Local UPath
             return None, path_str
-    
+
     # Handle Path objects (local files)
     if isinstance(data, Path):
         return None, str(data)
-    
+
     # Handle strings
     if isinstance(data, str):
         # Check if it's a remote URL
@@ -244,7 +244,7 @@ def _get_storage_options_and_path(data):
         else:
             # Local path
             return None, data
-    
+
     raise TypeError(f"data must be a Path, UPath, or str, got {type(data)}")
 
 
@@ -379,6 +379,3 @@ def _cast_list_cols_to_nested(df):
         if pa.types.is_list(dtype.pyarrow_dtype):
             df[col] = pack_lists(df[[col]])
     return df
-
-
-
