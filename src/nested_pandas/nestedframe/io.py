@@ -99,28 +99,19 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # First load through pyarrow
-    # Handle file-like objects directly with pq.read_table (open_parquet_file doesn't support them)
-    if hasattr(data, "read"):
-        table = pq.read_table(data, columns=columns, **kwargs)
-    # If `filesystem` is explicitly specified, use pq.read_table directly
-    elif kwargs.get("filesystem") is not None:
-        table = pq.read_table(data, columns=columns, **kwargs)
-    # Handle lists - open_parquet_file doesn't support lists, so convert and use pq.read_table
-    elif isinstance(data, list):
+    # If `filesystem` is specified - use it
+    filesystem = kwargs.get("filesystem")
+    if filesystem is None:
         data, filesystem = _transform_read_parquet_data_arg(data)
-        table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
-    # Check if data is a directory - open_parquet_file doesn't support directories
-    elif _is_directory(data):
-        data, filesystem = _transform_read_parquet_data_arg(data)
-        table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
-    # For all other cases (single file paths, URLs, UPath), use fsspec.parquet.open_parquet_file
-    else:
-        storage_options, path_str = _get_storage_options_and_path(data)
-        with fsspec.parquet.open_parquet_file(
-            path_str, columns=columns, storage_options=storage_options, engine="pyarrow"
-        ) as parquet_file:
-            table = pq.read_table(parquet_file, columns=columns, **kwargs)
+
+    storage_options, path_str = _get_storage_options_and_path(data)
+    with fsspec.parquet.open_parquet_file(
+            path_str, columns=columns,
+            storage_options=storage_options,
+            fs=filesystem,
+            engine="pyarrow",
+    ) as parquet_file:
+        table = pq.read_table(parquet_file, columns=columns, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
