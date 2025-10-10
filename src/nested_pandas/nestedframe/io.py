@@ -17,7 +17,7 @@ from .core import NestedFrame
 
 # Use smaller block size for these FSSPEC filesystems.
 # It usually helps with parquet read speed.
-FSSPEC_FILESYSTEMS = ("http", "https", "s3")
+FSSPEC_FILESYSTEMS = ("http", "https")
 FSSPEC_BLOCK_SIZE = 32 * 1024
 
 
