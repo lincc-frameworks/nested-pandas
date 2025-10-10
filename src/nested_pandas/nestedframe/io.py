@@ -15,7 +15,9 @@ from ..series.packer import pack_lists
 from ..series.utils import table_to_struct_array
 from .core import NestedFrame
 
-# Use smaller block size for FSSPEC filesystems, it usually helps with parquet reads
+# Use smaller block size for these FSSPEC filesystems.
+# It usually helps with parquet read speed.
+FSSPEC_FILESYSTEMS = ("http", "https", "s3")
 FSSPEC_BLOCK_SIZE = 32 * 1024
 
 
@@ -230,8 +232,8 @@ def _get_storage_options(path_to_data: UPath):
     if path_to_data.protocol not in ("", "file"):
         # Remote files of all types (s3, http)
         storage_options = path_to_data.storage_options or {}
-        # For HTTP/HTTPS, use smaller block size
-        if path_to_data.protocol in ("http", "https"):
+        # For some cases, use smaller block size
+        if path_to_data.protocol in FSSPEC_FILESYSTEMS:
             storage_options = {**storage_options, "block_size": FSSPEC_BLOCK_SIZE}
         return storage_options
 
@@ -283,8 +285,8 @@ def _transform_read_parquet_data_arg(data):
     # If it is a local path, use pyarrow's filesystem
     if upath.protocol == "":
         return upath.path, None
-    # If HTTP, change the default UPath object to use a smaller block size
-    if upath.protocol in ("http", "https"):
+    # Change the default UPath object to use a smaller block size in some cases
+    if upath.protocol in FSSPEC_FILESYSTEMS:
         upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
     return upath.path, upath.fs
 
