@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import fsspec.parquet
 import pandas as pd
 import pyarrow as pa
 import pyarrow.fs
@@ -14,7 +15,9 @@ from ..series.packer import pack_lists
 from ..series.utils import table_to_struct_array
 from .core import NestedFrame
 
-# Use smaller block size for FSSPEC filesystems, it usually helps with parquet reads
+# Use smaller block size for these FSSPEC filesystems.
+# It usually helps with parquet read speed.
+FSSPEC_FILESYSTEMS = ("http", "https")
 FSSPEC_BLOCK_SIZE = 32 * 1024
 
 
@@ -25,19 +28,29 @@ def read_parquet(
     autocast_list: bool = False,
     **kwargs,
 ) -> NestedFrame:
-    """
-    Load a parquet object from a file path into a NestedFrame.
+    """Load a parquet object from a file path into a NestedFrame.
 
-    As a deviation from `pandas`, this function loads via
-    `pyarrow.parquet.read_table`, and then converts to a NestedFrame.
+    As a specialization of the ``pandas.read_parquet`` function, this
+    function loads the data via existing ``pyarrow`` or
+    ``fsspec.parquet`` methods, and then converts the data to a
+    NestedFrame.
 
     Parameters
     ----------
     data: str, list or str, Path, Upath, or file-like object
-        Path to the data or a file-like object. If a string is passed, it can be a single file name,
-        directory name, or a remote path (e.g., HTTP/HTTPS or S3). If a file-like object is passed,
-        it must support the `read` method. You can also pass the `filesystem` argument with
-        a `pyarrow.fs` object, which will be passed to `pyarrow.parquet.read_table()`.
+        Path to the data or a file-like object. If a string is passed,
+        it can be a single file name, directory name, or a remote path
+        (e.g., HTTP/HTTPS or S3). If a file-like object is passed, it
+        must support the ``read`` method. You can also pass a
+        ``filesystem`` keyword argument with a ``pyarrow.fs`` object, which will
+        be passed along to the underlying file-reading method.
+         A file URL can also be a path to a directory that contains multiple
+        partitioned parquet files. Both pyarrow and fastparquet support
+        paths to directories as well as file URLs. A directory path could be:
+        ``file://localhost/path/to/tables`` or ``s3://bucket/partition_dir``.
+        If the path is to a single Parquet file, it will be loaded using
+        ``fsspec.parquet.open_parquet_file``, which has optimized handling
+        for remote Parquet files.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -57,6 +70,11 @@ def read_parquet(
 
     Notes
     -----
+    For paths to single Parquet files, this function uses
+    fsspec.parquet.open_parquet_file, which performs intelligent
+    precaching.  This can significantly improve performance compared
+    to standard PyArrow reading on remote files.
+
     pyarrow supports partial loading of nested structures from parquet, for
     example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
     load the "a" column of the "nested" column. Standard pandas/pyarrow
@@ -85,6 +103,7 @@ def read_parquet(
 
     >>> #Load only the "flux" sub-column of the "nested" column
     >>> nf = npd.read_parquet("path/to/file.parquet", columns=["a", "nested.flux"])  # doctest: +SKIP
+
     """
 
     # Type convergence for reject_nesting
@@ -93,14 +112,41 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # First load through pyarrow
-    # If `filesystem` is specified - use it
-    if kwargs.get("filesystem") is not None:
-        table = pq.read_table(data, columns=columns, **kwargs)
-    # Otherwise convert with a special function
+    # For single Parquet file paths, we want to use
+    # `fsspec.parquet.open_parquet_file`.  But for any other usage
+    # (which includes file-like objects, directories and lists
+    # thereof), we want to defer to `pq.read_table`.
+
+    # At the end of this block, `table` will contain the data.
+
+    # NOTE: the test for _is_local_dir is sufficient, because we're
+    # preserving a path to pq.read_table, which can read local
+    # directories, but not remote directories.  Remote directories
+    # cannot be read by either of these methods.
+    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data)):
+        storage_options = _get_storage_options(path_to_data)
+        filesystem = kwargs.get("filesystem")
+        if not filesystem:
+            _, filesystem = _transform_read_parquet_data_arg(path_to_data)
+        with fsspec.parquet.open_parquet_file(
+            str(path_to_data),
+            columns=columns,
+            storage_options=storage_options,
+            fs=filesystem,
+            engine="pyarrow",
+        ) as parquet_file:
+            table = pq.read_table(parquet_file, columns=columns, **kwargs)
     else:
-        data, filesystem = _transform_read_parquet_data_arg(data)
-        table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
+        # All other cases, including file-like objects, directories, and
+        # even lists of the foregoing.
+
+        # If `filesystem` is specified - use it, passing it as part of **kwargs
+        if kwargs.get("filesystem") is not None:
+            table = pq.read_table(data, columns=columns, **kwargs)
+        else:
+            # Otherwise convert with a special function
+            data, filesystem = _transform_read_parquet_data_arg(data)
+            table = pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -160,6 +206,41 @@ def read_parquet(
     return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
 
 
+def _is_local_dir(path_to_data: UPath):
+    """Returns True if the given path refers to a local directory.
+
+    It's necessary to have this function, rather than simply checking
+    ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
+    expensive in the case of a remote file path that isn't a directory.
+    """
+    return path_to_data.protocol in ("", "file") and path_to_data.is_dir()
+
+
+def _get_storage_options(path_to_data: UPath):
+    """Get storage options for fsspec.parquet.open_parquet_file.
+
+    Parameters
+    ----------
+    path_to_data : UPath
+        The data source
+
+    Returns
+    -------
+    dict
+        Storage options (or None)
+    """
+    if path_to_data.protocol not in ("", "file"):
+        # Remote files of all types (s3, http)
+        storage_options = path_to_data.storage_options or {}
+        # For some cases, use smaller block size
+        if path_to_data.protocol in FSSPEC_FILESYSTEMS:
+            storage_options = {**storage_options, "block_size": FSSPEC_BLOCK_SIZE}
+        return storage_options
+
+    # Local files
+    return None
+
+
 def _transform_read_parquet_data_arg(data):
     """Transform `data` argument of read_parquet to pq.read_parquet's `source` and `filesystem`"""
     # Check if a list, run the function recursively and check that filesystems are all the same
@@ -204,8 +285,8 @@ def _transform_read_parquet_data_arg(data):
     # If it is a local path, use pyarrow's filesystem
     if upath.protocol == "":
         return upath.path, None
-    # If HTTP, change the default UPath object to use a smaller block size
-    if upath.protocol in ("http", "https"):
+    # Change the default UPath object to use a smaller block size in some cases
+    if upath.protocol in FSSPEC_FILESYSTEMS:
         upath = UPath(upath, block_size=FSSPEC_BLOCK_SIZE)
     return upath.path, upath.fs
 

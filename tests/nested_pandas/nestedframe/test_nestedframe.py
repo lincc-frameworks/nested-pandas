@@ -1177,6 +1177,29 @@ def test_map_rows():
             get_max, columns=["packed.c", "packed.d"], output_names=["only_one_name"], row_container="args"
         )
 
+    # Test output_names as a string (single output)
+    def get_single_max(row):
+        return row["packed.c"].max()
+
+    result = nf.map_rows(get_single_max, columns=["packed.c"], output_names="max_c")
+    assert len(result) == len(nf)
+    assert list(result.columns) == ["max_c"]
+    for i in range(len(result)):
+        assert result["max_c"].values[i] == expected_max_c[i]
+
+    # Test output_names as a list (multiple outputs)
+    def get_max_pair(row):
+        return pd.Series([row["packed.c"].max(), row["packed.d"].max()], index=["max_col1", "max_col2"])
+
+    result = nf.map_rows(
+        get_max_pair, columns=["packed.c", "packed.d"], output_names=["custom_max1", "custom_max2"]
+    )
+    assert len(result) == len(nf)
+    assert list(result.columns) == ["custom_max1", "custom_max2"]
+    for i in range(len(result)):
+        assert result["custom_max1"].values[i] == expected_max_c[i]
+        assert result["custom_max2"].values[i] == expected_max_d[i]
+
     # Verify that append_columns=True works as expected.
     # Ensure that even with non-unique indexes, the final result retains
     # the original index (nested-pandas#301)
