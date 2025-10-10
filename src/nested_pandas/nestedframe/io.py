@@ -112,22 +112,18 @@ def read_parquet(
 
     # For single Parquet file paths, we want to use
     # `fsspec.parquet.open_parquet_file`.  But for any other usage
-    # (which includes directories and lists), we want to defer to
-    # `pq.read_table`.
-    #
-    # The special cases: include file-like objects, directories, and
-    # even lists of the above.  These cases are supported to support
-    # the existing interface of Pandas' own read_parquet function.
+    # (which includes file-like objects, directories and lists
+    # thereof), we want to defer to `pq.read_table`.
 
     # At the end of this block, `table` will contain the data.
     if isinstance(data, str | Path | UPath):
         path_to_data = UPath(data)
+        storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
         if not filesystem:
-            path_to_data, filesystem = _transform_read_parquet_data_arg(path_to_data)
-        storage_options, path_str = _get_storage_options_and_path(path_to_data)
+            _, filesystem = _transform_read_parquet_data_arg(path_to_data)
         with fsspec.parquet.open_parquet_file(
-            path_str,
+            str(path_to_data),
             columns=columns,
             storage_options=storage_options,
             fs=filesystem,
@@ -204,8 +200,8 @@ def read_parquet(
     return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
 
 
-def _get_storage_options_and_path(path_to_data: UPath):
-    """Get storage options and path for fsspec.parquet.open_parquet_file.
+def _get_storage_options(path_to_data: UPath):
+    """Get storage options for fsspec.parquet.open_parquet_file.
 
     Parameters
     ----------
@@ -214,20 +210,19 @@ def _get_storage_options_and_path(path_to_data: UPath):
 
     Returns
     -------
-    tuple[dict | None, str]
-        Storage options (or None) and path string
+    dict
+        Storage options (or None)
     """
-    path_str = str(path_to_data)
     if path_to_data.protocol not in ("", "file"):
         # Remote files of all types (s3, http)
         storage_options = path_to_data.storage_options or {}
         # For HTTP/HTTPS, use smaller block size
         if path_to_data.protocol in ("http", "https"):
             storage_options = {**storage_options, "block_size": FSSPEC_BLOCK_SIZE}
-        return storage_options, path_str
+        return storage_options
 
     # Local files
-    return None, path_str
+    return None
 
 
 def _transform_read_parquet_data_arg(data):
