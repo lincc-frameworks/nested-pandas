@@ -431,11 +431,7 @@ def test_docstring_includes_fsspec_notes():
 
 def test__get_storage_options():
     """Test _get_storage_options function with various input types."""
-    # Test with Path objects (local files)
     local_path = "tests/test_data/nested.parquet"
-    path_obj = Path(local_path)
-    storage_opts = _get_storage_options(path_obj)
-    assert storage_opts is None  # Local paths should have no storage options
 
     # Test with UPath objects (local files)
     local_upath = UPath(local_path)

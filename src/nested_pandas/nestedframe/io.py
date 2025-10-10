@@ -116,8 +116,7 @@ def read_parquet(
     # thereof), we want to defer to `pq.read_table`.
 
     # At the end of this block, `table` will contain the data.
-    if isinstance(data, str | Path | UPath):
-        path_to_data = UPath(data)
+    if isinstance(data, str | Path | UPath) and not (path_to_data := UPath(data)).is_dir():
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
         if not filesystem:
