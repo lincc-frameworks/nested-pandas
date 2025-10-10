@@ -106,10 +106,11 @@ def read_parquet(
 
     storage_options, path_str = _get_storage_options_and_path(data)
     with fsspec.parquet.open_parquet_file(
-            path_str, columns=columns,
-            storage_options=storage_options,
-            fs=filesystem,
-            engine="pyarrow",
+        path_str,
+        columns=columns,
+        storage_options=storage_options,
+        fs=filesystem,
+        engine="pyarrow",
     ) as parquet_file:
         table = pq.read_table(parquet_file, columns=columns, **kwargs)
 
