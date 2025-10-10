@@ -116,7 +116,12 @@ def read_parquet(
     # thereof), we want to defer to `pq.read_table`.
 
     # At the end of this block, `table` will contain the data.
-    if isinstance(data, str | Path | UPath) and not (path_to_data := UPath(data)).is_dir():
+
+    # NOTE: the test for _is_local_dir is sufficient, because we're
+    # preserving a path to pq.read_table, which can read local
+    # directories, but not remote directories.  Remote directories
+    # cannot be read by either of these methods.
+    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data)):
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
         if not filesystem:
@@ -197,6 +202,16 @@ def read_parquet(
             table = table.append_column(col, struct)
 
     return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
+
+
+def _is_local_dir(path_to_data: UPath):
+    """Returns True if the given path refers to a local directory.
+
+    It's necessary to have this function, rather than simply checking
+    ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
+    expensive in the case of a remote file path that isn't a directory.
+    """
+    return path_to_data.protocol in ("", "file") and path_to_data.is_dir()
 
 
 def _get_storage_options(path_to_data: UPath):
