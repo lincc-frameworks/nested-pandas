@@ -20,6 +20,12 @@ from .core import NestedFrame
 FSSPEC_FILESYSTEMS = ("http", "https")
 FSSPEC_BLOCK_SIZE = 32 * 1024
 
+# Filesystems for which calling .is_dir() may be very slow
+NO_ITERDIR_FILESYSTEMS = (
+    "http",
+    "https",
+)
+
 
 def read_parquet(
     data: str | UPath | bytes,
@@ -49,8 +55,9 @@ def read_parquet(
         paths to directories as well as file URLs. A directory path could be:
         ``file://localhost/path/to/tables/`` or ``s3://bucket/partition_dir/``
         (note trailing slash for web locations, since it may be expensive
-        to test a path for being a directory). If the path is to a single
-        Parquet file, it will be loaded using
+        to test a path for being a directory). Directory reading is not
+        supported for HTTP(S). If the path is to a single Parquet file, it will
+        be loaded using
         ``fsspec.parquet.open_parquet_file``, which has optimized handling
         for remote Parquet files.
     columns : list, default=None
@@ -194,8 +201,10 @@ def _read_parquet_into_table(
         if not filesystem:
             _, filesystem = _transform_read_parquet_data_arg(path_to_data)
         # Check original string, because UPath may chomp trailing "/"
-        if str(data).endswith("/"):
-            _read_remote_parquet_directory(path_to_data, filesystem, storage_options, columns, **kwargs)
+        if _is_remote_dir(data, path_to_data):
+            return _read_remote_parquet_directory(
+                path_to_data, filesystem, storage_options, columns, **kwargs
+            )
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
             columns=columns,
@@ -203,10 +212,6 @@ def _read_parquet_into_table(
             fs=filesystem,
             engine="pyarrow",
         ) as parquet_file:
-            if _is_fh_a_dir(parquet_file):
-                return _read_remote_parquet_directory(
-                    path_to_data, filesystem, storage_options, columns, **kwargs
-                )
             return pq.read_table(parquet_file, columns=columns, **kwargs)
 
     # All other cases, including file-like objects, directories, and
@@ -221,23 +226,23 @@ def _read_parquet_into_table(
     return pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
 
 
-def _is_local_dir(path_to_data: UPath):
+def _is_local_dir(upath: UPath) -> bool:
     """Returns True if the given path refers to a local directory.
 
     It's necessary to have this function, rather than simply checking
     ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
     expensive in the case of a remote file path that isn't a directory.
     """
-    return path_to_data.protocol in ("", "file") and path_to_data.is_dir()
+    return upath.protocol in ("", "file") and upath.is_dir()
 
 
-def _is_fh_a_dir(reader):
-    """Check if fsspec.parquet.open_parquet_file output tells us that path is a directory"""
-    if not hasattr(reader, "details"):
+def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath) -> bool:
+    # Iterating over HTTP(S) directories is very difficult, let's just not do that.
+    if upath.protocol in NO_ITERDIR_FILESYSTEMS:
         return False
-    if "type" not in reader.details:
-        return False
-    return reader.details["type"] == "directory"
+    if str(orig_data).endswith("/"):
+        return True
+    return upath.is_dir()
 
 
 def _read_remote_parquet_directory(
@@ -246,6 +251,10 @@ def _read_remote_parquet_directory(
     """Read files one-by-one with fsspec.open_parquet_file and concat the result"""
     tables = []
     for upath in dir_upath.iterdir():
+        # Go recursively for filesystems which support file/directory identification with fsspec file
+        # handlers. This would work for e.g. S3, but not for HTTP(S).
+        if _is_remote_dir(upath, upath):
+            table = _read_remote_parquet_directory(upath, filesystem, storage_options, columns, **kwargs)
         with fsspec.parquet.open_parquet_file(
             upath.path,
             columns=columns,
@@ -253,11 +262,7 @@ def _read_remote_parquet_directory(
             fs=filesystem,
             engine="pyarrow",
         ) as parquet_file:
-            # Go recursively for supported filesystems, etc. for S3, but not for HTTP(S).
-            if _is_fh_a_dir(parquet_file):
-                table = _read_remote_parquet_directory(upath, filesystem, storage_options, columns, **kwargs)
-            else:
-                table = pq.read_table(parquet_file, columns=columns, **kwargs)
+            table = pq.read_table(parquet_file, columns=columns, **kwargs)
         tables.append(table)
     return pa.concat_tables(tables)
 
