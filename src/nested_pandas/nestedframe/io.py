@@ -204,7 +204,9 @@ def _read_parquet_into_table(
             engine="pyarrow",
         ) as parquet_file:
             if _is_fh_a_dir(parquet_file):
-                _read_remote_parquet_directory(path_to_data, filesystem, storage_options, columns, **kwargs)
+                return _read_remote_parquet_directory(
+                    path_to_data, filesystem, storage_options, columns, **kwargs
+                )
             return pq.read_table(parquet_file, columns=columns, **kwargs)
 
     # All other cases, including file-like objects, directories, and
@@ -253,8 +255,9 @@ def _read_remote_parquet_directory(
         ) as parquet_file:
             # Go recursively for supported filesystems, etc. for S3, but not for HTTP(S).
             if _is_fh_a_dir(parquet_file):
-                _read_remote_parquet_directory(upath, columns, **kwargs)
-            table = pq.read_table(parquet_file, columns=columns, **kwargs)
+                table = _read_remote_parquet_directory(upath, filesystem, storage_options, columns, **kwargs)
+            else:
+                table = pq.read_table(parquet_file, columns=columns, **kwargs)
         tables.append(table)
     return pa.concat_tables(tables)
 
