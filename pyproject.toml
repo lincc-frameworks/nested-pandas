@@ -1,7 +1,8 @@
 
 [project]
 name = "nested-pandas"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 description = "An extension of pandas for efficient representation of nested associated datasets."
 readme = "README.md"
 authors = [
@@ -9,7 +10,6 @@ authors = [
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
@@ -37,6 +37,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "asv==0.6.4", # Used to compute performance benchmarks
+    "virtualenv==20.30", # Temporary fix to airspeed-velocity/asv#1484
     "jupyter", # Clears output from Jupyter notebooks
     "mypy", # Used for static type checking of files
     "pre-commit", # Used to run checks before finalizing a git commit
