@@ -21,7 +21,8 @@ FSSPEC_FILESYSTEMS = ("http", "https")
 FSSPEC_BLOCK_SIZE = 32 * 1024
 
 # Filesystems for which calling .is_dir() may be very slow and/or .iterdir()
-# may yield non-parquet paths.
+# may yield non-parquet paths. See details in _read_parquet_into_table()
+# docstring.
 NO_ITERDIR_FILESYSTEMS = (
     "http",
     "https",
@@ -187,19 +188,22 @@ def _read_parquet_into_table(
     columns: list[str] | None,
     **kwargs,
 ) -> pa.Table:
-    # For single Parquet file paths, we want to use
-    # `fsspec.parquet.open_parquet_file`.  But for any other usage
-    # (which includes file-like objects, local directories and lists
-    # thereof), we want to defer to `pq.read_table`.
+    """Reads parquet file(s) from path and returns a pyarrow table.
 
-    # NOTE: the test for _is_local_dir is sufficient, because we're
-    # preserving a path to pq.read_table, which can read local
-    # directories, but not remote directories. Remote directories
-    # are supported separately via _read_parquet_directory.
-    # We don't support HTTP "directories", because 1) calling .is_dir()
-    # may be very expensive, because it downloads content first,
-    # 2) because .iter_dir() is likely to return a lot of "junk"
-    # besides of the actual parquet files.
+    For single Parquet file paths, we want to use
+    `fsspec.parquet.open_parquet_file`.  But for any other usage
+    (which includes file-like objects, local directories and lists
+    thereof), we want to defer to `pq.read_table`.
+
+    NOTE: the test for _is_local_dir is sufficient, because we're
+    preserving a path to pq.read_table, which can read local
+    directories, but not remote directories. Remote directories
+    are supported separately via _read_parquet_directory.
+    We don't support HTTP "directories", because 1) calling .is_dir()
+    may be very expensive, because it downloads content first,
+    2) because .iter_dir() is likely to return a lot of "junk"
+    besides of the actual parquet files.
+    """
     if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data)):
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
@@ -243,6 +247,7 @@ def _is_local_dir(upath: UPath) -> bool:
 
 def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath) -> bool:
     # Iterating over HTTP(S) directories is very difficult, let's just not do that.
+    # See details in _read_parquet_into_table docstring.
     if upath.protocol in NO_ITERDIR_FILESYSTEMS:
         return False
     if str(orig_data).endswith("/"):
@@ -258,7 +263,7 @@ def _read_remote_parquet_directory(
     for upath in dir_upath.iterdir():
         # Go recursively for filesystems which support file/directory identification with fsspec file
         # handlers. This would work for e.g. S3, but not for HTTP(S).
-        if _is_remote_dir(upath, upath):
+        if upath.is_dir():
             table = _read_remote_parquet_directory(upath, filesystem, storage_options, columns, **kwargs)
         else:
             with fsspec.parquet.open_parquet_file(
