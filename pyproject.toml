@@ -27,7 +27,7 @@ dependencies = [
     "fsspec>=2025.7.0",
 
     # NOTE: package PINNED at <0.3.0, see https://github.com/astronomy-commons/lsdb/issues/1047
-    "universal_pathlib>=0.2,<0.3.0",
+    "universal_pathlib>=0.2,<0.4.0",
 ]
 
 [project.urls]
