@@ -95,6 +95,12 @@ def read_parquet(
     like ```pd.read_parquet("data.parquet", columns=["nested.a", "nested"])```
     from working, as this implies both full and partial load of "nested".
 
+    Additionally with partial loading, be aware that nested-pandas (and pyarrow)
+    only supports partial loading of struct of list columns. Your data may be
+    stored as a list of structs, which can be read by nested-pandas, but without
+    support for partial loading. We try to throw a helpful error message in these
+    cases.
+
     Furthermore, there are some cases where subcolumns will have the same name
     as a top-level column. For example, if you have a column "nested" with
     subcolumns "nested.a" and "nested.b", and also a top-level column "a". In
