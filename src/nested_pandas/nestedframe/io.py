@@ -8,6 +8,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.fs
 import pyarrow.parquet as pq
+from pyarrow.lib import ArrowInvalid
 from upath import UPath
 
 from ..series.dtype import NestedDtype
@@ -221,19 +222,6 @@ def _read_parquet_into_table(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
 
-        # Validate that nested columns are structs
-        # Specifically handles attempted partial loads of nested structures
-        # in list-struct format
-        # only need to check if a potential partial load is requested
-        if columns is not None:
-            check_schema = False
-            for col in columns:
-                if "." in col:  # may be unneccesary if column just has a "." in the name, but we can't know
-                    check_schema = True
-                    break
-            if check_schema:
-                _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
-
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
             columns=columns,
@@ -241,7 +229,17 @@ def _read_parquet_into_table(
             fs=filesystem,
             engine="pyarrow",
         ) as parquet_file:
-            return pq.read_table(parquet_file, columns=columns, **kwargs)
+            try:
+                return pq.read_table(parquet_file, columns=columns, **kwargs)
+            except ArrowInvalid as e:
+                if columns is not None:
+                    check_schema = any("." in col for col in columns)  # Check for potential partial loads
+                    if check_schema:
+                        try:
+                            _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
+                        except ValueError as validation_error:
+                            raise validation_error from e  # Chain the exceptions for better context
+                raise e
 
     # All other cases, including file-like objects, directories, and
     # even lists of the foregoing.
