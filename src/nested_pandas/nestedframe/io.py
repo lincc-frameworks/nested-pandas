@@ -123,6 +123,27 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
+    # read schema first (if available), to check for list-struct columns
+    # This is to avoid issues with partial loading of nested structures
+    if columns is not None:
+        schema = pq.read_schema(data, filesystem=kwargs.get("filesystem", None))
+        for col in columns:
+            # check if column is a partial load of a nested structure
+            if "." in col:
+                # first check if column exists as a top-level column
+                if col in schema.names:
+                    continue
+                else:
+                    if col.split(".")[0] in schema.names:
+                        # check if the column is a list-struct
+                        col_type = schema.field_by_name(col.split(".")[0]).type
+                        if pa.types.is_list(col_type) or pa.types.is_struct(col_type.value_type):
+                            raise ValueError(
+                                f"The provided column '{col}' appears to be a partial load of a nested structure, "
+                                "but the top-level column is a list of structs. Partial loading of nested "
+                                "structures is only supported for struct of list columns."
+                            )
+
     table = _read_parquet_into_table(data, columns, **kwargs)
 
     # Resolve partial loading of nested structures
