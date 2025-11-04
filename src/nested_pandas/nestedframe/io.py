@@ -123,30 +123,6 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # read schema first (if available), to check for list-struct columns
-    # This is to avoid issues with partial loading of nested structures
-    if columns is not None:
-        schema = pq.read_schema(data, filesystem=kwargs.get("filesystem", None))
-        for col in columns:
-            # check if column is a partial load of a nested structure
-            if "." in col:
-                # first check if column exists as a top-level column
-                if col in schema.names:
-                    continue
-                # if not, inspect the base column name type
-                else:
-                    if col.split(".")[0] in schema.names:
-                        # check if the column is a list-struct
-                        col_type = schema.field(col.split(".")[0]).type
-                        #import pdb; pdb.set_trace()
-                        if not pa.types.is_struct(col_type):
-                        #if pa.types.is_list(col_type) or pa.types.is_struct(col_type.value_type):
-                            raise ValueError(
-                                f"The provided column '{col}' signals to partially load a nested structure, "
-                                f"but the nested structure '{col.split(".")[0]}' is not a struct. Partial loading of nested "
-                                "structures is only supported for struct of list columns."
-                            )
-
     table = _read_parquet_into_table(data, columns, **kwargs)
 
     # Resolve partial loading of nested structures
@@ -238,6 +214,12 @@ def _read_parquet_into_table(
             return _read_remote_parquet_directory(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
+        
+        # Validate that nested columns are structs
+        # Specifically handles attempted partial loads of nested structures
+        # in list-struct format
+        _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
+
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
             columns=columns,
@@ -257,6 +239,31 @@ def _read_parquet_into_table(
     # Otherwise convert with a special function
     data, filesystem = _transform_read_parquet_data_arg(data)
     return pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
+
+
+def _validate_structs_from_schema(data, columns=None, filesystem=None):
+    """Validate that nested columns are structs"""
+    if columns is not None:
+        schema = pq.read_schema(data, filesystem=filesystem)
+        for col in columns:
+            # check if column is a partial load of a nested structure
+            if "." in col:
+                # first check if column exists as a top-level column
+                if col in schema.names:
+                    continue
+                # if not, inspect the base column name type
+                else:
+                    if col.split(".")[0] in schema.names:
+                        # check if the column is a list-struct
+                        col_type = schema.field(col.split(".")[0]).type
+                        #import pdb; pdb.set_trace()
+                        if not pa.types.is_struct(col_type):
+                        #if pa.types.is_list(col_type) or pa.types.is_struct(col_type.value_type):
+                            raise ValueError(
+                                f"The provided column '{col}' signals to partially load a nested structure, "
+                                f"but the nested structure '{col.split(".")[0]}' is not a struct. Partial loading of nested "
+                                "structures is only supported for struct of list columns."
+                            )
 
 
 def _is_local_dir(upath: UPath) -> bool:
