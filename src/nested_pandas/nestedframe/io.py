@@ -133,14 +133,17 @@ def read_parquet(
                 # first check if column exists as a top-level column
                 if col in schema.names:
                     continue
+                # if not, inspect the base column name type
                 else:
                     if col.split(".")[0] in schema.names:
                         # check if the column is a list-struct
-                        col_type = schema.field_by_name(col.split(".")[0]).type
-                        if pa.types.is_list(col_type) or pa.types.is_struct(col_type.value_type):
+                        col_type = schema.field(col.split(".")[0]).type
+                        #import pdb; pdb.set_trace()
+                        if not pa.types.is_struct(col_type):
+                        #if pa.types.is_list(col_type) or pa.types.is_struct(col_type.value_type):
                             raise ValueError(
-                                f"The provided column '{col}' appears to be a partial load of a nested structure, "
-                                "but the top-level column is a list of structs. Partial loading of nested "
+                                f"The provided column '{col}' signals to partially load a nested structure, "
+                                f"but the nested structure '{col.split(".")[0]}' is not a struct. Partial loading of nested "
                                 "structures is only supported for struct of list columns."
                             )
 
