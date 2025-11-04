@@ -219,13 +219,14 @@ def _read_parquet_into_table(
         # Specifically handles attempted partial loads of nested structures
         # in list-struct format
         # only need to check if a potential partial load is requested
-        check_schema = False
-        for col in columns:
-            if "." in col:  # may be unneccesary if column just has a "." in the name, but we can't know
-                check_schema = True
-                break
-        if check_schema:
-            _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
+        if columns is not None:
+            check_schema = False
+            for col in columns:
+                if "." in col:  # may be unneccesary if column just has a "." in the name, but we can't know
+                    check_schema = True
+                    break
+            if check_schema:
+                _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
 
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
