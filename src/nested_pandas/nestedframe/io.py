@@ -257,11 +257,12 @@ def _validate_structs_from_schema(data, columns=None, filesystem=None):
                         # check if the column is a list-struct
                         col_type = schema.field(col.split(".")[0]).type
                         if not pa.types.is_struct(col_type):
+                            base_col = col.split(".")[0]
                             raise ValueError(
                                 f"The provided column '{col}' signals to partially load a nested structure, "
-                                f"but the nested structure '{col.split(".")[0]}' is not a struct. "
+                                f"but the nested structure '{base_col}' is not a struct. "
                                 "Partial loading of nested structures is only supported for struct of list " 
-                                f"columns. To resolve this, fully load the column '{col.split('.')[0]}' "
+                                f"columns. To resolve this, fully load the column '{base_col}' "
                                 f"instead of partially loading it and perform column selection afterwards."
                             )
 
