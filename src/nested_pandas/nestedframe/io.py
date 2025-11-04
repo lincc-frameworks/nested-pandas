@@ -218,7 +218,14 @@ def _read_parquet_into_table(
         # Validate that nested columns are structs
         # Specifically handles attempted partial loads of nested structures
         # in list-struct format
-        _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
+        # only need to check if a potential partial load is requested
+        check_schema = False
+        for col in columns:
+            if "." in col:  # may be unneccesary if column just has a "." in the name, but we can't know
+                check_schema = True
+                break
+        if check_schema:
+            _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
 
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
@@ -261,7 +268,7 @@ def _validate_structs_from_schema(data, columns=None, filesystem=None):
                             raise ValueError(
                                 f"The provided column '{col}' signals to partially load a nested structure, "
                                 f"but the nested structure '{base_col}' is not a struct. "
-                                "Partial loading of nested structures is only supported for struct of list " 
+                                "Partial loading of nested structures is only supported for struct of list "
                                 f"columns. To resolve this, fully load the column '{base_col}' "
                                 f"instead of partially loading it and perform column selection afterwards."
                             )
