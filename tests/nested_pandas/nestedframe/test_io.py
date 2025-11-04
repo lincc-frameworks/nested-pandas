@@ -465,4 +465,4 @@ def test_list_struct_partial_loading_error():
     """Test that attempting to partially load a list-struct raises an error."""
     # Load in the example file
     with pytest.raises(ValueError):
-        read_parquet("tests/test_data/list_struct.parquet", columns=["lightcurve.hmjd"])
+        read_parquet("tests/list_struct_data/list_struct.parquet", columns=["lightcurve.hmjd"])
