@@ -471,5 +471,5 @@ def test_list_struct_partial_loading_error():
 def test_normal_loading_error():
     """Test that making a normal naming mistake raises the normal pyarrow error."""
     # Load in the example file
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="No match for*"):
         read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"])

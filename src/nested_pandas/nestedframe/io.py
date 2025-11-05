@@ -229,28 +229,36 @@ def _read_parquet_into_table(
             fs=filesystem,
             engine="pyarrow",
         ) as parquet_file:
-            try:
-                return pq.read_table(parquet_file, columns=columns, **kwargs)
-            except ArrowInvalid as e:
-                if columns is not None:
-                    check_schema = any("." in col for col in columns)  # Check for potential partial loads
-                    if check_schema:
-                        try:
-                            _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
-                        except ValueError as validation_error:
-                            raise validation_error from e  # Chain the exceptions for better context
-                raise e
+            return _read_table_with_partial_load_check(parquet_file, columns=columns, **kwargs)
 
     # All other cases, including file-like objects, directories, and
     # even lists of the foregoing.
 
     # If `filesystem` is specified - use it, passing it as part of **kwargs
     if kwargs.get("filesystem") is not None:
-        return pq.read_table(data, columns=columns, **kwargs)
+        return _read_table_with_partial_load_check(data, columns=columns, **kwargs)
 
     # Otherwise convert with a special function
     data, filesystem = _transform_read_parquet_data_arg(data)
-    return pq.read_table(data, filesystem=filesystem, columns=columns, **kwargs)
+    return _read_table_with_partial_load_check(data, columns=columns, filesystem=filesystem, **kwargs)
+
+
+def _read_table_with_partial_load_check(data, columns=None, filesystem=None, **kwargs):
+    """Read a pyarrow table with partial load check for nested structures"""
+    try:
+        return pq.read_table(data, columns=columns, **kwargs)
+    except ArrowInvalid as e:
+        # if it's not related to partial loading of nested structures, re-raise
+        if "No match for" not in str(e):
+            raise e
+        if columns is not None:
+            check_schema = any("." in col for col in columns)  # Check for potential partial loads
+            if check_schema:
+                try:
+                    _validate_structs_from_schema(data, columns=columns, filesystem=filesystem)
+                except ValueError as validation_error:
+                    raise validation_error from e  # Chain the exceptions for better context
+        raise e
 
 
 def _validate_structs_from_schema(data, columns=None, filesystem=None):
@@ -317,7 +325,7 @@ def _read_remote_parquet_directory(
                 fs=filesystem,
                 engine="pyarrow",
             ) as parquet_file:
-                table = pq.read_table(parquet_file, columns=columns, **kwargs)
+                table = _read_table_with_partial_load_check(parquet_file, columns=columns, **kwargs)
         tables.append(table)
     return pa.concat_tables(tables)
 
