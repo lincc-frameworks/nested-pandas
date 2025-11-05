@@ -459,3 +459,17 @@ def test__get_storage_options():
     assert storage_opts is not None
     # S3 should NOT have the block_size override (only HTTP/HTTPS)
     assert storage_opts.get("block_size") != FSSPEC_BLOCK_SIZE
+
+
+def test_list_struct_partial_loading_error():
+    """Test that attempting to partially load a list-struct raises an error."""
+    # Load in the example file
+    with pytest.raises(ValueError):
+        read_parquet("tests/list_struct_data/list_struct.parquet", columns=["lightcurve.hmjd"])
+
+
+def test_normal_loading_error():
+    """Test that making a normal naming mistake raises the normal pyarrow error."""
+    # Load in the example file
+    with pytest.raises(ValueError, match="No match for*"):
+        read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"])
