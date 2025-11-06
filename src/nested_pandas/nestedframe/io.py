@@ -246,7 +246,7 @@ def _read_parquet_into_table(
 def _read_table_with_partial_load_check(data, columns=None, filesystem=None, **kwargs):
     """Read a pyarrow table with partial load check for nested structures"""
     try:
-        return pq.read_table(data, columns=columns, **kwargs)
+        return pq.read_table(data, columns=columns, filesystem=filesystem, **kwargs)
     except ArrowInvalid as e:
         # if it's not related to partial loading of nested structures, re-raise
         if "No match for" not in str(e):
