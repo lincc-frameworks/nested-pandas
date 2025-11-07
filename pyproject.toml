@@ -25,7 +25,7 @@ dependencies = [
     "Deprecated>=1.2.0",
     "wrapt>=1.12.1",
     "fsspec>=2025.7.0",
-    "universal_pathlib>=0.3.4",
+    "universal_pathlib>=0.3.1",
 ]
 
 [project.urls]
