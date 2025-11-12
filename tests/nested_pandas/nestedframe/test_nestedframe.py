@@ -1434,6 +1434,15 @@ def test_drop():
     with pytest.raises(KeyError):
         base.drop(["a", "nested.not_a_field"], axis=1)
 
+    # Test dropping nested column using 'columns='
+    dropped_cols = base.drop(columns="nested.c")
+    assert "c" not in dropped_cols.nested.nest.columns
+
+    # Test dropping multiple nested columns using 'columns='
+    dropped_multcols = base.drop(columns=["nested.c", "nested2.f"])
+    assert "c" not in dropped_multcols.nested.nest.columns
+    assert "f" not in dropped_multcols.nested2.nest.columns
+
 
 def test_min():
     """Test min function return correct result with and without the nested columns"""
