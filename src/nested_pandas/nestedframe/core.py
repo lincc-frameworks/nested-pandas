@@ -779,10 +779,10 @@ class NestedFrame(pd.DataFrame):
         # axis 1 requires special handling for nested columns
         if axis == 1 or columns is not None:
             # label convergence
-            if labels is not None and isinstance(labels, str):
+            if isinstance(labels, str):
                 labels = [labels]
             elif columns is not None:
-                labels = [columns] if isinstance(columns, str) else list(columns)
+                labels = [columns] if isinstance(columns, str) else columns
                 columns = None
                 axis = 1
             nested_labels = [label for label in labels if self._is_known_hierarchical_column(label)]
