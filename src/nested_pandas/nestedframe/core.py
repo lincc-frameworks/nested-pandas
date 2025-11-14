@@ -727,7 +727,8 @@ class NestedFrame(pd.DataFrame):
         Remove rows or columns by specifying label names and corresponding
         axis, or by directly specifying index or column names. When using a
         multi-index, labels on different levels can be removed by
-        specifying the level. See the user guide for more information about
+        specifying the level. See the `user guide <https://pandas.pydata.org/docs/user_guide
+        /advanced.html#advanced-shown-levels>`_ for more information about
         the now unused levels.
 
         Parameters
@@ -777,10 +778,14 @@ class NestedFrame(pd.DataFrame):
         """
 
         # axis 1 requires special handling for nested columns
-        if axis == 1:
+        if axis == 1 or columns is not None:
             # label convergence
             if isinstance(labels, str):
                 labels = [labels]
+            elif columns is not None:
+                labels = [columns] if isinstance(columns, str) else columns
+                columns = None
+                axis = 1
             nested_labels = [label for label in labels if self._is_known_hierarchical_column(label)]
             base_labels = [label for label in labels if not self._is_known_hierarchical_column(label)]
 
