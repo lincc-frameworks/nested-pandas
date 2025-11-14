@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: nested-pandas
+authors:
+  - name: "LINCC Frameworks"
+    email: "brantd@uw.edu"
+repository-code: "https://github.com/lincc-frameworks/nested-pandas"
+url: "https://nested-pandas.readthedocs.io/"
+abstract: "An extension of pandas for efficient representation of nested associated datasets."
+keywords:
+  - pandas
+  - astronomy
+  - time-domain
+  - nested-data
+  - python
+license: MIT
