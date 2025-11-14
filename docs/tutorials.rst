@@ -7,3 +7,4 @@ Tutorials
     Fine Data Manipulation with Nested-Pandas <tutorials/data_manipulation>
     Lower-level interfaces <tutorials/low_level.ipynb>
     Using Nested-Pandas with Astronomical Spectra <pre_executed/nested_spectra.ipynb>
+    Using GroupBy with Nested-Pandas <tutorials/groupby_doc.ipynb>
