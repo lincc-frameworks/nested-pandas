@@ -689,6 +689,7 @@ class NestedFrame(pd.DataFrame):
             # if the dataframe is empty, just return an empty nested column
             # since there are no iterable values to pack
             packed_df = NestedFrame().join_nested(df[list_columns], name=name)
+            packed_df.index.name = df.index.name
         else:
             # Check that each column has iterable elements
             for col in list_columns:
