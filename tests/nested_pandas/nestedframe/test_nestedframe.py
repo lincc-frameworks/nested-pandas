@@ -2205,6 +2205,17 @@ def test_nestlists_nonunique_index():
     assert nf_repacked.equals(nf)
 
 
+def test_nestlists_preserve_index_name():
+    """Test that nest_lists preserves the index name with empty dataframes."""
+
+    # See https://github.com/lincc-frameworks/nested-pandas/issues/409 for context
+    nf = generate_data(5, 10, seed=1)
+    nf.index.name = "objectid"
+    nf = nf.join(nf["nested"].to_lists())
+    result = nf.head(0).nest_lists(["t", "flux", "band"], name="nested2").reset_index()
+    assert "objectid" in result.columns
+
+
 def test_delitem_base_and_nested():
     """Test that __delitem__ works for both base and nested columns."""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
