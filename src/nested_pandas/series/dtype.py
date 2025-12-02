@@ -65,10 +65,10 @@ class NestedDtype(ExtensionDtype):
     _metadata = ("pyarrow_dtype",)
     """Attributes to use as metadata for __eq__ and __hash__"""
 
-    #@property
-    #def na_value(self) -> Type[pd.NA]:  # type: ignore[valid-type]
-    #    """The missing value for this dtype"""
-    #    return pd.NA  # type: ignore[return-value]
+    @property
+    def na_value(self): #  -> Type[pd.NA]:  # type: ignore[valid-type]
+        """The missing value for this dtype"""
+        return pd.NA  # type: ignore[return-value]
 
     type = pd.DataFrame
     """The type of the array's elements, always pd.DataFrame"""
