@@ -473,3 +473,9 @@ def test_normal_loading_error():
     # Load in the example file
     with pytest.raises(ValueError, match="No match for*"):
         read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"])
+
+
+def test_read_parquet_with_fixed_length_nested():
+    """Test reading a parquet file with fixed-length nested arrays"""
+    nf = read_parquet("tests/fixed_length_data/mmu-desi.parquet")
+    assert nf.shape == (2, 18)

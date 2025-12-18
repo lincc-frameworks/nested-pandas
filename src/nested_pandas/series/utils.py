@@ -32,8 +32,10 @@ def struct_fields(struct_type: pa.StructType) -> list[pa.Field]:
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     """Check if the given pyarrow type is a list type.
 
-    I.e., one of the following types: ListArray, LargeListArray,
-    FixedSizeListArray.
+    Currently, it has to be ListArray, but we plan to support
+    FixedSizeListArray and LargeListArray as well:
+    https://github.com/lincc-frameworks/nested-pandas/issues/276
+    https://github.com/lincc-frameworks/nested-pandas/issues/95
 
     Parameters
     ----------
@@ -45,9 +47,7 @@ def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     bool
         True if the given type is a list type, False otherwise.
     """
-    return (
-        pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type) or pa.types.is_fixed_size_list(pa_type)
-    )
+    return pa.types.is_list(pa_type)
 
 
 def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
