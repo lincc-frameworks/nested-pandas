@@ -1997,6 +1997,7 @@ class NestedFrame(pd.DataFrame):
         self,
         func: Callable[..., Any],
         columns: None | str | list[str] = None,
+        *,
         row_container: Literal["dict"] | Literal["args"] = "dict",
         output_names: None | str | list[str] = None,
         infer_nesting: bool = True,
