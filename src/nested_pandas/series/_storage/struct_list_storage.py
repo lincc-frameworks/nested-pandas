@@ -7,6 +7,7 @@ import pyarrow as pa
 
 from nested_pandas.series.utils import (
     align_chunked_struct_list_offsets,
+    normalize_struct_list_array,
     table_to_struct_array,
     transpose_list_struct_chunked,
 )
@@ -39,6 +40,7 @@ class StructListStorage:
             raise ValueError("array must be a StructArray or ChunkedArray")
 
         if validate:
+            array = normalize_struct_list_array(array)
             array = align_chunked_struct_list_offsets(array)
 
         self._data = array

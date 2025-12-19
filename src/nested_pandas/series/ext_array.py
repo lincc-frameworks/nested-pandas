@@ -65,6 +65,8 @@ from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     chunk_lengths,
     is_pa_type_a_list,
+    normalize_list_array,
+    normalize_struct_list_type,
     rechunk,
     struct_field_names,
     transpose_struct_list_type,
@@ -253,7 +255,7 @@ class NestedExtensionArray(ExtensionArray):
             list_struct_storage = ListStructStorage.from_struct_list_storage(struct_list_storage)
 
         self._storage = list_struct_storage
-        self._dtype = NestedDtype(values.type)
+        self._dtype = NestedDtype(self._storage.type)
 
     # End of Constructor and initialized attributes #
 
@@ -668,6 +670,23 @@ class NestedExtensionArray(ExtensionArray):
         return state
 
     # End of Additional magic methods #
+
+    @classmethod
+    def is_input_pa_type_supported(cls, pa_type: pa.DataType) -> bool:
+        """Check if the given PyArrow type is supported by NestedExtensionArray constructor
+
+        Calling this method is cheaper than trying to construct the array,
+        because data transformations are avoided.
+        """
+        if is_pa_type_a_list(pa_type):
+            list_type = cast(pa.ListType, pa_type)
+            return pa.types.is_struct(list_type.value_type)
+
+        try:
+            _ = normalize_struct_list_type(pa_type)
+        except ValueError:
+            return False
+        return True
 
     @classmethod
     def _box_pa_scalar(cls, value, *, pa_type: pa.DataType | None) -> pa.Scalar:
@@ -1098,8 +1117,7 @@ class NestedExtensionArray(ExtensionArray):
                 "or NestedExtensionArray.set_list_field(..., keep_dtype=False) instead."
             ) from e
 
-        if not is_pa_type_a_list(pa_array.type):
-            raise ValueError(f"Expected a list array, got {pa_array.type}")
+        pa_array = normalize_list_array(pa_array)
 
         if len(pa_array) != len(self):
             raise ValueError("The length of the list-array must be equal to the length of the series")

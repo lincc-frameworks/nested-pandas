@@ -475,7 +475,15 @@ def test_normal_loading_error():
         read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"])
 
 
-def test_read_parquet_with_fixed_length_nested():
-    """Test reading a parquet file with fixed-length nested arrays"""
-    nf = read_parquet("tests/fixed_length_data/mmu-desi.parquet")
+def test_read_parquet_with_fixed_length_struct_list():
+    """Test reading a parquet file with fixed-length struct-list columns"""
+    nf = read_parquet("tests/fixed_size_list_data/mmu-desi.parquet")
     assert nf.shape == (2, 18)
+    assert nf.nested_columns == ["spectrum"]
+
+
+def test_read_parquet_with_fixed_length_list_struct():
+    """Test reading a parquet file with fixed-length list-struct columns"""
+    nf = read_parquet("tests/fixed_size_list_data/fixed-size-list-struct.parquet")
+    assert nf.shape == (5, 3)
+    assert nf.nested_columns == ["fixed_nested"]

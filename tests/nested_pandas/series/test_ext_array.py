@@ -601,6 +601,203 @@ def test_series_built_raises(data):
         _array = NestedExtensionArray(pa_array)
 
 
+def test_is_input_pa_type_supported_struct_list():
+    """Test that is_input_pa_type_supported returns True for valid struct-list types"""
+    valid_struct_list_types = [
+        # Simple struct-list type
+        pa.struct(
+            [
+                pa.field("a", pa.list_(pa.int64())),
+                pa.field("b", pa.list_(pa.float64())),
+            ]
+        ),
+        # Struct-list with different list value types
+        pa.struct(
+            [
+                pa.field("x", pa.list_(pa.string())),
+                pa.field("y", pa.list_(pa.bool_())),
+                pa.field("z", pa.list_(pa.int32())),
+            ]
+        ),
+        # Struct-list with large list
+        pa.struct(
+            [
+                pa.field("a", pa.large_list(pa.int64())),
+            ]
+        ),
+        # Struct-list with fixed size list
+        pa.struct(
+            [
+                pa.field("a", pa.list_(pa.int64(), 5)),
+            ]
+        ),
+    ]
+
+    for pa_type in valid_struct_list_types:
+        assert NestedExtensionArray.is_input_pa_type_supported(pa_type)
+        pa_array = pa.array([], type=pa_type)
+        _ext_array = NestedExtensionArray(pa_array)
+
+
+def test_is_input_pa_type_supported_list_struct():
+    """Test that is_input_pa_type_supported returns True for valid list-struct types"""
+    valid_list_struct_types = [
+        # Simple list-struct type
+        pa.list_(
+            pa.struct(
+                [
+                    pa.field("a", pa.int64()),
+                    pa.field("b", pa.float64()),
+                ]
+            )
+        ),
+        # List-struct with multiple fields
+        pa.list_(
+            pa.struct(
+                [
+                    pa.field("x", pa.string()),
+                    pa.field("y", pa.bool_()),
+                    pa.field("z", pa.int32()),
+                ]
+            )
+        ),
+        # Large list-struct
+        pa.large_list(
+            pa.struct(
+                [
+                    pa.field("a", pa.int64()),
+                ]
+            )
+        ),
+        # Fixed size list-struct
+        pa.list_(
+            pa.struct(
+                [
+                    pa.field("a", pa.int64()),
+                ]
+            ),
+            3,
+        ),
+    ]
+
+    for pa_type in valid_list_struct_types:
+        assert NestedExtensionArray.is_input_pa_type_supported(pa_type)
+        pa_array = pa.array([], type=pa_type)
+        _ext_array = NestedExtensionArray(pa_array)
+
+
+def test_is_input_pa_type_supported_invalid():
+    """Test that is_input_pa_type_supported returns False for invalid types."""
+    invalid_types = [
+        # Plain struct (not struct-list)
+        pa.struct(
+            [
+                pa.field("a", pa.int64()),
+                pa.field("b", pa.float64()),
+            ]
+        ),
+        # Plain list (not list-struct)
+        pa.list_(pa.int64()),
+        # Struct with mixed list and non-list fields
+        pa.struct(
+            [
+                pa.field("a", pa.list_(pa.int64())),
+                pa.field("b", pa.int64()),
+            ]
+        ),
+        # List of list
+        pa.list_(pa.list_(pa.int64())),
+        # Struct of struct
+        pa.struct(
+            [
+                pa.field("a", pa.struct([pa.field("x", pa.int64())])),
+            ]
+        ),
+    ]
+
+    for pa_type in invalid_types:
+        assert not NestedExtensionArray.is_input_pa_type_supported(pa_type)
+        pa_array = pa.array([], type=pa_type)
+        with pytest.raises(ValueError):
+            NestedExtensionArray(pa_array)
+
+    # Simple scalar types - these can't even create arrays, so we just check is_input_pa_type_supported
+    scalar_types = [pa.int64(), pa.float64(), pa.string()]
+    for pa_type in scalar_types:
+        assert not NestedExtensionArray.is_input_pa_type_supported(pa_type)
+
+
+def test_is_input_pa_type_supported_consistency_with_init():
+    """Test consistency between is_input_pa_type_supported and __init__ with various edge cases."""
+    valid_types = [
+        pa.struct(
+            [
+                pa.field("a", pa.list_(pa.int64())),
+                pa.field("b", pa.list_(pa.float64())),
+            ]
+        ),
+        pa.list_(
+            pa.struct(
+                [
+                    pa.field("a", pa.int64()),
+                    pa.field("b", pa.float64()),
+                ]
+            )
+        ),
+    ]
+
+    for pa_type in valid_types:
+        assert NestedExtensionArray.is_input_pa_type_supported(pa_type)
+        pa_array = pa.array([], type=pa_type)
+        NestedExtensionArray(pa_array)
+
+    invalid_types = [
+        pa.struct(
+            [
+                pa.field("a", pa.int64()),
+                pa.field("b", pa.float64()),
+            ]
+        ),
+        pa.list_(pa.int64()),
+        pa.struct(
+            [
+                pa.field("a", pa.list_(pa.int64())),
+                pa.field("b", pa.int64()),
+            ]
+        ),
+    ]
+
+    for pa_type in invalid_types:
+        assert not NestedExtensionArray.is_input_pa_type_supported(pa_type)
+        pa_array = pa.array([], type=pa_type)
+        with pytest.raises(ValueError):
+            NestedExtensionArray(pa_array)
+
+
+def test_is_input_pa_type_supported_consistency_with_data():
+    """Test is_input_pa_type_supported with actual data to ensure consistency."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+
+    assert NestedExtensionArray.is_input_pa_type_supported(struct_array.type)
+    NestedExtensionArray(struct_array)
+
+    list_struct_array = pa.array(
+        [
+            [{"a": 1, "b": -4.0}, {"a": 2, "b": -5.0}, {"a": 3, "b": -6.0}],
+            [{"a": 1, "b": -3.0}, {"a": 2, "b": -4.0}, {"a": 1, "b": -5.0}],
+        ]
+    )
+
+    assert NestedExtensionArray.is_input_pa_type_supported(list_struct_array.type)
+    NestedExtensionArray(list_struct_array)
+
+
 def test_chunked_array():
     """Test that the .chunked_array property is correct."""
     struct_array = pa.StructArray.from_arrays(
@@ -973,7 +1170,7 @@ def test_nbytes():
     """Test that the nbytes property is correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint32())),
+            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])], type=pa.list_(pa.uint32())),
             pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])], pa.list_(pa.float64())),
         ],
         names=["a", "b"],

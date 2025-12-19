@@ -186,7 +186,7 @@ class NestedDtype(ExtensionDtype):
 
     pyarrow_dtype: pa.StructType
 
-    def __init__(self, pyarrow_dtype: pa.DataType) -> None:
+    def __init__(self, pyarrow_dtype: pa.DataType | Mapping) -> None:
         # Allow pd.ArrowDtypes on init
         if isinstance(pyarrow_dtype, pd.ArrowDtype):
             pyarrow_dtype = pyarrow_dtype.pyarrow_dtype
