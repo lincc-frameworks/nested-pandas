@@ -447,7 +447,25 @@ def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.Chun
 def normalize_list_array(
     array: pa.ListArray | pa.FixedSizeListArray | pa.LargeListArray | pa.ChunkedArray,
 ) -> pa.ListArray | pa.ChunkedArray:
-    """Convert fixed-size and long list arrays to "normal" list arrays."""
+    """Convert fixed-size and large list arrays to standard ``pa.ListArray``-based arrays.
+
+    Parameters
+    ----------
+    array : pa.ListArray or pa.FixedSizeListArray or pa.LargeListArray or pa.ChunkedArray
+        Input list-like array. May be a regular, fixed-size, or large list array,
+        or a ``pa.ChunkedArray`` whose ``type`` is one of these list types.
+
+    Returns
+    -------
+    pa.ListArray or pa.ChunkedArray
+        A list array (or chunked list array) where the list type is normalized to
+        ``pa.ListType`` while preserving the original value type.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a list-type array (i.e. does not have a ``value_type``).
+    """
     # Pass list-array as is
     if pa.types.is_list(array.type):
         return array
@@ -494,7 +512,26 @@ def normalize_struct_list_type(struct_type: pa.StructType) -> pa.StructType:
 
 
 def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.StructArray | pa.ChunkedArray:
-    """Convert all struct-list fields to "normal" list arrays."""
+    """Convert all struct-list fields to "normal" list arrays.
+
+    Parameters
+    ----------
+    array : pa.StructArray | pa.ChunkedArray
+        Input struct array whose fields are list-like (e.g. ``pa.ListArray``,
+        ``pa.LargeListArray`` or ``pa.FixedSizeListArray``).
+
+    Returns
+    -------
+    pa.StructArray | pa.ChunkedArray
+        Array with all struct-list fields converted to ``pa.ListArray`` fields.
+        If no normalization is needed, the original ``array`` is returned.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a struct array (i.e. ``pa.StructArray`` or a
+        ``pa.ChunkedArray`` with struct type).
+    """
     if not pa.types.is_struct(array.type):
         raise ValueError(f"Expected a StructArray, got {array.type}")
     norm_type = normalize_struct_list_type(array.type)

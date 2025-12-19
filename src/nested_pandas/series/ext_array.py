@@ -673,13 +673,43 @@ class NestedExtensionArray(ExtensionArray):
 
     @classmethod
     def is_input_pa_type_supported(cls, pa_type: pa.DataType) -> bool:
-        """Check if the given PyArrow type is supported by NestedExtensionArray constructor
+        """Check whether a PyArrow data type is supported by the constructor.
 
         Calling this method is cheaper than trying to construct the array,
         because data transformations are avoided.
+
+        Parameters
+        ----------
+        pa_type : pyarrow.DataType
+            The PyArrow data type to check for compatibility with
+            :class:`NestedExtensionArray`.
+
+        Returns
+        -------
+        bool
+            ``True`` if ``pa_type`` is a supported input type for
+            :class:`NestedExtensionArray`, ``False`` otherwise.
+
+        Examples
+        --------
+        Check support for a list-of-structs type::
+
+            >>> import pyarrow as pa
+            >>> value_type = pa.struct([("a", pa.int64())])
+            >>> pa_type = pa.list_(value_type)
+            >>> NestedExtensionArray.is_input_pa_type_supported(pa_type)
+            True
+
+        Check support for an unsupported primitive type::
+
+            >>> NestedExtensionArray.is_input_pa_type_supported(pa.int64())
+            False
         """
         if is_pa_type_a_list(pa_type):
-            list_type = cast(pa.ListType, pa_type)
+            list_type = cast(
+                pa.ListType | pa.LargeListType | pa.FixedSizeListType,
+                pa_type,
+            )
             return pa.types.is_struct(list_type.value_type)
 
         try:
