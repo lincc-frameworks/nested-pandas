@@ -464,7 +464,7 @@ def normalize_list_array(
     Raises
     ------
     ValueError
-        If the input is not a list-type array (i.e. does not have a ``value_type``).
+        If the input is not a list-type array (i.e. does not have a ``.type.value_type``).
     """
     # Pass list-array as is
     if pa.types.is_list(array.type):
@@ -517,20 +517,20 @@ def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.S
     Parameters
     ----------
     array : pa.StructArray | pa.ChunkedArray
-        Input struct array whose fields are list-like (e.g. ``pa.ListArray``,
-        ``pa.LargeListArray`` or ``pa.FixedSizeListArray``).
+        Input struct array whose fields are list-like (e.g. pa.ListArray,
+        pa.LargeListArray or pa.FixedSizeListArray).
 
     Returns
     -------
     pa.StructArray | pa.ChunkedArray
-        Array with all struct-list fields converted to ``pa.ListArray`` fields.
+        Array with all struct-list fields converted to pa.ListArray fields.
         If no normalization is needed, the original ``array`` is returned.
 
     Raises
     ------
     ValueError
-        If the input is not a struct array (i.e. ``pa.StructArray`` or a
-        ``pa.ChunkedArray`` with struct type).
+        If the input is not a struct array (i.e. pa.StructArray or a
+        pa.ChunkedArray with struct type).
     """
     if not pa.types.is_struct(array.type):
         raise ValueError(f"Expected a StructArray, got {array.type}")

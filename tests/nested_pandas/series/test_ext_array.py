@@ -1170,7 +1170,7 @@ def test_nbytes():
     """Test that the nbytes property is correct."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0])], type=pa.list_(pa.uint32())),
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint32())),
             pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])], pa.list_(pa.float64())),
         ],
         names=["a", "b"],

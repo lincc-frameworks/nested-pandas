@@ -673,7 +673,7 @@ class NestedExtensionArray(ExtensionArray):
 
     @classmethod
     def is_input_pa_type_supported(cls, pa_type: pa.DataType) -> bool:
-        """Check whether a PyArrow data type is supported by the constructor.
+        """Check whether a pyarrow data type is supported by the constructor.
 
         Calling this method is cheaper than trying to construct the array,
         because data transformations are avoided.
@@ -681,14 +681,14 @@ class NestedExtensionArray(ExtensionArray):
         Parameters
         ----------
         pa_type : pyarrow.DataType
-            The PyArrow data type to check for compatibility with
-            :class:`NestedExtensionArray`.
+            The pyarrow data type to check for compatibility with
+            NestedExtensionArray.
 
         Returns
         -------
         bool
             ``True`` if ``pa_type`` is a supported input type for
-            :class:`NestedExtensionArray`, ``False`` otherwise.
+            NestedExtensionArray, ``False`` otherwise.
 
         Examples
         --------
