@@ -30,12 +30,9 @@ def struct_fields(struct_type: pa.StructType) -> list[pa.Field]:
 
 
 def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
-    """Check if the given pyarrow type is a list type.
+    """Check if the given pyarrow type is any list type.
 
-    Currently, it has to be ListArray, but we plan to support
-    FixedSizeListArray and LargeListArray as well:
-    https://github.com/lincc-frameworks/nested-pandas/issues/276
-    https://github.com/lincc-frameworks/nested-pandas/issues/95
+    This includes ListArray, FixedSizeListArray and LargeListArray.
 
     Parameters
     ----------
@@ -47,7 +44,9 @@ def is_pa_type_a_list(pa_type: pa.DataType) -> bool:
     bool
         True if the given type is a list type, False otherwise.
     """
-    return pa.types.is_list(pa_type)
+    return (
+        pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type) or pa.types.is_fixed_size_list(pa_type)
+    )
 
 
 def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
@@ -64,7 +63,7 @@ def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
         True if the given type is a list-type with struct values,
         False otherwise.
     """
-    return is_pa_type_a_list(pa_type) and pa.types.is_struct(pa_type.value_type)
+    return pa.types.is_list(pa_type) and pa.types.is_struct(pa_type.value_type)
 
 
 def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
@@ -92,7 +91,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
     first_offsets: pa.ListArray | None = None
     for field in array.type:
         inner_array = array.field(field.name)
-        if not is_pa_type_a_list(inner_array.type):
+        if not pa.types.is_list(inner_array.type):
             raise ValueError(f"Expected a ListArray, got {inner_array.type}")
         list_array = cast(pa.ListArray, inner_array)
 
@@ -183,7 +182,7 @@ def transpose_struct_list_type(t: pa.StructType) -> pa.ListType:
 
     fields = []
     for field in t:
-        if not is_pa_type_a_list(field.type):
+        if not pa.types.is_list(field.type):
             raise ValueError(f"Expected a ListType, got {field.type}")
         list_type = cast(pa.ListType, field.type)
         fields.append(pa.field(field.name, list_type.value_type))
@@ -283,7 +282,7 @@ def transpose_list_struct_scalar(scalar: pa.ListScalar) -> pa.StructScalar:
 
 def validate_list_struct_type(t: pa.ListType) -> None:
     """Raise a ValueError if not a list-struct type."""
-    if not is_pa_type_a_list(t):
+    if not pa.types.is_list(t):
         raise ValueError(f"Expected a ListType, got {t}")
 
     if not pa.types.is_struct(t.value_type):
@@ -296,7 +295,7 @@ def validate_struct_list_type(t: pa.StructType) -> None:
         raise ValueError(f"Expected a StructType, got {t}")
 
     for field in struct_fields(t):
-        if not is_pa_type_a_list(field.type):
+        if not pa.types.is_list(field.type):
             raise ValueError(f"Expected a ListType for field {field.name}, got {field.type}")
 
 
@@ -443,3 +442,99 @@ def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.Chun
         chunk = array[idx_start:idx_end].combine_chunks()
         chunks.append(chunk)
     return pa.chunked_array(chunks)
+
+
+def normalize_list_array(
+    array: pa.ListArray | pa.FixedSizeListArray | pa.LargeListArray | pa.ChunkedArray,
+) -> pa.ListArray | pa.ChunkedArray:
+    """Convert fixed-size and large list arrays to standard ``pa.ListArray``-based arrays.
+
+    Parameters
+    ----------
+    array : pa.ListArray or pa.FixedSizeListArray or pa.LargeListArray or pa.ChunkedArray
+        Input list-like array. May be a regular, fixed-size, or large list array,
+        or a ``pa.ChunkedArray`` whose ``type`` is one of these list types.
+
+    Returns
+    -------
+    pa.ListArray or pa.ChunkedArray
+        A list array (or chunked list array) where the list type is normalized to
+        ``pa.ListType`` while preserving the original value type.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a list-type array (i.e. does not have a ``.type.value_type``).
+    """
+    # Pass list-array as is
+    if pa.types.is_list(array.type):
+        return array
+
+    try:
+        value_type = array.type.value_type
+    except AttributeError:
+        raise ValueError(
+            "Input array must be a list-type array: pa.ListArray, pa.LargeListArray or pa.FixedSizeListArray"
+        ) from None
+
+    return array.cast(pa.list_(value_type))
+
+
+def normalize_struct_list_type(struct_type: pa.StructType) -> pa.StructType:
+    """Convert all struct-list fields to "normal" list types.
+
+    Parameters
+    ----------
+    struct_type : pa.StructType
+        Input struct type, fields are assumed to be pa.ListType,
+        pa.LargeListType or pa.FixedSizeListType.
+
+    Returns
+    -------
+    pa.StructType
+        Output struct type with all fields as pa.ListType.
+
+    Raises
+    ------
+    ValueError
+        If the input type is not a struct-list type.
+    """
+    if not pa.types.is_struct(struct_type):
+        raise ValueError(f"Expected a StructType, got {struct_type}")
+    fields = []
+    for field in struct_fields(struct_type):
+        try:
+            value_type = field.type.value_type
+        except AttributeError:
+            raise ValueError("Input struct_type must be a struct-list type") from None
+        fields.append(pa.field(field.name, pa.list_(value_type)))
+    return pa.struct(fields)
+
+
+def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.StructArray | pa.ChunkedArray:
+    """Convert all struct-list fields to "normal" list arrays.
+
+    Parameters
+    ----------
+    array : pa.StructArray | pa.ChunkedArray
+        Input struct array whose fields are list-like (e.g. pa.ListArray,
+        pa.LargeListArray or pa.FixedSizeListArray).
+
+    Returns
+    -------
+    pa.StructArray | pa.ChunkedArray
+        Array with all struct-list fields converted to pa.ListArray fields.
+        If no normalization is needed, the original ``array`` is returned.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a struct array (i.e. pa.StructArray or a
+        pa.ChunkedArray with struct type).
+    """
+    if not pa.types.is_struct(array.type):
+        raise ValueError(f"Expected a StructArray, got {array.type}")
+    norm_type = normalize_struct_list_type(array.type)
+    if norm_type == array.type:
+        return array
+    return array.cast(norm_type)

@@ -41,3 +41,4 @@ Functions
     series.ext_array.NestedExtensionArray.set_list_field
     series.ext_array.NestedExtensionArray.fill_field_lists
     series.ext_array.NestedExtensionArray.pop_fields
+    series.ext_array.NestedExtensionArray.is_input_pa_type_supported

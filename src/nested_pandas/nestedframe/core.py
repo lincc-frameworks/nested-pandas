@@ -24,9 +24,9 @@ from nested_pandas.nestedframe.expr import (
     _subexprs_by_nest,
 )
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
-from nested_pandas.series.utils import is_pa_type_a_list
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -68,13 +68,11 @@ class NestedFrame(pd.DataFrame):
             if not isinstance(dtype, pd.ArrowDtype):
                 continue
             pa_type = dtype.pyarrow_dtype
-            if not is_pa_type_a_list(pa_type) and not (struct_list and pa.types.is_struct(pa_type)):
+            if pa.types.is_struct(pa_type) and not struct_list:
                 continue
-            try:
-                nested_dtype = NestedDtype(pa_type)
-            except (TypeError, ValueError):
+            if not NestedExtensionArray.is_input_pa_type_supported(pa_type):
                 continue
-            self[column] = self[column].astype(nested_dtype)
+            self[column] = NestedExtensionArray(pa.array(self[column]))
 
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821
