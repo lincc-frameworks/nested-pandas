@@ -255,7 +255,8 @@ class NestedFrame(pd.DataFrame):
         else:
             raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
 
-    def _is_key_list(self, item):
+    @staticmethod
+    def _is_key_list(item):
         if not is_list_like(item):
             return False
         if is_bool_dtype(item):
@@ -263,11 +264,11 @@ class NestedFrame(pd.DataFrame):
         for k in item:
             if not isinstance(k, str):
                 return False
-            if not self._is_known_column(k):
-                return False
         return True
 
     def _getitem_list(self, item):
+        unknown_cols = [k for k in item if not self._is_known_column(k)]
+        super().__getitem__(unknown_cols)
         non_nested_keys = [k for k in item if k in self.columns]
         result = super().__getitem__(non_nested_keys)
         components = [self._parse_hierarchical_components(k) for k in item]
