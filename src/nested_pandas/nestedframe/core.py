@@ -261,10 +261,7 @@ class NestedFrame(pd.DataFrame):
             return False
         if is_bool_dtype(item):
             return False
-        for k in item:
-            if not isinstance(k, str):
-                return False
-        return True
+        return all(isinstance(k, str) for k in item)
 
     def _getitem_list(self, item):
         unknown_cols = [k for k in item if not self._is_known_column(k)]
