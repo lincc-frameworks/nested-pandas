@@ -20,11 +20,15 @@ is used internally to aid in scalability and performance.
 
 Nested-Pandas allows data like this:
 
-![](https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/pandas_dfs.png)
+<p align="center">
+    <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/pandas_dfs.png" alt="pandas dataframes" width="400"/>
+</p>
 
 To instead be represented like this:
 
-![](https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/nestedframe_example.png)
+<p align="center">
+    <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/nestedframe_example.png" alt="nestedframe" width="300"/>
+</p>
 
 Where the nested data is represented as nested dataframes:
 
@@ -33,7 +37,9 @@ Where the nested data is represented as nested dataframes:
    object_nf.loc[0]["nested_sources"]
 ```
 
-![](https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/loc_into_nested.png)
+<p align="center">
+    <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/loc_into_nested.png" alt="sub-dataframe" width="225"/>
+</p>
 
 Allowing powerful and straightforward operations, like:
 
@@ -48,7 +54,9 @@ Allowing powerful and straightforward operations, like:
    object_nf.map_rows(mean_flux, output_names="mean_flux")
 ```
 
-![](https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/reduce.png)
+<p align="center">
+    <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/reduce.png" alt="using reduce" width="150"/>
+</p>
 
 Nested-Pandas is motivated by time-domain astronomy use cases, where we see
 typically two levels of information, information about astronomical objects and
