@@ -20,13 +20,13 @@ is used internally to aid in scalability and performance.
 
 Nested-Pandas allows data like this:
 
-<p align="center">
+<p align="left">
     <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/pandas_dfs.png" alt="pandas dataframes" width="400"/>
 </p>
 
 To instead be represented like this:
 
-<p align="center">
+<p align="left">
     <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/nestedframe_example.png" alt="nestedframe" width="300"/>
 </p>
 
@@ -37,7 +37,7 @@ Where the nested data is represented as nested dataframes:
    object_nf.loc[0]["nested_sources"]
 ```
 
-<p align="center">
+<p align="left">
     <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/loc_into_nested.png" alt="sub-dataframe" width="225"/>
 </p>
 
@@ -54,7 +54,7 @@ Allowing powerful and straightforward operations, like:
    object_nf.map_rows(mean_flux, output_names="mean_flux")
 ```
 
-<p align="center">
+<p align="left">
     <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/reduce.png" alt="using reduce" width="150"/>
 </p>
 
