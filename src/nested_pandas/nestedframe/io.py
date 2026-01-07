@@ -75,7 +75,7 @@ def read_parquet(
     autocast_list: bool, default=True
         If True, automatically cast list columns to nested columns with NestedDType.
     is_dir: bool, None, default=None
-        If True, the pointer represents a pixel directory, otherwise, the pointer
+        If True, the pointer represents a pixel directory; if False, the pointer
         represents a file. In both cases there is no need to check the pointer's
         content type. If `is_dir` is None (default), this method will resort to
         `upath.is_dir()` to identify the type of pointer. Inferring the type for
@@ -309,10 +309,7 @@ def _is_local_dir(upath: UPath, is_dir: bool | None) -> bool:
         return False
     # For local filesystems, check is_dir if provided, otherwise use upath.is_dir()
     else:
-        if is_dir is None:
-            return upath.is_dir()
-        else:
-            return is_dir
+        return upath.is_dir() if is_dir is None else is_dir
 
 
 def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | None) -> bool:
