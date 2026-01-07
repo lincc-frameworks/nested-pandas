@@ -123,7 +123,7 @@ class NestedFrame(pd.DataFrame):
         # Display nested columns as small html dataframes with a single row
         def repack_row(chunk, header=True):
             # If the chunk is None, just return None
-            if chunk is None:
+            if chunk is None or len(chunk) == 0:
                 return None
             # Grab length, then truncate to one row for display
             n_rows = len(chunk)

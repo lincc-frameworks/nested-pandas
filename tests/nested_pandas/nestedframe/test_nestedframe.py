@@ -72,6 +72,15 @@ def test_html_repr():
     nf._repr_html_()
 
 
+def test_html_repr_empty_list():
+    """Make sure the html representation handles empty lists correctly"""
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[1, 2, 3], []]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    assert base["nested"].iloc[1].empty
+    html = base._repr_html_()
+    assert "+-1 rows" not in html and "None" in html
+
+
 def test_all_columns():
     """Test the all_columns function"""
 
