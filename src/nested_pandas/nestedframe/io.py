@@ -320,11 +320,12 @@ def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | N
     # See details in _read_parquet_into_table docstring.
     if upath.protocol in NO_ITERDIR_FILESYSTEMS:
         return False
+    if is_dir is not None:
+        return is_dir
     if str(orig_data).endswith("/"):
         return True
     if is_dir is None:
         return upath.is_dir()
-    return is_dir
 
 
 def _read_remote_parquet_directory(
