@@ -35,6 +35,7 @@ def read_parquet(
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
     autocast_list: bool = False,
+    is_dir: bool | None = None,
     **kwargs,
 ) -> NestedFrame:
     """Load a parquet object from a file path into a NestedFrame.
@@ -73,6 +74,13 @@ def read_parquet(
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
     autocast_list: bool, default=True
         If True, automatically cast list columns to nested columns with NestedDType.
+    is_dir: bool, None, default=None
+        If True, the pointer represents a pixel directory, otherwise, the pointer
+        represents a file. In both cases there is no need to check the pointer's
+        content type. If `is_dir` is None (default), this method will resort to
+        `upath.is_dir()` to identify the type of pointer. Inferring the type for
+        HTTP is particularly expensive because it requires downloading the contents
+        of the pointer in its entirety.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
@@ -130,7 +138,7 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    table = _read_parquet_into_table(data, columns, **kwargs)
+    table = _read_parquet_into_table(data, columns, is_dir=is_dir, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -193,6 +201,7 @@ def read_parquet(
 def _read_parquet_into_table(
     data: str | UPath | bytes,
     columns: list[str] | None,
+    is_dir: bool | None = None,
     **kwargs,
 ) -> pa.Table:
     """Reads parquet file(s) from path and returns a pyarrow table.
@@ -211,13 +220,13 @@ def _read_parquet_into_table(
     2) because .iter_dir() is likely to return a lot of "junk"
     besides of the actual parquet files.
     """
-    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data)):
+    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data), is_dir=is_dir):
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
         if not filesystem:
             _, filesystem = _transform_read_parquet_data_arg(path_to_data)
         # Will not detect HTTP(S) directories.
-        if _is_remote_dir(data, path_to_data):
+        if _is_remote_dir(data, path_to_data, is_dir=is_dir):
             return _read_remote_parquet_directory(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
@@ -287,24 +296,28 @@ def _validate_structs_from_schema(data, columns=None, filesystem=None):
                             )
 
 
-def _is_local_dir(upath: UPath) -> bool:
+def _is_local_dir(upath: UPath, is_dir: bool | None) -> bool:
     """Returns True if the given path refers to a local directory.
 
     It's necessary to have this function, rather than simply checking
     ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
     expensive in the case of a remote file path that isn't a directory.
     """
-    return upath.protocol in ("", "file") and upath.is_dir()
+    if is_dir is None:
+        is_dir = upath.is_dir()
+    return upath.protocol in ("", "file") and is_dir
 
 
-def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath) -> bool:
+def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | None) -> bool:
     # Iterating over HTTP(S) directories is very difficult, let's just not do that.
     # See details in _read_parquet_into_table docstring.
     if upath.protocol in NO_ITERDIR_FILESYSTEMS:
         return False
     if str(orig_data).endswith("/"):
         return True
-    return upath.is_dir()
+    if is_dir is None:
+        return upath.is_dir()
+    return is_dir
 
 
 def _read_remote_parquet_directory(
