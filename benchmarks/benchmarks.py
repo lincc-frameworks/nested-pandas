@@ -226,7 +226,7 @@ class ReadFewColumnsS3:
 
     def run(self):
         """Run the benchmark."""
-        _ = read_parquet(self.path, columns=self.columns)
+        _ = read_parquet(self.path, columns=self.columns, is_dir=False)
 
     def time_run(self):
         """Benchmark the runtime of read_parquet(self.path, columns=self.columns)"""
@@ -245,7 +245,7 @@ class ReadFewColumnsHTTPS:
 
     def run(self):
         """Run the benchmark."""
-        _ = read_parquet(self.path, columns=self.columns)
+        _ = read_parquet(self.path, columns=self.columns, is_dir=False)
 
     def time_run(self):
         """Benchmark the runtime of read_parquet(self.path, columns=self.columns)"""
