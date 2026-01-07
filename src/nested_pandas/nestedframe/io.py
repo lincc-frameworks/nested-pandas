@@ -303,9 +303,16 @@ def _is_local_dir(upath: UPath, is_dir: bool | None) -> bool:
     ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
     expensive in the case of a remote file path that isn't a directory.
     """
-    if is_dir is None:
-        is_dir = upath.is_dir()
-    return upath.protocol in ("", "file") and is_dir
+
+    # For non-local filesystems, return False right away
+    if upath.protocol not in ("", "file"):
+        return False
+    # For local filesystems, check is_dir if provided, otherwise use upath.is_dir()
+    else:
+        if is_dir is None:
+            return upath.is_dir()
+        else:
+            return is_dir
 
 
 def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | None) -> bool:
