@@ -378,7 +378,7 @@ class NestedFrame(pd.DataFrame):
         return subcols
 
     @deprecated(
-        version="0.6.0", reason="`add_nested` will be removed in version 0.7.0, " "use `join_nested` instead."
+        version="0.6.0", reason="`add_nested` will be removed in version 0.7.0, use `join_nested` instead."
     )
     def add_nested(
         self,
@@ -1828,9 +1828,7 @@ class NestedFrame(pd.DataFrame):
                 return None
             return new_df
 
-    @deprecated(
-        version="0.6.0", reason="`reduce` will be removed in version 0.7.0, " "use `map_rows` instead."
-    )
+    @deprecated(version="0.6.0", reason="`reduce` will be removed in version 0.7.0, use `map_rows` instead.")
     def reduce(self, func, *args, infer_nesting=True, append_columns=False, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
