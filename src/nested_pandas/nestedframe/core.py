@@ -2260,8 +2260,15 @@ class NestedFrame(pd.DataFrame):
                 results_nf[layer] = nested_col
 
         if append_columns:
-            # Append the results to the original NestedFrame
-            return pd.concat([self, results_nf], axis=1)
+            # Append sub-columns to existing nested columns
+            self_nested_cols = [col for col in results_nf.nested_columns if col in self.nested_columns]
+            for col in self_nested_cols:
+                sub_columns = results_nf.get_subcolumns(col)
+                for sub_col in sub_columns:
+                    self = self.assign(**{f"{sub_col}": results_nf[sub_col]})
+            # Append other base and nested columns
+            base_results_nf = results_nf.drop(columns=self_nested_cols)
+            return pd.concat([self, base_results_nf], axis=1)
 
         # Otherwise, return the results as a new NestedFrame
         return results_nf
