@@ -150,9 +150,7 @@ class NestSeriesAccessor(Mapping):
         return self._series.array.flat_length
 
     @property
-    @deprecated(
-        version="0.6.0", reason="`fields` will be removed in version 0.7.0, " "use `columns` instead."
-    )
+    @deprecated(version="0.6.0", reason="`fields` will be removed in version 0.7.0, use `columns` instead.")
     def fields(self) -> list[str]:
         """Names of the nested columns"""
         return self.columns
@@ -171,7 +169,7 @@ class NestSeriesAccessor(Mapping):
         return flat_index
 
     @deprecated(
-        version="0.6.0", reason="`with_field` will be removed in version 0.7.0, " "use `set_column` instead."
+        version="0.6.0", reason="`with_field` will be removed in version 0.7.0, use `set_column` instead."
     )
     def with_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
@@ -241,7 +239,7 @@ class NestSeriesAccessor(Mapping):
 
     @deprecated(
         version="0.6.0",
-        reason="`with_flat_field` will be removed in version 0.7.0, " "use `set_flat_column` instead.",
+        reason="`with_flat_field` will be removed in version 0.7.0, use `set_flat_column` instead.",
     )
     def with_flat_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
@@ -311,7 +309,7 @@ class NestSeriesAccessor(Mapping):
 
     @deprecated(
         version="0.6.0",
-        reason="`with_list_field` will be removed in version 0.7.0, " "use `set_list_column` instead.",
+        reason="`with_list_field` will be removed in version 0.7.0, use `set_list_column` instead.",
     )
     def with_list_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from list-array of values and return a new series
@@ -385,7 +383,7 @@ class NestSeriesAccessor(Mapping):
 
     @deprecated(
         version="0.6.0",
-        reason="`with_filled_field` will be removed in version 0.7.0, " "use `set_filled_column` instead.",
+        reason="`with_filled_field` will be removed in version 0.7.0, use `set_filled_column` instead.",
     )
     def with_filled_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field by repeating values and return a new series
@@ -464,7 +462,7 @@ class NestSeriesAccessor(Mapping):
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
     @deprecated(
-        version="0.6.0", reason="`without_field` will be removed in version 0.7.0, " "use `drop` instead."
+        version="0.6.0", reason="`without_field` will be removed in version 0.7.0, use `drop` instead."
     )
     def without_field(self, field: str | list[str]) -> NestedSeries:
         """Remove the field(s) from the series and return a new series
@@ -533,9 +531,7 @@ class NestSeriesAccessor(Mapping):
         new_array.pop_fields(column)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
-    @deprecated(
-        version="0.6.0", reason="`query_flat` will be removed in version 0.7.0, " "use `query` instead."
-    )
+    @deprecated(version="0.6.0", reason="`query_flat` will be removed in version 0.7.0, use `query` instead.")
     def query_flat(self, query: str) -> NestedSeries:
         """Query the flat arrays with a boolean expression
 
@@ -610,7 +606,7 @@ class NestSeriesAccessor(Mapping):
 
     @deprecated(
         version="0.6.0",
-        reason="`get_flat_index` will be removed in version 0.7.0, " "use the `flat_index` property instead.",
+        reason="`get_flat_index` will be removed in version 0.7.0, use the `flat_index` property instead.",
     )
     def get_flat_index(self) -> pd.Index:
         """Index of the flat arrays
@@ -635,7 +631,7 @@ class NestSeriesAccessor(Mapping):
 
     @deprecated(
         version="0.6.0",
-        reason="`get_flat_series` will be removed in version 0.7.0, " "use `to_flat()[column]` instead.",
+        reason="`get_flat_series` will be removed in version 0.7.0, use `to_flat()[column]` instead.",
     )
     def get_flat_series(self, field: str) -> pd.Series:
         """Get the flat-array field as a pd.Series
@@ -692,7 +688,7 @@ class NestSeriesAccessor(Mapping):
 
     @deprecated(
         version="0.6.0",
-        reason="`get_list_series` will be removed in version 0.7.0, " "use `to_lists()[column]` instead.",
+        reason="`get_list_series` will be removed in version 0.7.0, use `to_lists()[column]` instead.",
     )
     def get_list_series(self, field: str) -> pd.Series:
         """Get the list-array field as a Series
