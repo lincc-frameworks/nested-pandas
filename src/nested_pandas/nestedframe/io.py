@@ -78,9 +78,9 @@ def read_parquet(
         If True, the pointer represents a pixel directory; if False, the pointer
         represents a file. In both cases there is no need to check the pointer's
         content type. If `is_dir` is None (default), this method will resort to
-        `upath.is_dir()` to identify the type of pointer. Inferring the type for
-        HTTP is particularly expensive because it requires downloading the contents
-        of the pointer in its entirety.
+        `upath.is_dir()` to identify the type of pointer. This argument is ignored
+        for HTTP, as inferring the type for HTTP is particularly expensive because
+        it requires downloading the contents of the pointer in its entirety.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
