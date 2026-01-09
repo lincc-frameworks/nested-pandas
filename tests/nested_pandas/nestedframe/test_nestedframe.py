@@ -1233,28 +1233,28 @@ def test_map_rows():
 
 def test_map_rows_append_subcolumn():
     """Tests that we can append nested sub-columns using map_rows."""
+    nf = generate_data(5, 4, seed=1)
 
     def create_columns(flux):
         """Add base column, and two nested sub-columns."""
         return {"c": flux.max(), "nested.x": flux - flux.mean(), "other.y": flux * 2}
 
-    nf = generate_data(5, 4, seed=1)
     result = nf.map_rows(create_columns, columns=["nested.flux"], row_container="args", append_columns=True)
     assert isinstance(result, NestedFrame)
     assert len(nf) == len(result)
 
     result_c = list(result.columns)
     nf_c = list(nf.columns)
-    # There is a new base column "c"
+    assert nf_c == ["a", "b", "nested"]
+    # There are two new columns ("c" and "other")
     assert result_c == nf_c + ["c", "other"]
-    # There is only one base column named "nested"
-    assert result_c.count("nested") == 1
-    # The "nested" column should contain "nested.x".
-    # The "other" column will contain "other.y".
-    assert result.get_subcolumns() == nf.get_subcolumns() + ["nested.x", "other.y"]
+    # There is one sub-column for the new "other" nested column
+    assert result.get_subcolumns("other") == ["other.y"]
+    # There is a new sub-column for the existing "nested" nested column
+    assert result.get_subcolumns("nested") == nf.get_subcolumns("nested") + ["nested.x"]
 
-    # Check the values were calculated correctly
     for i in range(len(result)):
+        # Check the values are correct for each row
         result_row = result.iloc[i]
         nf_row_flux = nf.iloc[i]["nested"]["flux"]
         assert result_row["c"] == nf_row_flux.max()
