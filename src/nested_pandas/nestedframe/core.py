@@ -2041,7 +2041,11 @@ class NestedFrame(pd.DataFrame):
             will be returned as base columns. Note that this will trigger off of names specified in
             `output_names` in addition to names returned by the user function.
         append_columns : bool, default False
-            if True, the output columns should be appended to those in the original NestedFrame.
+            If True, the output columns are appended to those in the original NestedFrame.
+            The output columns can contain nested sub-columns, which should be specified using their
+            hierarchical column name (e.g. "nested.x"). If their base nested column exists in the
+            original NestedFrame, the new output sub-columns will be added into the frame of the
+            existing nested column. See an example in the Notes.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -2148,6 +2152,27 @@ class NestedFrame(pd.DataFrame):
         3  [{t_a: 17.260016, t_b: 16.768814}; …] (5 rows)
         4   [{t_a: 0.400996, t_b: -0.529882}; …] (5 rows)
 
+        You may also want to append the output columns to the original NestedFrame.
+        We can achieve this by using the `append_columns` kwarg:
+
+        >>> # define a custom user function that creates a nested sub-column
+        >>> def example_func(row):
+        ...     '''map_rows will return a sub-column for the existing 'nested' column'''
+        ...     return row["nested.t"] - row["a"]
+
+        >>> # apply the function with `append_columns` (False by default)
+        >>> nf.map_rows(example_func,
+        ...             columns=["a", "nested.t"],
+        ...             output_names=["nested.t_a"],
+        ...             append_columns=True)
+                  a         b                                             nested
+        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, band: 'r', t_a:...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g', t_a...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g', t_a...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g', t_a...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g', t_a...
+
+
         Notes
         -----
         If concerned about performance, specify `columns` to only include the columns
@@ -2201,6 +2226,8 @@ class NestedFrame(pd.DataFrame):
             requested_columns.append((layer, col))
 
         # Construct row containers and apply
+        results = []
+
         if row_container == "dict":
             arg_dict = {}
             for layer, col in requested_columns:
@@ -2224,7 +2251,12 @@ class NestedFrame(pd.DataFrame):
 
             results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
 
-        results_nf = NestedFrame(results, index=self.index)
+        # If the func returns a single array per row wrap results in a `NestedSeries`.
+        # Otherwise, Pandas will try to expand array elements into separate columns.
+        if results and isinstance(results[0], np.ndarray):
+            results_nf = NestedFrame(NestedSeries(results), index=self.index)
+        else:
+            results_nf = NestedFrame(results, index=self.index)
 
         # Override output names if specified
         if output_names is not None:
