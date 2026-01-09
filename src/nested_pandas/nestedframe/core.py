@@ -2045,7 +2045,7 @@ class NestedFrame(pd.DataFrame):
             The output columns can contain nested sub-columns, which should be specified using their
             hierarchical column name (e.g. "nested.x"). If their base nested column exists in the
             original NestedFrame, the new output sub-columns will be added into the frame of the
-            existing nested column. See an example in the Notes.
+            existing nested column. See an example below.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
