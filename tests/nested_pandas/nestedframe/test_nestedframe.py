@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -255,14 +257,15 @@ def test_get_nested_columns_errors():
 
     base = base.join_nested(nested, "nested")
 
-    with pytest.raises(KeyError):
-        base[["a", "c"]]
-
-    with pytest.raises(KeyError):
-        base[["a", "nested.g"]]
-
-    with pytest.raises(KeyError):
-        base[["a", "nested.a", "wrong.b"]]
+    # Escaping the list of columns for a strict check
+    with pytest.raises(KeyError, match=re.escape("['c']")):
+        _ = base[["a", "c"]]
+    with pytest.raises(KeyError, match=re.escape("['nested.g']")):
+        _ = base[["a", "nested.c", "nested.g"]]
+    with pytest.raises(KeyError, match=re.escape("['wrong.b']")):
+        _ = base[["a", "nested.c", "wrong.b"]]
+    with pytest.raises(KeyError, match=re.escape("['c', 'wrong.b']")):
+        _ = base[["c", "nested.c", "wrong.b"]]
 
 
 def test_getitem_empty_bool_array():
