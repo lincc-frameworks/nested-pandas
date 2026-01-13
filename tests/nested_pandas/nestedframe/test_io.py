@@ -461,6 +461,60 @@ def test__get_storage_options():
     assert storage_opts.get("block_size") != FSSPEC_BLOCK_SIZE
 
 
+def test__is_local_dir():
+    """Test the _is_local_dir function with various scenarios."""
+    from nested_pandas.nestedframe.io import _is_local_dir
+
+    # Local path that is a directory
+    local_dir = UPath("tests/test_data")
+    assert _is_local_dir(local_dir, is_dir=True) is True
+    assert _is_local_dir(local_dir, is_dir=False) is False
+    assert _is_local_dir(local_dir, is_dir=None) is True
+
+    # Local path that is a file
+    local_file = UPath("tests/test_data/nested.parquet")
+    assert _is_local_dir(local_file, is_dir=True) is True
+    assert _is_local_dir(local_file, is_dir=False) is False
+    assert _is_local_dir(local_file, is_dir=None) is False
+
+    # Remote path (should always return False)
+    remote_path = UPath("https://example.com/data.parquet")
+    assert _is_local_dir(remote_path, is_dir=True) is False
+    assert _is_local_dir(remote_path, is_dir=False) is False
+    assert _is_local_dir(remote_path, is_dir=None) is False
+
+
+def test__is_remote_dir():
+    """Test the _is_remote_dir function with various scenarios."""
+    from nested_pandas.nestedframe.io import _is_remote_dir
+
+    # Local path that is a directory
+    local_dir = UPath("tests/test_data")
+    assert _is_remote_dir("tests/test_data", local_dir, is_dir=True) is True
+    assert _is_remote_dir("tests/test_data", local_dir, is_dir=False) is False
+    assert _is_remote_dir("tests/test_data", local_dir, is_dir=None) is True
+
+    # Local path that is a file
+    local_file = UPath("tests/test_data/nested.parquet")
+    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=True) is True
+    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=False) is False
+    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=None) is False
+
+    # Remote file path
+    remote_path = UPath("https://example.com/data.parquet")
+    # In this case, the override is overruled by a protocol check
+    assert _is_remote_dir("https://example.com/data.parquet", remote_path, is_dir=True) is False
+    assert _is_remote_dir("https://example.com/data.parquet", remote_path, is_dir=False) is False
+    assert _is_remote_dir("https://example.com/data.parquet", remote_path, is_dir=None) is False
+
+    # Remote directory path
+    remote_dir_path = UPath("https://example.com/data/")
+    # Also overruled by protocol check not supporting https
+    assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=True) is False
+    assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=False) is False
+    assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=None) is False
+
+
 def test_list_struct_partial_loading_error():
     """Test that attempting to partially load a list-struct raises an error."""
     # Load in the example file
