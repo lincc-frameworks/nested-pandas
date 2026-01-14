@@ -1350,6 +1350,19 @@ class NestedFrame(pd.DataFrame):
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
         answer = super().eval(expr, **kwargs)
+
+        # If the result is a _SeriesFromNest, set the metadata manually
+        # This is a bit of a hack, as it's a backstop for super().eval()
+        # not propagating the metadata correctly, `for some reason`.
+        # Furthermore, it relies on the assumption that the first resolver
+        # is the only one that matters. Because we disallow multi-layer
+        # queries, this is potentially safe, though eval statements that target
+        # multiple nests may have strange behavior.
+        if isinstance(answer, _SeriesFromNest):
+            nest_key = list(kwargs["resolvers"][0].keys())[0]
+            answer.nest_name = kwargs["resolvers"][0][nest_key]._nest_name
+            answer.flat_nest = kwargs["resolvers"][0][nest_key]._flat_nest
+
         self._aliases = None
         return answer
 
