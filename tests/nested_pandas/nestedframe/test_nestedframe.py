@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -70,6 +72,15 @@ def test_html_repr():
     # Check repr truncation for larger nf
     nf = generate_data(100, 2)
     nf._repr_html_()
+
+
+def test_html_repr_empty_list():
+    """Make sure the html representation handles empty lists correctly"""
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[1, 2, 3], []]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    assert base["nested"].iloc[1].empty
+    html = base._repr_html_()
+    assert "+-1 rows" not in html and "None" in html
 
 
 def test_all_columns():
@@ -246,14 +257,15 @@ def test_get_nested_columns_errors():
 
     base = base.join_nested(nested, "nested")
 
-    with pytest.raises(KeyError):
-        base[["a", "c"]]
-
-    with pytest.raises(KeyError):
-        base[["a", "nested.g"]]
-
-    with pytest.raises(KeyError):
-        base[["a", "nested.a", "wrong.b"]]
+    # Escaping the list of columns for a strict check
+    with pytest.raises(KeyError, match=re.escape("['c']")):
+        _ = base[["a", "c"]]
+    with pytest.raises(KeyError, match=re.escape("['nested.g']")):
+        _ = base[["a", "nested.c", "nested.g"]]
+    with pytest.raises(KeyError, match=re.escape("['wrong.b']")):
+        _ = base[["a", "nested.c", "wrong.b"]]
+    with pytest.raises(KeyError, match=re.escape("['c', 'wrong.b']")):
+        _ = base[["c", "nested.c", "wrong.b"]]
 
 
 def test_getitem_empty_bool_array():
@@ -1220,6 +1232,37 @@ def test_map_rows():
         # The original columns should still be present
         assert result["packed.c"].values[i] == to_pack["c"].values[i]
         assert result["packed.d"].values[i] == to_pack["d"].values[i]
+
+
+def test_map_rows_append_subcolumn():
+    """Tests that we can append nested sub-columns using map_rows."""
+    nf = generate_data(5, 4, seed=1)
+
+    def create_columns(flux):
+        """Add base column, and two nested sub-columns."""
+        return {"c": flux.max(), "nested.x": flux - flux.mean(), "other.y": flux * 2}
+
+    result = nf.map_rows(create_columns, columns=["nested.flux"], row_container="args", append_columns=True)
+    assert isinstance(result, NestedFrame)
+    assert len(nf) == len(result)
+
+    result_c = list(result.columns)
+    nf_c = list(nf.columns)
+    assert nf_c == ["a", "b", "nested"]
+    # There are two new columns ("c" and "other")
+    assert result_c == nf_c + ["c", "other"]
+    # There is one sub-column for the new "other" nested column
+    assert result.get_subcolumns("other") == ["other.y"]
+    # There is a new sub-column for the existing "nested" nested column
+    assert result.get_subcolumns("nested") == nf.get_subcolumns("nested") + ["nested.x"]
+
+    for i in range(len(result)):
+        # Check the values are correct for each row
+        result_row = result.iloc[i]
+        nf_row_flux = nf.iloc[i]["nested"]["flux"]
+        assert result_row["c"] == nf_row_flux.max()
+        assert all(result_row["nested"]["x"] == nf_row_flux - nf_row_flux.mean())
+        assert all(result_row["other"]["y"] == nf_row_flux * 2)
 
 
 def test_map_rows_duplicated_cols():
