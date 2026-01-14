@@ -1358,7 +1358,7 @@ class NestedFrame(pd.DataFrame):
         # is the only one that matters. Because we disallow multi-layer
         # queries, this is potentially safe, though eval statements that target
         # multiple nests may have strange behavior.
-        if isinstance(answer, _SeriesFromNest):
+        if isinstance(answer, _SeriesFromNest) and not hasattr(answer, "nest_name"):
             nest_key = list(kwargs["resolvers"][0].keys())[0]
             answer.nest_name = kwargs["resolvers"][0][nest_key]._nest_name
             answer.flat_nest = kwargs["resolvers"][0][nest_key]._flat_nest
