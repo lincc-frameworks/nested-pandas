@@ -209,6 +209,23 @@ def test_nestedseries_explode():
     assert flat_df.shape == (4, 2)
 
 
+def test_nestedseries_explode_single_column():
+    """Test explode method of NestedSeries for a single column."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    flat_series = series.explode(columns="a")
+    assert isinstance(flat_series, pd.DataFrame)
+    assert flat_series.columns == ["a"]
+    assert flat_series.shape == (4, 1)
+
+
 def test_nestedseries_to_lists():
     """Test to_lists method of NestedSeries."""
     series = NestedSeries(
@@ -221,6 +238,23 @@ def test_nestedseries_to_lists():
     )
 
     lists = series.to_lists()
+    assert len(lists) == 2
+    assert lists["a"][0] == [1, 2]
+    assert lists["a"][1] == [3, 4]
+
+
+def test_nestedseries_to_lists_single_column():
+    """Test to_lists method of NestedSeries for a single column."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    lists = series.to_lists(columns="a")
     assert len(lists) == 2
     assert lists["a"][0] == [1, 2]
     assert lists["a"][1] == [3, 4]
