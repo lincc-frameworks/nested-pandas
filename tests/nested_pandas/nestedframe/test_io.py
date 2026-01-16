@@ -541,3 +541,18 @@ def test_read_parquet_with_fixed_length_list_struct():
     nf = read_parquet("tests/fixed_size_list_data/fixed-size-list-struct.parquet")
     assert nf.shape == (5, 3)
     assert nf.nested_columns == ["fixed_nested"]
+
+
+@pytest.mark.parametrize("size", [5000, 500_000, 5_000_000])
+def test_issue_428(size):
+    """Partial loading fsspec issue: https://github.com/lincc-frameworks/nested-pandas/issues/428"""
+
+    # Initialize a temp file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "tmp.parquet")
+
+        # Generate and write the data
+        generate_data(size, 3).to_parquet(file_path)
+        nf = read_parquet(file_path, columns=["nested.t"])
+        assert nf.columns == ["nested"]
+        assert nf.nested.nest.columns == ["t"]
