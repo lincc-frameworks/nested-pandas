@@ -135,13 +135,13 @@ class NestedSeries(pd.Series):
         return self.explode(columns=fields)
 
     @nested_only
-    def explode(self, columns: list[str] | None = None) -> pd.DataFrame:
+    def explode(self, columns: list[str] | str | None = None) -> pd.DataFrame:
         """Unpack nested series into dataframe of flat arrays.
 
         Parameters
         ----------
-        columns : list[str] or None, optional
-            Names of the columns to include. Default is None, which means all columns.
+        columns : list[str] or str or None, optional
+            Names of the column(s) to include. Default is None, which means all columns.
 
         Returns
         -------
@@ -171,13 +171,13 @@ class NestedSeries(pd.Series):
         return self.nest.to_flat(columns=columns)
 
     @nested_only
-    def to_lists(self, columns: list[str] | None = None) -> pd.DataFrame:
+    def to_lists(self, columns: list[str] | str | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns.
 
         Parameters
         ----------
-        columns : list[str] or None, optional
-            Names of the columns to include. Default is None, which means all columns.
+        columns : list[str] or str or None, optional
+            Names of the column(s) to include. Default is None, which means all columns.
 
         Returns
         -------

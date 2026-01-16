@@ -41,13 +41,13 @@ class NestSeriesAccessor(Mapping):
         if not isinstance(dtype, NestedDtype):
             raise AttributeError(f"Can only use .nest accessor with a Series of NestedDtype, got {dtype}")
 
-    def to_lists(self, columns: list[str] | None = None) -> pd.DataFrame:
+    def to_lists(self, columns: list[str] | str | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns
 
         Parameters
         ----------
-        columns : list[str] or None, optional
-            Names of the columns to include. Default is None, which means all columns.
+        columns : list[str] or str or None, optional
+            Names of the column(s) to include. Default is None, which means all columns.
 
         Returns
         -------
@@ -69,6 +69,10 @@ class NestSeriesAccessor(Mapping):
         4    [0.54775186 3.96202978]  [87.63891523 87.81425034]  ['g' 'r']
         """
         columns = columns if columns is not None else list(self._series.array.field_names)
+
+        if isinstance(columns, str):
+            columns = [columns]
+
         if len(columns) == 0:
             raise ValueError("Cannot convert a struct with no fields to lists")
 
@@ -77,13 +81,13 @@ class NestSeriesAccessor(Mapping):
 
         return list_df
 
-    def to_flat(self, columns: list[str] | None = None) -> pd.DataFrame:
+    def to_flat(self, columns: list[str] | str | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of flat arrays
 
         Parameters
         ----------
-        columns : list[str] or None, optional
-            Names of the columns to include. Default is None, which means all columns.
+        columns : list[str] or str or None, optional
+            Names of the column(s) to include. Default is None, which means all columns.
 
         Returns
         -------
@@ -111,6 +115,10 @@ class NestSeriesAccessor(Mapping):
 
         """
         columns = columns if columns is not None else list(self._series.array.field_names)
+
+        if isinstance(columns, str):
+            columns = [columns]
+
         if len(columns) == 0:
             raise ValueError("Cannot flatten a struct with no columns")
 
