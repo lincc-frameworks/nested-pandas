@@ -2266,7 +2266,7 @@ class NestedFrame(pd.DataFrame):
         # If the func returns a single array per row wrap results in a `NestedSeries`.
         # Otherwise, Pandas will try to expand array elements into separate columns.
         if results and isinstance(results[0], np.ndarray):
-            results_nf = NestedFrame(NestedSeries(results), index=self.index)
+            results_nf = NestedFrame(NestedSeries(results, index=self.index))
         else:
             results_nf = NestedFrame(results, index=self.index)
 

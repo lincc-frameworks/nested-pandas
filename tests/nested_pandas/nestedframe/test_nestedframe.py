@@ -1265,6 +1265,36 @@ def test_map_rows_append_subcolumn():
         assert all(result_row["other"]["y"] == nf_row_flux * 2)
 
 
+def test_map_rows_nestedframe_creation():
+    """Tests the creation of NestedFrame in `map_rows`, when the results
+    consist of one array per row."""
+    nf = generate_data(5, 4, seed=1)
+
+    # Set some non-default indices to test that the creation of
+    # NestedFrame aligns the results by the indices correctly.
+    nf = nf.set_index(np.arange(10003, 10008))
+
+    def create_columns(flux):
+        """Return a single array per row"""
+        return flux - flux.mean()
+
+    result = nf.map_rows(
+        create_columns,
+        columns=["nested.flux"],
+        output_names=["nested.x"],
+        row_container="args",
+        append_columns=True,
+    )
+    assert isinstance(result, NestedFrame)
+    assert len(nf) == len(result)
+
+    for i in range(len(result)):
+        # Check the values are correct for each row
+        result_row = result.iloc[i]
+        nf_row_flux = nf.iloc[i]["nested"]["flux"]
+        assert all(result_row["nested"]["x"] == nf_row_flux - nf_row_flux.mean())
+
+
 def test_map_rows_duplicated_cols():
     """Tests nf.map_rows() to correctly handle duplicated column names."""
     nf = NestedFrame(
