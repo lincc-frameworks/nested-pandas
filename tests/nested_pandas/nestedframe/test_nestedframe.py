@@ -4,11 +4,12 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from pandas.testing import assert_frame_equal, assert_index_equal
+
 from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
 from nested_pandas.series.packer import pack_lists
-from pandas.testing import assert_frame_equal, assert_index_equal
 
 
 def test_nestedframe_construction():
