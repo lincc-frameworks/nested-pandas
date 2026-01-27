@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Literal
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -27,10 +28,8 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 from nested_pandas.series.utils import is_pa_type_a_list
-from numba import njit
 from numba.core.registry import CPUDispatcher
-from numba.core import types
-from numba.typed import Dict
+from . import njit_funcs
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -2219,71 +2218,15 @@ class NestedFrame(pd.DataFrame):
             ]
 
         elif row_container == "args":
-
-            # for testing
-            _force_python = kwargs.pop("_force_python", False)
-            
-            # check if func is jitted by numba
-            if not _force_python and isinstance(func, CPUDispatcher):
-                if len(requested_columns) == 2:
-                    # directly get the two requested columns for 2-column case
-                    layer1, col1_name = requested_columns[0]
-                    layer2, col2_name = requested_columns[1]
-                    
-                    if layer1 == "base" and layer2 == "base":
-                        base_col1 = np.asarray(self[col1_name])
-                        base_col2 = np.asarray(self[col2_name])
-
-                        results = _map_rows_njit2_base_base(func, base_col1, base_col2)
-                    elif layer1 == "base":
-                        base_col1 = np.asarray(self[col1_name])
-
-                        nested_array2 = self[layer2]
-                        offsets = np.asarray(nested_array2.array.list_offsets)
-                        col2 = np.asarray(nested_array2[col2_name])
-
-                        results = _map_rows_njit2_base_nest(func, base_col1, offsets, col2)
-                    elif layer2 == "base":
-                        nested_array1 = self[layer1]
-                        offsets = np.asarray(nested_array1.array.list_offsets)
-                        col1 = np.asarray(nested_array1[col1_name])
-
-                        base_col2 = np.asarray(self[col2_name])
-
-                        results = _map_rows_njit2_nest_base(func, offsets, col1, base_col2)
-                    else: 
-                        nested_array1 = self[layer1]
-                        nested_array2 = self[layer2]
-
-                        # TODO: need to check that both requested columns have same length so same offsets?
-                        offsets1 = np.asarray(nested_array1.array.list_offsets)
-                        offsets2 = np.asarray(nested_array2.array.list_offsets)
-                        col1 = np.asarray(nested_array1[col1_name])
-                        col2 = np.asarray(nested_array2[col2_name])
-
-                        results = _map_rows_njit2_nest_nest(func, offsets1, offsets2, col1, col2)
-
-                elif len(requested_columns) == 1:
-                    layer, col_name = requested_columns[0]
-                    if (layer == "base"):
-                        base_col = np.asarray(self[col_name])
-                        results = _map_rows_njit1_base(func, base_col)
-                    else:
-                        nested_array = self[layer]
-
-                        offsets = np.asarray(nested_array.array.list_offsets)
-                        col = np.asarray(nested_array[col_name])
-
-                        results = _map_rows_njit1(func, offsets, col)
-
-                # elif len(requested_columns) == 3:
-                    # not implemented yet 
-
-                else:
-                    # or maybe fall back to normal implementation
-                    raise NotImplementedError("map_rows only supports 1 or 2 arguments for njit function")
-
-            else:
+            # check if func is jitted by numba and fits the criteria
+            if not isinstance(func, CPUDispatcher) or len(requested_columns) > 2:
+                if len(requested_columns) > 2:
+                    warnings.warn(
+                        "For performance, njit functions with `row_container='args'` "
+                        "only support 1 or 2 arguments. "
+                        "Falling back to non-jitted execution.",
+                        stacklevel=2,
+                    )
                 # Build iterators for each column
                 iterators = []
                 for layer, col in requested_columns:
@@ -2293,6 +2236,58 @@ class NestedFrame(pd.DataFrame):
                         iterators.append(self[layer].array.iter_field_lists(col))
 
                 results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
+            else:
+                if len(requested_columns) == 2:
+                    # directly get the two requested columns for 2-column case
+                    layer1, col1_name = requested_columns[0]
+                    layer2, col2_name = requested_columns[1]
+                    
+                    if layer1 == "base" and layer2 == "base":
+                        base_col1 = np.asarray(self[col1_name])
+                        base_col2 = np.asarray(self[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_base_base(func, base_col1, base_col2)
+                    elif layer1 == "base":
+                        base_col1 = np.asarray(self[col1_name])
+
+                        nested_array2 = self[layer2]
+                        offsets = np.asarray(nested_array2.array.list_offsets)
+                        col2 = np.asarray(nested_array2[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_base_nest(func, base_col1, offsets, col2)
+                    elif layer2 == "base":
+                        nested_array1 = self[layer1]
+                        offsets = np.asarray(nested_array1.array.list_offsets)
+                        col1 = np.asarray(nested_array1[col1_name])
+
+                        base_col2 = np.asarray(self[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_nest_base(func, offsets, col1, base_col2)
+                    else: 
+                        nested_array1 = self[layer1]
+                        nested_array2 = self[layer2]
+                        offsets1 = np.asarray(nested_array1.array.list_offsets)
+                        offsets2 = np.asarray(nested_array2.array.list_offsets)
+                        col1 = np.asarray(nested_array1[col1_name])
+                        col2 = np.asarray(nested_array2[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_nest_nest(func, offsets1, offsets2, col1, col2)
+
+                elif len(requested_columns) == 1:
+                    layer, col_name = requested_columns[0]
+                    if (layer == "base"):
+                        base_col = np.asarray(self[col_name])
+                        results = njit_funcs._map_rows_njit1_base(func, base_col)
+                    else:
+                        nested_array = self[layer]
+
+                        offsets = np.asarray(nested_array.array.list_offsets)
+                        col = np.asarray(nested_array[col_name])
+
+                        results = njit_funcs._map_rows_njit1_nested(func, offsets, col)
+                else:
+                    # Should only happen when len(requested_columns) == 0, which is invalid
+                    raise NotImplementedError("map_rows only supports 1 or 2 arguments for njit user function")
 
         results_nf = NestedFrame(results, index=self.index)
 
@@ -2411,91 +2406,3 @@ class NestedFrame(pd.DataFrame):
         table = table.cast(pa.schema([field for field in table.schema]))
 
         return pq.write_table(table, path, **kwargs)
-
-
-@njit
-def _map_rows_njit2_nest_nest(func, offsets1, offsets2, col1, col2):
-    """
-    func: numba-jit function taking 2 scalar args from nested column (must be same length)
-    col1, col2: 1D numpy arrays corresponding to flattened nested column data
-    """
-    # TODO: this might not be the most safe if offsets1 and offsets2 are different
-    out = np.empty(offsets1.size - 1)
-
-    for i in range(out.size):
-        start, end = offsets1[i], offsets2[i + 1]
-        out[i] = func(col1[start:end], col2[start:end])
-
-    return out
-
-@njit
-def _map_rows_njit2_base_nest(func, offsets, base_col1, col2):
-    """
-    func: numba-jit function taking 1 scalar arg from base column
-    base_col1: 1D numpy array of the base column for the first argument
-    col2: 1D numpy array corresponding to flattened nested column data for the second argument
-    """
-    out = np.empty(offsets.size - 1)
-
-    for i in range(out.size):
-        start, end = offsets[i], offsets[i + 1]
-        out[i] = func(base_col1[i], col2[start:end])
-
-    return out
-
-@njit
-def _map_rows_njit2_nest_base(func, offsets, col1, base_col2):
-    """
-    func: numba-jit function taking 1 scalar arg from base column
-    col1: 1D numpy array corresponding to flattened nested column data for the first argument
-    base_col2: 1D numpy array of the base column for the second argument
-    """
-    out = np.empty(offsets.size - 1)
-
-    for i in range(out.size):
-        start, end = offsets[i], offsets[i + 1]
-        out[i] = func(col1[start:end], base_col2[i])
-
-    return out
-
-@njit
-def _map_rows_njit2_base_base(func, base_col1, base_col2):
-    """
-    func: numba-jit function taking 1 scalar arg from base column
-    base_col1: 1D numpy array of the base column for the first argument
-    base_col2: 1D numpy array of the base column for the second argument
-    """
-    out = np.empty(base_col1.size)
-
-    for i in range(out.size):
-        out[i] = func(base_col1[i], base_col2[i])
-
-    return out
-
-@njit
-def _map_rows_njit1(func, offsets, col):
-    """
-    func: numba-jit function taking 1 scalar arg from nested column
-    col: 1D numpy array corresponding to flattened nested column data
-    """
-    out = np.empty(offsets.size - 1)
-
-    for i in range(out.size):
-        start, end = offsets[i], offsets[i + 1]
-        out[i] = func(col[start:end])
-
-    return out
-
-@njit
-def _map_rows_njit1_base(func, base_col):
-    """
-    func: numba-jit function taking 1 scalar arg from base column
-    base_col: 1D numpy array of the base column
-    """
-
-    out = np.empty(base_col.size)
-
-    for i in range(out.size):
-        out[i] = func(base_col[i])
-    
-    return out
