@@ -253,19 +253,18 @@ class NestedFrame(pd.DataFrame):
         else:
             raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
 
-    def _is_key_list(self, item):
+    @staticmethod
+    def _is_key_list(item):
         if not is_list_like(item):
             return False
         if is_bool_dtype(item):
             return False
-        for k in item:
-            if not isinstance(k, str):
-                return False
-            if not self._is_known_column(k):
-                return False
-        return True
+        return all(isinstance(k, str) for k in item)
 
     def _getitem_list(self, item):
+        unknown_cols = [k for k in item if not self._is_known_column(k)]
+        if unknown_cols:
+            raise KeyError(f"{unknown_cols} not in index")
         non_nested_keys = [k for k in item if k in self.columns]
         result = super().__getitem__(non_nested_keys)
         components = [self._parse_hierarchical_components(k) for k in item]
@@ -1351,6 +1350,19 @@ class NestedFrame(pd.DataFrame):
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
         answer = super().eval(expr, **kwargs)
+
+        # If the result is a _SeriesFromNest, set the metadata manually
+        # This is a bit of a hack, as it's a backstop for super().eval()
+        # not propagating the metadata correctly, `for some reason`.
+        # Furthermore, it relies on the assumption that the first resolver
+        # is the only one that matters. Because we disallow multi-layer
+        # queries, this is potentially safe, though eval statements that target
+        # multiple nests may have strange behavior.
+        if isinstance(answer, _SeriesFromNest) and not hasattr(answer, "nest_name"):
+            nest_key = list(kwargs["resolvers"][0].keys())[0]
+            answer.nest_name = kwargs["resolvers"][0][nest_key]._nest_name
+            answer.flat_nest = kwargs["resolvers"][0][nest_key]._flat_nest
+
         self._aliases = None
         return answer
 
@@ -2039,7 +2051,11 @@ class NestedFrame(pd.DataFrame):
             will be returned as base columns. Note that this will trigger off of names specified in
             `output_names` in addition to names returned by the user function.
         append_columns : bool, default False
-            if True, the output columns should be appended to those in the original NestedFrame.
+            If True, the output columns are appended to those in the original NestedFrame.
+            The output columns can contain nested sub-columns, which should be specified using their
+            hierarchical column name (e.g. "nested.x"). If their base nested column exists in the
+            original NestedFrame, the new output sub-columns will be added into the frame of the
+            existing nested column. See an example below.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -2146,6 +2162,27 @@ class NestedFrame(pd.DataFrame):
         3  [{t_a: 17.260016, t_b: 16.768814}; …] (5 rows)
         4   [{t_a: 0.400996, t_b: -0.529882}; …] (5 rows)
 
+        You may also want to append the output columns to the original NestedFrame.
+        We can achieve this by using the `append_columns` kwarg:
+
+        >>> # define a custom user function that creates a nested sub-column
+        >>> def example_func(row):
+        ...     '''map_rows will return a sub-column for the existing 'nested' column'''
+        ...     return row["nested.t"] - row["a"]
+
+        >>> # apply the function with `append_columns` (False by default)
+        >>> nf.map_rows(example_func,
+        ...             columns=["a", "nested.t"],
+        ...             output_names=["nested.t_a"],
+        ...             append_columns=True)
+                  a         b                                             nested
+        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, band: 'r', t_a:...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g', t_a...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g', t_a...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g', t_a...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g', t_a...
+
+
         Notes
         -----
         If concerned about performance, specify `columns` to only include the columns
@@ -2199,6 +2236,8 @@ class NestedFrame(pd.DataFrame):
             requested_columns.append((layer, col))
 
         # Construct row containers and apply
+        results = []
+
         if row_container == "dict":
             arg_dict = {}
             for layer, col in requested_columns:
@@ -2222,7 +2261,12 @@ class NestedFrame(pd.DataFrame):
 
             results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
 
-        results_nf = NestedFrame(results, index=self.index)
+        # If the func returns a single array per row wrap results in a `NestedSeries`.
+        # Otherwise, Pandas will try to expand array elements into separate columns.
+        if results and isinstance(results[0], np.ndarray):
+            results_nf = NestedFrame(NestedSeries(results, index=self.index))
+        else:
+            results_nf = NestedFrame(results, index=self.index)
 
         # Override output names if specified
         if output_names is not None:
@@ -2258,8 +2302,15 @@ class NestedFrame(pd.DataFrame):
                 results_nf[layer] = nested_col
 
         if append_columns:
-            # Append the results to the original NestedFrame
-            return pd.concat([self, results_nf], axis=1)
+            # Append sub-columns to existing nested columns
+            self_nested_cols = [col for col in results_nf.nested_columns if col in self.nested_columns]
+            for col in self_nested_cols:
+                sub_columns = results_nf.get_subcolumns(col)
+                for sub_col in sub_columns:
+                    self = self.assign(**{f"{sub_col}": results_nf[sub_col]})
+            # Append other base and nested columns
+            base_results_nf = results_nf.drop(columns=self_nested_cols)
+            return pd.concat([self, base_results_nf], axis=1)
 
         # Otherwise, return the results as a new NestedFrame
         return results_nf
