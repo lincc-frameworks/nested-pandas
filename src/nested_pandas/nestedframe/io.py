@@ -271,58 +271,29 @@ def _read_table_with_partial_load_check(data, columns=None, filesystem=None, **k
 
 
 def _validate_structs_from_schema(data, columns=None, filesystem=None):
-    """Validate that columns specified for partial loading are valid struct types.
-
-    This function validates that when attempting to partially load nested columns
-    from a Parquet file (e.g., loading "nested.a" instead of the full "nested"
-    column), the base column being partially loaded is actually a struct type.
-    Partial loading of nested structures is only supported for struct of list
-    columns, not for list of struct columns.
-
-    Parameters
-    ----------
-    data : str, Path, UPath, or file-like object
-        Path to the parquet file or file-like object to inspect.
-    columns : list of str, optional
-        List of column names to validate. If None, no validation is performed.
-        Columns containing "." are checked to ensure their base column name
-        (the part before the ".") refers to a struct type in the schema.
-    filesystem : pyarrow.fs.FileSystem, optional
-        PyArrow filesystem object to use when reading the schema. If None,
-        the default filesystem for the given path is used.
-
-    Raises
-    ------
-    ValueError
-        If a column in the partial load format (e.g., "nested.a") is specified
-        but the base column ("nested") is not a struct type. This indicates
-        the data structure doesn't support partial loading as nested-pandas
-        requires struct of list columns, not list of struct columns.
-    """
-    if columns is None:
-        return
-    schema = pq.read_schema(data, filesystem=filesystem)
-    for col in columns:
-        # check if column is a partial load of a nested structure
-        if "." not in col:
-            continue
-        # check if column exists as a top-level column
-        if col in schema.names:
-            continue
-        # if not, inspect the base column name type
-        base_col = col.split(".")[0]
-        if base_col not in schema.names:
-            continue
-        # check if the base column is a list-struct
-        col_type = schema.field(base_col).type
-        if not pa.types.is_struct(col_type):
-            raise ValueError(
-                f"The provided column '{col}' signals to partially load a nested structure, "
-                f"but the nested structure '{base_col}' is not a struct. "
-                "Partial loading of nested structures is only supported for struct of list "
-                f"columns. To resolve this, fully load the column '{base_col}' "
-                f"instead of partially loading it and perform column selection afterwards."
-            )
+    """Validate that nested columns are structs"""
+    if columns is not None:
+        schema = pq.read_schema(data, filesystem=filesystem)
+        for col in columns:
+            # check if column is a partial load of a nested structure
+            if "." in col:
+                # first check if column exists as a top-level column
+                if col in schema.names:
+                    continue
+                # if not, inspect the base column name type
+                else:
+                    if col.split(".")[0] in schema.names:
+                        # check if the column is a list-struct
+                        col_type = schema.field(col.split(".")[0]).type
+                        if not pa.types.is_struct(col_type):
+                            base_col = col.split(".")[0]
+                            raise ValueError(
+                                f"The provided column '{col}' signals to partially load a nested structure, "
+                                f"but the nested structure '{base_col}' is not a struct. "
+                                "Partial loading of nested structures is only supported for struct of list "
+                                f"columns. To resolve this, fully load the column '{base_col}' "
+                                f"instead of partially loading it and perform column selection afterwards."
+                            )
 
 
 def _is_local_dir(upath: UPath, is_dir: bool | None) -> bool:
