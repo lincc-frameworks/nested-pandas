@@ -106,33 +106,21 @@ def test_file_object_read_parquet():
 
 
 @pytest.mark.parametrize(
-    "columns",
+    "columns, expected_columns",
     [
-        ["a", "flux"],
-        ["flux", "nested", "lincc"],
-        ["nested.flux", "nested.band"],
-        ["flux", "nested.flux"],
-        ["nested.band", "lincc.band"],
+        (["a", "flux"], ["a", "flux"]),
+        (["flux", "nested", "lincc"], ["flux", "nested", "lincc"]),
+        (["nested.flux", "nested.band"], ["nested"]),
+        (["flux", "nested.flux"], ["flux", "nested"]),
+        (["nested.band", "lincc.band"], ["nested", "lincc"]),
     ],
 )
-def test_read_parquet_column_selection(columns):
+def test_read_parquet_column_selection(columns, expected_columns):
     """Test reading a parquet file with column selection"""
     # Load in the example file
     nf = read_parquet("tests/test_data/nested.parquet", columns=columns)
 
-    # Output expectations
-    if columns == ["a", "flux"]:
-        expected_columns = ["a", "flux"]
-    elif columns == ["flux", "nested", "lincc"]:
-        expected_columns = ["flux", "nested", "lincc"]
-    elif columns == ["nested.flux", "nested.band"]:
-        expected_columns = ["nested"]
-    elif columns == ["flux", "nested.flux"]:
-        expected_columns = ["flux", "nested"]
-    elif columns == ["nested.band", "lincc.band"]:
-        expected_columns = ["nested", "lincc"]
-
-    # Check the columns
+    # Check the column expectations
     assert nf.columns.tolist() == expected_columns
 
     # Check nested columns
