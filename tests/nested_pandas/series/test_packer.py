@@ -2,12 +2,13 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
+from pandas.testing import assert_frame_equal, assert_series_equal
+
 from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.series import packer
 from nested_pandas.series.nestedseries import NestedSeries
-from numpy.testing import assert_array_equal
-from pandas.testing import assert_frame_equal, assert_series_equal
 
 
 def offsets_reused(nested_series):

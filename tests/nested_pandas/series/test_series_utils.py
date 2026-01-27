@@ -1,6 +1,7 @@
 import pandas as pd
 import pyarrow as pa
 import pytest
+
 from nested_pandas import NestedDtype
 from nested_pandas.series.utils import (
     align_chunked_struct_list_offsets,
