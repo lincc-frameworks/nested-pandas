@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 import pytest
-from nested_pandas import NestedFrame
-from nested_pandas.utils import count_nested
 from numpy.testing import assert_array_equal
 from pandas.testing import assert_index_equal
+
+from nested_pandas import NestedFrame
+from nested_pandas.utils import count_nested
 
 
 @pytest.mark.parametrize("join", [True, False])

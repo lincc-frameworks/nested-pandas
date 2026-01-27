@@ -1,7 +1,8 @@
 """Based on https://github.com/lincc-frameworks/nested-pandas/issues/89"""
 
-import nested_pandas as npd
 import numpy as np
+
+import nested_pandas as npd
 
 
 def test_issue89():
