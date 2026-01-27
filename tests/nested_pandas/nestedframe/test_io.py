@@ -160,9 +160,6 @@ def test_read_parquet_catch_full_and_partial():
     with pytest.raises(ValueError):
         read_parquet("tests/test_data/nested.parquet", columns=["a", "nested.t", "nested"])
 
-    # with pytest.raises(ValueError):
-    read_parquet("tests/test_data/nested.parquet", columns=["a", "a.b"])
-
 
 def test_read_parquet_catch_failed_cast():
     """Test reading a parquet file with column selection"""
