@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+
 from nested_pandas import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries
 
