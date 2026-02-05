@@ -104,7 +104,7 @@ def pack_flat(
                     "Please remove or fill NaN values before packing."
                 )
         df = df.set_index(on)
-    elif not isinstance(df.index, pd.MultiIndex) and df.index.hasnans:
+    elif any(df.index.get_level_values(i).hasnans for i in range(df.index.nlevels)):
         raise ValueError(
             "The index contains NaN values. "
             "NaN values are not supported because they cannot be used for grouping rows. "
