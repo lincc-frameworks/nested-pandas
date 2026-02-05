@@ -95,29 +95,21 @@ def pack_flat(
     """
 
     if on is not None:
-        if isinstance(on, str):
-            cols = [on]
-        else:
-            cols = list(on)
-        if df[cols].isna().any().any():
-            raise ValueError(
-                f"Column(s) {cols} contain NaN values. "
-                "NaN values are not supported because they cannot be used for grouping rows. "
-                "Please remove or fill NaN values before packing."
-            )
+        cols = [on] if isinstance(on, str) else list(on)
+        for col in cols:
+            if df[col].hasnans:
+                raise ValueError(
+                    f"Column '{col}' contains NaN values. "
+                    "NaN values are not supported because they cannot be used for grouping rows. "
+                    "Please remove or fill NaN values before packing."
+                )
         df = df.set_index(on)
-    else:
-        try:
-            has_nans = df.index.isna().any()
-        except NotImplementedError:
-            # MultiIndex does not support isna()
-            has_nans = False
-        if has_nans:
-            raise ValueError(
-                "The index contains NaN values. "
-                "NaN values are not supported because they cannot be used for grouping rows. "
-                "Please remove or fill NaN values before packing."
-            )
+    elif not isinstance(df.index, pd.MultiIndex) and df.index.hasnans:
+        raise ValueError(
+            "The index contains NaN values. "
+            "NaN values are not supported because they cannot be used for grouping rows. "
+            "Please remove or fill NaN values before packing."
+        )
     # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
     sorted_flat = df.sort_index(kind="stable")
     return pack_sorted_df_into_struct(sorted_flat, name=name)
@@ -160,32 +152,6 @@ def pack_seq(
     return series
 
 
-def _raise_for_non_monotonic_index(index: pd.Index, context: str = "dataframe") -> None:
-    """Raise an informative error for a non-monotonic index.
-
-    This function checks if the non-monotonicity is due to NaN values
-    and provides a more helpful error message in that case.
-
-    Parameters
-    ----------
-    index : pd.Index
-        The index that failed the monotonicity check.
-    context : str
-        Description of what is being checked (e.g., "dataframe", "series").
-
-    Raises
-    ------
-    ValueError
-        Always raises with an appropriate message.
-    """
-    if index.isna().any():
-        raise ValueError(
-            f"The index of the input {context} contains NaN values. "
-            "NaN values are not supported because they cannot be used for grouping rows. "
-            "Please remove or fill NaN values before packing."
-        )
-    raise ValueError(f"The index of the input {context} must be sorted")
-
 
 def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
@@ -207,7 +173,7 @@ def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> Nes
         Output series, with unique indexes.
     """
     if not df.index.is_monotonic_increasing:
-        _raise_for_non_monotonic_index(df.index, "dataframe")
+        raise ValueError("The index of the input dataframe must be sorted")
 
     packed_df = view_sorted_df_as_list_arrays(df)
     # No need to validate the dataframe, the length of the nested arrays is forced to be the same by
@@ -300,7 +266,7 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
         dataframe, so it would mute the input dataframe if modified.
     """
     if not df.index.is_monotonic_increasing:
-        _raise_for_non_monotonic_index(df.index, "dataframe")
+        raise ValueError("The index of the input dataframe must be sorted")
 
     offset_array = calculate_sorted_index_offsets(df.index)
     unique_index = df.index[offset_array[:-1]]
@@ -340,7 +306,7 @@ def view_sorted_series_as_list_array(
         so it would mute the input series if modified.
     """
     if not series.index.is_monotonic_increasing:
-        _raise_for_non_monotonic_index(series.index, "series")
+        raise ValueError("The index of the input series must be sorted")
 
     if offset is None:
         offset = calculate_sorted_index_offsets(series.index)
@@ -382,7 +348,7 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
         index values.
     """
     if not index.is_monotonic_increasing:
-        _raise_for_non_monotonic_index(index)
+        raise ValueError("The index must be sorted")
 
     # pd.Index.duplicated returns False for the first occurance and True for all others.
     # So our offsets would be indexes of these False values with the array length in the end.

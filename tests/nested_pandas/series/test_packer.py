@@ -628,5 +628,5 @@ def test_pack_flat_raises_with_nan_in_on_column():
             "c": [1.0, 1.0, 2.0, 2.0, np.nan],
         },
     )
-    with pytest.raises(ValueError, match=r"Column\(s\) \['c'\] contain NaN values"):
+    with pytest.raises(ValueError, match="Column 'c' contains NaN values"):
         packer.pack_flat(df, on="c")
