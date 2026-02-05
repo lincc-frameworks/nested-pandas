@@ -616,7 +616,14 @@ def test_pack_flat_raises_with_nan_in_index():
         packer.pack_flat(df)
 
 
-def test_pack_flat_raises_with_nan_in_on_column():
+@pytest.mark.parametrize(
+    "col_data,col_dtype",
+    [
+        ([1.0, 1.0, 2.0, 2.0, np.nan], None),
+        ([1.0, 1.0, 2.0, 2.0, None], pd.ArrowDtype(pa.float64())),
+    ],
+)
+def test_pack_flat_raises_with_nan_in_on_column(col_data, col_dtype):
     """Test pack_flat() raises informative error when 'on' column contains NaN values.
 
     This is a regression test for https://github.com/lincc-frameworks/nested-pandas/issues/440
@@ -625,7 +632,7 @@ def test_pack_flat_raises_with_nan_in_on_column():
         data={
             "a": [1, 2, 3, 4, 5],
             "b": [0, 1, 0, 1, 0],
-            "c": [1.0, 1.0, 2.0, 2.0, np.nan],
+            "c": pd.array(col_data, dtype=col_dtype),
         },
     )
     with pytest.raises(ValueError, match="Column 'c' contains NaN values"):
