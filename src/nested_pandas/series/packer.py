@@ -95,7 +95,29 @@ def pack_flat(
     """
 
     if on is not None:
+        if isinstance(on, str):
+            cols = [on]
+        else:
+            cols = list(on)
+        if df[cols].isna().any().any():
+            raise ValueError(
+                f"Column(s) {cols} contain NaN values. "
+                "NaN values are not supported because they cannot be used for grouping rows. "
+                "Please remove or fill NaN values before packing."
+            )
         df = df.set_index(on)
+    else:
+        try:
+            has_nans = df.index.isna().any()
+        except NotImplementedError:
+            # MultiIndex does not support isna()
+            has_nans = False
+        if has_nans:
+            raise ValueError(
+                "The index contains NaN values. "
+                "NaN values are not supported because they cannot be used for grouping rows. "
+                "Please remove or fill NaN values before packing."
+            )
     # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
     sorted_flat = df.sort_index(kind="stable")
     return pack_sorted_df_into_struct(sorted_flat, name=name)
