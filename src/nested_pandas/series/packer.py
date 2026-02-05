@@ -93,26 +93,29 @@ def pack_flat(
     nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
-
+    original_on = on
     if on is not None:
-        cols = [on] if isinstance(on, str) else list(on)
-        for col in cols:
-            if df[col].hasnans:
+        df = df.set_index(on)
+    # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
+    sorted_flat = df.sort_index(kind="stable")
+    try:
+        return pack_sorted_df_into_struct(sorted_flat, name=name)
+    except ValueError:
+        # Check if the error is due to NaN values and raise a more informative message
+        if any(sorted_flat.index.get_level_values(i).hasnans for i in range(sorted_flat.index.nlevels)):
+            if original_on is not None:
+                cols = [original_on] if isinstance(original_on, str) else list(original_on)
                 raise ValueError(
-                    f"Column '{col}' contains NaN values. "
+                    f"Column(s) {cols} contain NaN values. "
                     "NaN values are not supported because they cannot be used for grouping rows. "
                     "Please remove or fill NaN values before packing."
                 )
-        df = df.set_index(on)
-    elif any(df.index.get_level_values(i).hasnans for i in range(df.index.nlevels)):
-        raise ValueError(
-            "The index contains NaN values. "
-            "NaN values are not supported because they cannot be used for grouping rows. "
-            "Please remove or fill NaN values before packing."
-        )
-    # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
-    sorted_flat = df.sort_index(kind="stable")
-    return pack_sorted_df_into_struct(sorted_flat, name=name)
+            raise ValueError(
+                "The index contains NaN values. "
+                "NaN values are not supported because they cannot be used for grouping rows. "
+                "Please remove or fill NaN values before packing."
+            )
+        raise
 
 
 def pack_seq(
