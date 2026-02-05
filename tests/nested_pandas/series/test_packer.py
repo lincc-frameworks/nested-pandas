@@ -598,3 +598,35 @@ def test_calculate_sorted_index_offsets_raises_when_not_sorted():
     index = pd.Index([1, 2, 1, 2, 3, 3, 4, 4, 4])
     with pytest.raises(ValueError):
         packer.calculate_sorted_index_offsets(index)
+
+
+def test_pack_flat_raises_with_nan_in_index():
+    """Test pack_flat() raises informative error when index contains NaN values.
+
+    This is a regression test for https://github.com/lincc-frameworks/nested-pandas/issues/440
+    """
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4, 5],
+            "b": [0, 1, 0, 1, 0],
+        },
+        index=[1.0, 1.0, 2.0, 2.0, np.nan],
+    )
+    with pytest.raises(ValueError, match="contains NaN values"):
+        packer.pack_flat(df)
+
+
+def test_pack_flat_raises_with_nan_in_on_column():
+    """Test pack_flat() raises informative error when 'on' column contains NaN values.
+
+    This is a regression test for https://github.com/lincc-frameworks/nested-pandas/issues/440
+    """
+    df = pd.DataFrame(
+        data={
+            "a": [1, 2, 3, 4, 5],
+            "b": [0, 1, 0, 1, 0],
+            "c": [1.0, 1.0, 2.0, 2.0, np.nan],
+        },
+    )
+    with pytest.raises(ValueError, match="contains NaN values"):
+        packer.pack_flat(df, on="c")
