@@ -600,7 +600,14 @@ def test_calculate_sorted_index_offsets_raises_when_not_sorted():
         packer.calculate_sorted_index_offsets(index)
 
 
-def test_pack_flat_raises_with_nan_in_index():
+@pytest.mark.parametrize(
+    "index",
+    [
+        pd.Index([1.0, 1.0, 2.0, 2.0, np.nan]),
+        pd.MultiIndex.from_arrays(([1, 1, 2, 2, 2], [1.0, 2.0, np.nan, 1.0, 2.0])),
+    ],
+)
+def test_pack_flat_raises_with_nan_in_index(index):
     """Test pack_flat() raises informative error when index contains NaN values.
 
     This is a regression test for https://github.com/lincc-frameworks/nested-pandas/issues/440
@@ -610,25 +617,7 @@ def test_pack_flat_raises_with_nan_in_index():
             "a": [1, 2, 3, 4, 5],
             "b": [0, 1, 0, 1, 0],
         },
-        index=[1.0, 1.0, 2.0, 2.0, np.nan],
-    )
-    with pytest.raises(ValueError, match="The index contains NaN values"):
-        packer.pack_flat(df)
-
-
-def test_pack_flat_raises_with_nan_in_multiindex():
-    """Test pack_flat() raises informative error when MultiIndex contains NaN values.
-
-    This is a regression test for https://github.com/lincc-frameworks/nested-pandas/issues/440
-    """
-    df = pd.DataFrame(
-        data={
-            "a": [1, 2, 3, 4, 5],
-            "b": [0, 1, 0, 1, 0],
-        },
-        index=pd.MultiIndex.from_arrays(
-            ([1, 1, 2, 2, 2], [1.0, 2.0, np.nan, 1.0, 2.0]),
-        ),
+        index=index,
     )
     with pytest.raises(ValueError, match="The index contains NaN values"):
         packer.pack_flat(df)

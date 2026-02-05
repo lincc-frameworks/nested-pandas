@@ -152,7 +152,6 @@ def pack_seq(
     return series
 
 
-
 def pack_sorted_df_into_struct(df: pd.DataFrame, name: str | None = None) -> NestedSeries:
     """Make a structure of lists representation of a "flat" dataframe.
 
