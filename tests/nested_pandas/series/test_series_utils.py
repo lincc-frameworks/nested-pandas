@@ -1,11 +1,14 @@
 import pandas as pd
 import pyarrow as pa
 import pytest
+
 from nested_pandas import NestedDtype
 from nested_pandas.series.utils import (
     align_chunked_struct_list_offsets,
     align_struct_list_offsets,
     nested_types_mapper,
+    normalize_list_array,
+    normalize_struct_list_array,
     struct_field_names,
     transpose_list_struct_array,
     transpose_list_struct_scalar,
@@ -249,3 +252,46 @@ def test_nested_types_mapper(pa_type, is_nested):
     else:
         assert isinstance(dtype, pd.ArrowDtype)
         assert dtype.pyarrow_dtype == pa_type
+
+
+def test_normalize_list_array():
+    """Test normalize_list_array converts to plain list arrays."""
+    list_array = pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))
+    assert normalize_list_array(list_array) is list_array
+
+    fixed = pa.FixedSizeListArray.from_arrays(pa.array([1, 2, 3, 4]), list_size=2)
+    normalized_fixed = normalize_list_array(fixed)
+    expected_list = pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))
+    assert pa.types.is_list(normalized_fixed.type)
+    assert normalized_fixed.equals(expected_list)
+
+    large = pa.array([[5, 6], [7, 8]], type=pa.large_list(pa.int64()))
+    normalized_large = normalize_list_array(large)
+    expected_large = pa.array([[5, 6], [7, 8]], type=pa.list_(pa.int64()))
+    assert pa.types.is_list(normalized_large.type)
+    assert normalized_large.equals(expected_large)
+
+    with pytest.raises(ValueError):
+        normalize_list_array(pa.array([1, 2, 3]))
+
+
+def test_normalize_struct_list_array():
+    """Test normalize_struct_list_array converts struct fields to plain list arrays."""
+    list_struct = pa.StructArray.from_arrays([pa.array([[1], [2], [3]])], names=["a"])
+    assert normalize_struct_list_array(list_struct) is list_struct
+
+    fixed = pa.FixedSizeListArray.from_arrays(pa.array([1, 2, 3, 4]), list_size=2)
+    struct_array = pa.StructArray.from_arrays([fixed], names=["a"])
+    normalized = normalize_struct_list_array(struct_array)
+
+    expected_array = pa.StructArray.from_arrays(
+        [pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))],
+        names=["a"],
+    )
+    expected_type = pa.struct([("a", pa.list_(pa.int64()))])
+
+    assert normalized.type == expected_type
+    assert normalized.equals(expected_array)
+
+    with pytest.raises(ValueError):
+        normalize_struct_list_array(pa.array([[1, 2], [3, 4]]))

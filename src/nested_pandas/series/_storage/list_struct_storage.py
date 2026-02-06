@@ -4,7 +4,11 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
-from nested_pandas.series.utils import transpose_struct_list_chunked, validate_list_struct_type
+from nested_pandas.series.utils import (
+    normalize_list_array,
+    transpose_struct_list_chunked,
+    validate_list_struct_type,
+)
 
 if TYPE_CHECKING:
     from nested_pandas.series._storage.struct_list_storage import StructListStorage
@@ -22,11 +26,14 @@ class ListStructStorage:
 
     _data: pa.ChunkedArray
 
-    def __init__(self, array: pa.ListArray | pa.ChunkedArray) -> None:
+    def __init__(
+        self, array: pa.ListArray | pa.FixedSizeListArray | pa.LargeListArray | pa.ChunkedArray
+    ) -> None:
         if isinstance(array, pa.ListArray):
             array = pa.chunked_array([array])
         if not isinstance(array, pa.ChunkedArray):
             raise ValueError("array must be of type pa.ChunkedArray")
+        array = normalize_list_array(array)
         validate_list_struct_type(array.type)
         self._data = array
 

@@ -186,7 +186,7 @@ class NestedDtype(ExtensionDtype):
 
     pyarrow_dtype: pa.StructType
 
-    def __init__(self, pyarrow_dtype: pa.DataType) -> None:
+    def __init__(self, pyarrow_dtype: pa.DataType | Mapping) -> None:
         # Allow pd.ArrowDtypes on init
         if isinstance(pyarrow_dtype, pd.ArrowDtype):
             pyarrow_dtype = pyarrow_dtype.pyarrow_dtype
@@ -216,7 +216,7 @@ class NestedDtype(ExtensionDtype):
     @classmethod
     @deprecated(
         version="0.6.0",
-        reason="`from_fields` will be removed in version 0.7.0, " "use `from_columns` instead.",
+        reason="`from_fields` will be removed in version 0.7.0, use `from_columns` instead.",
     )
     def from_fields(cls, fields: Mapping[str, pa.DataType]) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Make NestedDtype from a mapping of field names and list item types.
@@ -304,7 +304,7 @@ class NestedDtype(ExtensionDtype):
 
     @property
     @deprecated(
-        version="0.6.0", reason="`fields` will be removed in version 0.7.0, " "use `column_dtypes` instead."
+        version="0.6.0", reason="`fields` will be removed in version 0.7.0, use `column_dtypes` instead."
     )
     def fields(self) -> dict[str, pa.DataType]:
         """The mapping of field names and their item types."""
@@ -363,7 +363,7 @@ class NestedDtype(ExtensionDtype):
 
     @deprecated(
         version="0.6.0",
-        reason="`field_dtype` will be removed in version 0.7.0, " "use `_struct_list_pa_dtype` instead.",
+        reason="`field_dtype` will be removed in version 0.7.0, use `_struct_list_pa_dtype` instead.",
     )
     def field_dtype(self, field: str) -> pd.ArrowDtype | Self:  # type: ignore[name-defined] # noqa: F821
         """Pandas dtype of a field, pd.ArrowDType or NestedDtype.
@@ -404,7 +404,7 @@ class NestedDtype(ExtensionDtype):
     @property
     @deprecated(
         version="0.6.0",
-        reason="`field_dtypes` will be removed in version 0.7.0, " "use `_struct_list_pa_dtype` instead.",
+        reason="`field_dtypes` will be removed in version 0.7.0, use `_struct_list_pa_dtype` instead.",
     )
     def field_dtypes(self) -> dict[str, pd.ArrowDtype | Self]:  # type: ignore[name-defined] # noqa: F821
         """Pandas dtypes of this dtype's fields."""

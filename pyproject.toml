@@ -24,7 +24,7 @@ dependencies = [
     "pyarrow>=16",  # remove struct_field_names() and struct_fields() when upgraded to 18+
     "Deprecated>=1.2.0",
     "wrapt>=1.12.1",
-    "fsspec>=2025.7.0",
+    "fsspec>=2025.7.0,!=2025.12,!=2026.1",  # Avoiding https://github.com/fsspec/filesystem_spec/issues/1973
     "universal_pathlib>=0.3.1",
 ]
 
@@ -70,7 +70,6 @@ addopts = "--doctest-modules --doctest-glob=*.rst"
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
 [tool.ruff.lint]
 select = [
     # pycodestyle

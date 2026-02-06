@@ -6,9 +6,10 @@ https://asv.readthedocs.io/en/stable/writing_benchmarks.html."""
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from upath import UPath
+
 from nested_pandas import NestedDtype, NestedFrame, datasets, read_parquet
 from nested_pandas.utils import count_nested
-from upath import UPath
 
 
 class AssignSingleDfToNestedSeries:
@@ -226,7 +227,7 @@ class ReadFewColumnsS3:
 
     def run(self):
         """Run the benchmark."""
-        _ = read_parquet(self.path, columns=self.columns)
+        _ = read_parquet(self.path, columns=self.columns, is_dir=False)
 
     def time_run(self):
         """Benchmark the runtime of read_parquet(self.path, columns=self.columns)"""
@@ -245,7 +246,7 @@ class ReadFewColumnsHTTPS:
 
     def run(self):
         """Run the benchmark."""
-        _ = read_parquet(self.path, columns=self.columns)
+        _ = read_parquet(self.path, columns=self.columns, is_dir=False)
 
     def time_run(self):
         """Benchmark the runtime of read_parquet(self.path, columns=self.columns)"""

@@ -10,6 +10,9 @@ import pyarrow as pa
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
+from pandas.testing import assert_frame_equal
+from upath import UPath
+
 from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
@@ -18,8 +21,6 @@ from nested_pandas.nestedframe.io import (
     _transform_read_parquet_data_arg,
     from_pyarrow,
 )
-from pandas.testing import assert_frame_equal
-from upath import UPath
 
 
 def test_read_parquet():
@@ -105,33 +106,21 @@ def test_file_object_read_parquet():
 
 
 @pytest.mark.parametrize(
-    "columns",
+    "columns, expected_columns",
     [
-        ["a", "flux"],
-        ["flux", "nested", "lincc"],
-        ["nested.flux", "nested.band"],
-        ["flux", "nested.flux"],
-        ["nested.band", "lincc.band"],
+        (["a", "flux"], ["a", "flux"]),
+        (["flux", "nested", "lincc"], ["flux", "nested", "lincc"]),
+        (["nested.flux", "nested.band"], ["nested"]),
+        (["flux", "nested.flux"], ["flux", "nested"]),
+        (["nested.band", "lincc.band"], ["nested", "lincc"]),
     ],
 )
-def test_read_parquet_column_selection(columns):
+def test_read_parquet_column_selection(columns, expected_columns):
     """Test reading a parquet file with column selection"""
     # Load in the example file
     nf = read_parquet("tests/test_data/nested.parquet", columns=columns)
 
-    # Output expectations
-    if columns == ["a", "flux"]:
-        expected_columns = ["a", "flux"]
-    elif columns == ["flux", "nested", "lincc"]:
-        expected_columns = ["flux", "nested", "lincc"]
-    elif columns == ["nested.flux", "nested.band"]:
-        expected_columns = ["nested"]
-    elif columns == ["flux", "nested.flux"]:
-        expected_columns = ["flux", "nested"]
-    elif columns == ["nested.band", "lincc.band"]:
-        expected_columns = ["nested", "lincc"]
-
-    # Check the columns
+    # Check the column expectations
     assert nf.columns.tolist() == expected_columns
 
     # Check nested columns
@@ -461,6 +450,60 @@ def test__get_storage_options():
     assert storage_opts.get("block_size") != FSSPEC_BLOCK_SIZE
 
 
+def test__is_local_dir():
+    """Test the _is_local_dir function with various scenarios."""
+    from nested_pandas.nestedframe.io import _is_local_dir
+
+    # Local path that is a directory
+    local_dir = UPath("tests/test_data")
+    assert _is_local_dir(local_dir, is_dir=True) is True
+    assert _is_local_dir(local_dir, is_dir=False) is False
+    assert _is_local_dir(local_dir, is_dir=None) is True
+
+    # Local path that is a file
+    local_file = UPath("tests/test_data/nested.parquet")
+    assert _is_local_dir(local_file, is_dir=True) is True
+    assert _is_local_dir(local_file, is_dir=False) is False
+    assert _is_local_dir(local_file, is_dir=None) is False
+
+    # Remote path (should always return False)
+    remote_path = UPath("https://example.com/data.parquet")
+    assert _is_local_dir(remote_path, is_dir=True) is False
+    assert _is_local_dir(remote_path, is_dir=False) is False
+    assert _is_local_dir(remote_path, is_dir=None) is False
+
+
+def test__is_remote_dir():
+    """Test the _is_remote_dir function with various scenarios."""
+    from nested_pandas.nestedframe.io import _is_remote_dir
+
+    # Local path that is a directory
+    local_dir = UPath("tests/test_data")
+    assert _is_remote_dir("tests/test_data", local_dir, is_dir=True) is True
+    assert _is_remote_dir("tests/test_data", local_dir, is_dir=False) is False
+    assert _is_remote_dir("tests/test_data", local_dir, is_dir=None) is True
+
+    # Local path that is a file
+    local_file = UPath("tests/test_data/nested.parquet")
+    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=True) is True
+    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=False) is False
+    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=None) is False
+
+    # Remote file path
+    remote_path = UPath("https://example.com/data.parquet")
+    # In this case, the override is overruled by a protocol check
+    assert _is_remote_dir("https://example.com/data.parquet", remote_path, is_dir=True) is False
+    assert _is_remote_dir("https://example.com/data.parquet", remote_path, is_dir=False) is False
+    assert _is_remote_dir("https://example.com/data.parquet", remote_path, is_dir=None) is False
+
+    # Remote directory path
+    remote_dir_path = UPath("https://example.com/data/")
+    # Also overruled by protocol check not supporting https
+    assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=True) is False
+    assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=False) is False
+    assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=None) is False
+
+
 def test_list_struct_partial_loading_error():
     """Test that attempting to partially load a list-struct raises an error."""
     # Load in the example file
@@ -473,3 +516,32 @@ def test_normal_loading_error():
     # Load in the example file
     with pytest.raises(ValueError, match="No match for*"):
         read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"])
+
+
+def test_read_parquet_with_fixed_length_struct_list():
+    """Test reading a parquet file with fixed-length struct-list columns"""
+    nf = read_parquet("tests/fixed_size_list_data/mmu-desi.parquet")
+    assert nf.shape == (2, 18)
+    assert nf.nested_columns == ["spectrum"]
+
+
+def test_read_parquet_with_fixed_length_list_struct():
+    """Test reading a parquet file with fixed-length list-struct columns"""
+    nf = read_parquet("tests/fixed_size_list_data/fixed-size-list-struct.parquet")
+    assert nf.shape == (5, 3)
+    assert nf.nested_columns == ["fixed_nested"]
+
+
+@pytest.mark.parametrize("size", [5000, 500_000, 5_000_000])
+def test_issue_428(size):
+    """Partial loading fsspec issue: https://github.com/lincc-frameworks/nested-pandas/issues/428"""
+
+    # Initialize a temp file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "tmp.parquet")
+
+        # Generate and write the data
+        generate_data(size, 3).to_parquet(file_path)
+        nf = read_parquet(file_path, columns=["nested.t"])
+        assert nf.columns == ["nested"]
+        assert nf.nested.nest.columns == ["t"]

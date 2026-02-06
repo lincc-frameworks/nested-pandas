@@ -11,9 +11,9 @@ import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
 from upath import UPath
 
-from ..series.dtype import NestedDtype
+from ..series.ext_array import NestedExtensionArray
 from ..series.packer import pack_lists
-from ..series.utils import table_to_struct_array
+from ..series.utils import is_pa_type_a_list, table_to_struct_array
 from .core import NestedFrame
 
 # Use smaller block size for these FSSPEC filesystems.
@@ -35,6 +35,7 @@ def read_parquet(
     columns: list[str] | None = None,
     reject_nesting: list[str] | str | None = None,
     autocast_list: bool = False,
+    is_dir: bool | None = None,
     **kwargs,
 ) -> NestedFrame:
     """Load a parquet object from a file path into a NestedFrame.
@@ -73,6 +74,13 @@ def read_parquet(
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
     autocast_list: bool, default=True
         If True, automatically cast list columns to nested columns with NestedDType.
+    is_dir: bool, None, default=None
+        If True, the pointer represents a pixel directory; if False, the pointer
+        represents a file. In both cases there is no need to check the pointer's
+        content type. If `is_dir` is None (default), this method will resort to
+        `upath.is_dir()` to identify the type of pointer. This argument is ignored
+        for HTTP, as inferring the type for HTTP is particularly expensive because
+        it requires downloading the contents of the pointer in its entirety.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
@@ -130,7 +138,7 @@ def read_parquet(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    table = _read_parquet_into_table(data, columns, **kwargs)
+    table = _read_parquet_into_table(data, columns, is_dir=is_dir, **kwargs)
 
     # Resolve partial loading of nested structures
     # Using pyarrow to avoid naming conflicts from partial loading ("flux" vs "lc.flux")
@@ -148,7 +156,7 @@ def read_parquet(
                 # if any of the columns are not list type, reject the cast
                 # and remove the column from the list of nested structures if
                 # it was added
-                if not pa.types.is_list(table.schema[i].type):
+                if not is_pa_type_a_list(table.schema[i].type):
                     reject_nesting.append(nested_col)
                     if nested_col in nested_structures:
                         # remove the column from the list of nested structures
@@ -193,6 +201,7 @@ def read_parquet(
 def _read_parquet_into_table(
     data: str | UPath | bytes,
     columns: list[str] | None,
+    is_dir: bool | None = None,
     **kwargs,
 ) -> pa.Table:
     """Reads parquet file(s) from path and returns a pyarrow table.
@@ -211,13 +220,13 @@ def _read_parquet_into_table(
     2) because .iter_dir() is likely to return a lot of "junk"
     besides of the actual parquet files.
     """
-    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data)):
+    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data), is_dir=is_dir):
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
         if not filesystem:
             _, filesystem = _transform_read_parquet_data_arg(path_to_data)
         # Will not detect HTTP(S) directories.
-        if _is_remote_dir(data, path_to_data):
+        if _is_remote_dir(data, path_to_data, is_dir=is_dir):
             return _read_remote_parquet_directory(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
@@ -287,24 +296,33 @@ def _validate_structs_from_schema(data, columns=None, filesystem=None):
                             )
 
 
-def _is_local_dir(upath: UPath) -> bool:
+def _is_local_dir(upath: UPath, is_dir: bool | None) -> bool:
     """Returns True if the given path refers to a local directory.
 
     It's necessary to have this function, rather than simply checking
     ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
     expensive in the case of a remote file path that isn't a directory.
     """
-    return upath.protocol in ("", "file") and upath.is_dir()
+
+    # For non-local filesystems, return False right away
+    if upath.protocol not in ("", "file"):
+        return False
+    # For local filesystems, check is_dir if provided, otherwise use upath.is_dir()
+    else:
+        return upath.is_dir() if is_dir is None else is_dir
 
 
-def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath) -> bool:
+def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | None) -> bool:
     # Iterating over HTTP(S) directories is very difficult, let's just not do that.
     # See details in _read_parquet_into_table docstring.
     if upath.protocol in NO_ITERDIR_FILESYSTEMS:
         return False
+    if is_dir is not None:
+        return is_dir
     if str(orig_data).endswith("/"):
         return True
-    return upath.is_dir()
+    if is_dir is None:
+        return upath.is_dir()
 
 
 def _read_remote_parquet_directory(
@@ -455,28 +473,25 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
     """cast struct columns to nested dtype"""
     # Attempt to cast struct columns to NestedDTypes
     for col, dtype in df.dtypes.items():
-        # First validate the dtype
-        # will return valueerror when not a struct-list
-        valid_dtype = True
-        try:
-            NestedDtype._validate_dtype(dtype.pyarrow_dtype)
-        except ValueError:
-            valid_dtype = False
+        if col in reject_nesting:
+            continue
 
-        if valid_dtype and col not in reject_nesting:
-            try:
-                # Attempt to cast Struct to NestedDType
-                df = df.astype({col: NestedDtype(dtype.pyarrow_dtype)})
-            except ValueError as err:
-                # If cast fails, the struct likely does not fit nested-pandas
-                # criteria for a valid nested column
-                raise ValueError(
-                    f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
-                    "This is likely due to the struct not meeting the requirements for a nested column "
-                    "(all fields should be equal length). To proceed, you may add the column to the "
-                    "`reject_nesting` argument of the read_parquet function to skip the cast attempt:"
-                    f" read_parquet(..., reject_nesting=['{col}'])"
-                ) from err
+        if not NestedExtensionArray.is_input_pa_type_supported(dtype.pyarrow_dtype):
+            continue
+
+        try:
+            # Attempt to cast Struct to NestedDType
+            df[col] = NestedExtensionArray(pa.array(df[col]))
+        except ValueError as err:
+            # If cast fails, the struct likely does not fit nested-pandas
+            # criteria for a valid nested column
+            raise ValueError(
+                f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
+                "This is likely due to the struct not meeting the requirements for a nested column "
+                "(all fields should be equal length). To proceed, you may add the column to the "
+                "`reject_nesting` argument of the read_parquet function to skip the cast attempt:"
+                f" read_parquet(..., reject_nesting=['{col}'])"
+            ) from err
     return df
 
 
