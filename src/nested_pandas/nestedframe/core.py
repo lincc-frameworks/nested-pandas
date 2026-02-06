@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Literal
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -27,6 +28,9 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
+from nested_pandas.series.utils import is_pa_type_a_list
+from numba.core.registry import CPUDispatcher
+from . import njit_funcs
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -2251,15 +2255,76 @@ class NestedFrame(pd.DataFrame):
             ]
 
         elif row_container == "args":
-            # Build iterators for each column
-            iterators = []
-            for layer, col in requested_columns:
-                if layer == "base":
-                    iterators.append(self[col])
-                else:
-                    iterators.append(self[layer].array.iter_field_lists(col))
+            # check if func is jitted by numba and fits the criteria
+            if not isinstance(func, CPUDispatcher) or len(requested_columns) > 2:
+                if len(requested_columns) > 2:
+                    warnings.warn(
+                        "For performance, njit functions with `row_container='args'` "
+                        "only support 1 or 2 arguments. "
+                        "Falling back to non-jitted execution.",
+                        stacklevel=2,
+                    )
+                # Build iterators for each column
+                iterators = []
+                for layer, col in requested_columns:
+                    if layer == "base":
+                        iterators.append(self[col])
+                    else:
+                        iterators.append(self[layer].array.iter_field_lists(col))
 
-            results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
+                results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
+            else:
+                if len(requested_columns) == 2:
+                    # directly get the two requested columns for 2-column case
+                    layer1, col1_name = requested_columns[0]
+                    layer2, col2_name = requested_columns[1]
+                    
+                    if layer1 == "base" and layer2 == "base":
+                        base_col1 = np.asarray(self[col1_name])
+                        base_col2 = np.asarray(self[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_base_base(func, base_col1, base_col2)
+                    elif layer1 == "base":
+                        base_col1 = np.asarray(self[col1_name])
+
+                        nested_array2 = self[layer2]
+                        offsets = np.asarray(nested_array2.array.list_offsets)
+                        col2 = np.asarray(nested_array2[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_base_nest(func, base_col1, offsets, col2)
+                    elif layer2 == "base":
+                        nested_array1 = self[layer1]
+                        offsets = np.asarray(nested_array1.array.list_offsets)
+                        col1 = np.asarray(nested_array1[col1_name])
+
+                        base_col2 = np.asarray(self[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_nest_base(func, offsets, col1, base_col2)
+                    else: 
+                        nested_array1 = self[layer1]
+                        nested_array2 = self[layer2]
+                        offsets1 = np.asarray(nested_array1.array.list_offsets)
+                        offsets2 = np.asarray(nested_array2.array.list_offsets)
+                        col1 = np.asarray(nested_array1[col1_name])
+                        col2 = np.asarray(nested_array2[col2_name])
+
+                        results = njit_funcs._map_rows_njit2_nest_nest(func, offsets1, offsets2, col1, col2)
+
+                elif len(requested_columns) == 1:
+                    layer, col_name = requested_columns[0]
+                    if (layer == "base"):
+                        base_col = np.asarray(self[col_name])
+                        results = njit_funcs._map_rows_njit1_base(func, base_col)
+                    else:
+                        nested_array = self[layer]
+
+                        offsets = np.asarray(nested_array.array.list_offsets)
+                        col = np.asarray(nested_array[col_name])
+
+                        results = njit_funcs._map_rows_njit1_nested(func, offsets, col)
+                else:
+                    # Should only happen when len(requested_columns) == 0, which is invalid
+                    raise NotImplementedError("map_rows only supports 1 or 2 arguments for njit user function")
 
         # If the func returns a single array per row wrap results in a `NestedSeries`.
         # Otherwise, Pandas will try to expand array elements into separate columns.

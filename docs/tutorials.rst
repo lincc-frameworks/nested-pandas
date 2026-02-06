@@ -8,3 +8,4 @@ Tutorials
     Lower-level interfaces <tutorials/low_level.ipynb>
     Using Nested-Pandas with Astronomical Spectra <pre_executed/nested_spectra.ipynb>
     Using GroupBy with Nested-Pandas <tutorials/groupby_doc.ipynb>
+    Using Numba JIT with Nested-Pandas map_rows <pre_executed/njit_map_rows.ipynb>
