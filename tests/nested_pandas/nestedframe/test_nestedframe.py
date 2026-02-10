@@ -5,6 +5,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 from pandas.testing import assert_frame_equal, assert_index_equal
+from numba import njit
 
 from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
