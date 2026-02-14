@@ -1,16 +1,17 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Literal
-import warnings
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from deprecated import deprecated
+from numba.core.registry import CPUDispatcher
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
@@ -28,8 +29,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
-from nested_pandas.series.utils import is_pa_type_a_list
-from numba.core.registry import CPUDispatcher
+
 from . import njit_funcs
 
 pd.set_option("display.max_rows", 30)
@@ -2278,7 +2278,7 @@ class NestedFrame(pd.DataFrame):
                     # directly get the two requested columns for 2-column case
                     layer1, col1_name = requested_columns[0]
                     layer2, col2_name = requested_columns[1]
-                    
+
                     if layer1 == "base" and layer2 == "base":
                         base_col1 = np.asarray(self[col1_name])
                         base_col2 = np.asarray(self[col2_name])
@@ -2300,7 +2300,7 @@ class NestedFrame(pd.DataFrame):
                         base_col2 = np.asarray(self[col2_name])
 
                         results = njit_funcs._map_rows_njit2_nest_base(func, offsets, col1, base_col2)
-                    else: 
+                    else:
                         nested_array1 = self[layer1]
                         nested_array2 = self[layer2]
                         offsets1 = np.asarray(nested_array1.array.list_offsets)
@@ -2312,19 +2312,24 @@ class NestedFrame(pd.DataFrame):
 
                 elif len(requested_columns) == 1:
                     layer, col_name = requested_columns[0]
-                    if (layer == "base"):
+                    if layer == "base":
                         base_col = np.asarray(self[col_name])
                         results = njit_funcs._map_rows_njit1_base(func, base_col)
                     else:
                         nested_array = self[layer]
 
                         offsets = np.asarray(nested_array.array.list_offsets)
-                        col = np.asarray(nested_array[col_name])
+                        nested_col = np.asarray(nested_array[col_name])
 
-                        results = njit_funcs._map_rows_njit1_nested(func, offsets, col)
+                        results = njit_funcs._map_rows_njit1_nested(func, offsets, nested_col)
                 else:
                     # Should only happen when len(requested_columns) == 0, which is invalid
-                    raise NotImplementedError("map_rows only supports 1 or 2 arguments for njit user function")
+                    raise NotImplementedError(
+                        "map_rows only supports 1 or 2 arguments for njit user function"
+                    )
+
+                # convert from numpy array to list for consistency with non-jitted output
+                results = results.tolist()
 
         # If the func returns a single array per row wrap results in a `NestedSeries`.
         # Otherwise, Pandas will try to expand array elements into separate columns.
