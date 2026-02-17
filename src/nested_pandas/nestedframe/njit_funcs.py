@@ -48,7 +48,7 @@ def _map_rows_njit2_nest_nest(func, offsets1, offsets2, col1, col2):
 
 
 @njit
-def _map_rows_njit2_base_nest(func, offsets, base_col1, col2):
+def _map_rows_njit2_base_nest(func, base_col1, offsets, col2):
     """
     Apply a JIT-compiled row-wise function to a base column as the first argument
     and a nested column as the second argument.
@@ -58,11 +58,11 @@ def _map_rows_njit2_base_nest(func, offsets, base_col1, col2):
     func : callable
         A Numba-compiled function that takes a scalar and a 1D NumPy array
         and returns a scalar result.
+    base_col1 : ndarray
+        Base column data for the first argument of func.
     offsets : ndarray of shape (n_rows + 1,)
         Offset array defining row boundaries for the nested column.
         The slice for row i is col2[offsets[i]:offsets[i + 1]].
-    base_col1 : ndarray
-        Base column data for the first argument of func.
     col2 : ndarray
         Flattened data for the second nested column.
 
