@@ -1,5 +1,7 @@
 import numpy as np
-from numba import njit
+from numba import jit, njit
+
+SUPPORTED_ENGINES = [njit, jit]
 
 
 @njit
