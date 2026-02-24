@@ -2069,7 +2069,6 @@ class NestedFrame(pd.DataFrame):
         output_names: None | str | list[str] = None,
         infer_nesting: bool = True,
         append_columns: bool = False,
-        engine: Callable | None = None,
         **kwargs,
     ) -> NestedFrame:  # type: ignore[override]
         """
@@ -2116,12 +2115,6 @@ class NestedFrame(pd.DataFrame):
             hierarchical column name (e.g. "nested.x"). If their base nested column exists in the
             original NestedFrame, the new output sub-columns will be added into the frame of the
             existing nested column. See an example below.
-        engine : decorator, default None
-            Choose the execution engine to use. If not provided the function will be executed
-            by the default Python interpreter. Options include JIT compilers such Numba,
-            which in some cases can speed up the execution. To use an executor you can provide
-            the decorators numba.jit and numba.njit. See the tutorial section for
-            more details and examples on using numba JIT with `map_rows`.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -2317,15 +2310,6 @@ class NestedFrame(pd.DataFrame):
             ]
 
         elif row_container == "args":
-            if engine is not None:
-                if engine not in njit_funcs.SUPPORTED_ENGINES:
-                    raise ValueError(
-                        f"Engine {engine} must be a callable that takes a function "
-                        "and returns a jit-compiled function."
-                    )
-                elif not isinstance(func, CPUDispatcher):
-                    func = engine(func)
-
             if isinstance(func, CPUDispatcher) and len(requested_columns) <= 2:
                 results = self._apply_njit_map_rows(requested_columns, func)
             else:

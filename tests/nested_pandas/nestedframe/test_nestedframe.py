@@ -1528,35 +1528,6 @@ def test_map_rows_njit():
     for i in range(len(result6)):
         assert result6["sum_c_a"].values[i] == expected_sum_a_c[i]
 
-    # testing exception & compilation
-    def two_nested_sum_py(c, e):
-        return np.sum(c) + np.sum(e)
-
-    result7 = base.map_rows(
-        two_nested_sum_py,
-        columns=["nested.c", "nested2.e"],
-        row_container="args",
-        output_names="sum_c_e",
-        engine=njit,
-    )
-    assert isinstance(result7, NestedFrame)
-    assert list(result7.columns) == ["sum_c_e"]
-    for i in range(len(result7)):
-        assert result7["sum_c_e"].values[i] == expected_sum_c_e[i]
-
-    def func_wrap(func):
-        return func
-
-    # Test on invalid engine raises error
-    with pytest.raises(ValueError):
-        base.map_rows(
-            two_nested_sum_py,
-            columns=["nested.c", "nested2.e"],
-            row_container="args",
-            output_names="sum_c_e",
-            engine=func_wrap,
-        )
-
 
 def test_scientific_notation():
     """
