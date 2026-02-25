@@ -26,7 +26,7 @@ dependencies = [
     "wrapt>=1.12.1",
     "fsspec>=2025.7.0,!=2025.12,!=2026.1",  # Avoiding https://github.com/fsspec/filesystem_spec/issues/1973
     "universal_pathlib>=0.3.1",
-    "numba=0.64.0",
+    "numba>=0.64.0",
 ]
 
 [project.urls]
