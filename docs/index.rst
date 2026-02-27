@@ -64,6 +64,11 @@ Core advantages being:
 * efficient packing of nested information into inputs to custom user functions
 * avoiding costly groupby operations
 
+.. image:: ./about/npd_api.png
+  :width: 400
+  :align: center
+  :alt: API diagram of nested-pandas
+
 
 How to Use This Guide
 =====================
