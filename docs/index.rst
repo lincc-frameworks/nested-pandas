@@ -65,7 +65,7 @@ Core advantages being:
 * avoiding costly groupby operations
 
 .. image:: ./about/npd_api.png
-  :width: 400
+  :width: 600
   :align: center
   :alt: API diagram of nested-pandas
 
