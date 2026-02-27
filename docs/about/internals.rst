@@ -6,10 +6,10 @@ leverages pyarrow and materializes the nested dataframes as a view of the
 data. The following diagram details the actual storage representation of 
 nested-pandas:
 
-.. image:: ./npd_internals.png
+.. image:: ./npd_anatomy.png
    :width: 400
    :align: center
-   :alt: Internal representation of nested-pandas
+   :alt: Diagram of the internal storage representation of nested-pandas
 
 
 The advantage of this approach is that each sub-column ("field" in pyarrow) is
