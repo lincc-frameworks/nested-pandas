@@ -14,6 +14,11 @@ tooling and support for nested dataframes packed into values of top-level
 dataframe columns. `Pyarrow <https://arrow.apache.org/docs/python/index.html>`_ 
 is used internally to aid in scalability and performance.
 
+.. image:: ./about/npd_api.png
+  :width: 600
+  :align: center
+  :alt: API diagram of nested-pandas
+
 Nested-Pandas allows data like this:
 
 .. image:: ./intro_images/pandas_dfs.png
@@ -46,7 +51,7 @@ Allowing powerful and straightforward operations, like:
 
    # Compute the mean flux for each row of "object_nf"
    import numpy as np
-   object_nf.reduce(np.mean, "nested_sources.flux")
+   object_nf.map_rows(np.mean, "nested_sources.flux")
 
 .. image:: ./intro_images/reduce.png
   :width: 150
@@ -64,10 +69,6 @@ Core advantages being:
 * efficient packing of nested information into inputs to custom user functions
 * avoiding costly groupby operations
 
-.. image:: ./about/npd_api.png
-  :width: 600
-  :align: center
-  :alt: API diagram of nested-pandas
 
 
 How to Use This Guide

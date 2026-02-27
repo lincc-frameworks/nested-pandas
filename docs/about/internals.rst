@@ -7,7 +7,7 @@ data. The following diagram details the actual storage representation of
 nested-pandas:
 
 .. image:: ./npd_anatomy.png
-   :width: 800
+   :width: 600
    :align: center
    :alt: Diagram of the internal storage representation of nested-pandas
 
