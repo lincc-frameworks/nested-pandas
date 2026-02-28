@@ -48,4 +48,52 @@ jobs:
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
         payload: |
-          text: "Smoke test failed ${{ matrix.python-version }}"
+          {
+            "text": "🚨 Smoke Test Failed (Python ${{ matrix.python-version }})",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "🚨 Smoke Test Failed",
+                  "emoji": true
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Component:*\n`nested-pandas`"
+                  }
+                ]
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "View Test Logs",
+                      "emoji": true
+                    },
+                    "style": "danger",
+                    "url": "https://github.com/lincc-frameworks/nested-pandas/actions/runs/${{ github.run_id }}"
+                  }
+                ]
+              },
+              {
+                "type": "context",
+                "elements": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "🤖 _Automated Alert from Python CI Pipeline_"
+                  }
+                ]
+              },
+              {
+                "type": "divider"
+              }
+            ]
+          }
