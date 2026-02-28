@@ -358,10 +358,10 @@ class NestedFrame(pd.DataFrame):
         >>> nf = generate_data(5,10, seed=1)
         >>> nf["nested2"] = nf["nested"]  # create a second nested column for demonstration
         >>> nf.get_subcolumns()
-        ['nested.t', 'nested.flux', 'nested.band', 'nested2.t', 'nested2.flux', 'nested2.band']
+        ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band', 'nested2.t', 'nested2.flux', 'nested2.flux_error', 'nested2.band']
 
         >>> nf.get_subcolumns("nested")
-        ['nested.t', 'nested.flux', 'nested.band']
+        ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band']
         """
         # By default, get all subcolumns from all nested columns
         if nested_columns == "all":
@@ -767,12 +767,13 @@ class NestedFrame(pd.DataFrame):
         >>> # drop the "t" column from "nested"
         >>> nf = nf.drop(["nested.t"], axis=1)
         >>> nf
-                  a         b                                      nested
-        0  0.417022  0.184677  [{flux: 31.551563, band: 'r'}; …] (5 rows)
-        1  0.720324  0.372520  [{flux: 68.650093, band: 'g'}; …] (5 rows)
-        2  0.000114  0.691121  [{flux: 83.462567, band: 'g'}; …] (5 rows)
-        3  0.302333  0.793535   [{flux: 1.828828, band: 'g'}; …] (5 rows)
-        4  0.146756  1.077633  [{flux: 75.014431, band: 'g'}; …] (5 rows)
+                  a         b                                             nested
+        0  0.417022  0.184677  [{flux: 31.551563, flux_error: 1, band: 'r'}; ...
+        1  0.720324  0.372520  [{flux: 68.650093, flux_error: 1, band: 'g'}; ...
+        2  0.000114  0.691121  [{flux: 83.462567, flux_error: 1, band: 'g'}; ...
+        3  0.302333  0.793535  [{flux: 1.828828, flux_error: 1, band: 'g'}; …...
+        4  0.146756  1.077633  [{flux: 75.014431, flux_error: 1, band: 'g'}; ...
+            
         """
 
         # axis 1 requires special handling for nested columns
@@ -861,11 +862,12 @@ class NestedFrame(pd.DataFrame):
 
         >>> nf_min = nf.min()
         >>> nf_min
-        a              0.000114
-        b              0.184677
-        nested.t       0.547752
-        nested.flux    1.828828
-        nested.band           g
+        a                    0.000114
+        b                    0.184677
+        nested.t             0.547752
+        nested.flux          1.828828
+        nested.flux_error           1
+        nested.band                 g
         dtype: object
 
         See Also
@@ -935,11 +937,12 @@ class NestedFrame(pd.DataFrame):
 
         >>> nf_max = nf.max()
         >>> nf_max
-        a               0.720324
-        b               1.077633
-        nested.t       19.365232
-        nested.flux    98.886109
-        nested.band            r
+        a                     0.720324
+        b                     1.077633
+        nested.t             19.365232
+        nested.flux          98.886109
+        nested.flux_error            1
+        nested.band                  r
         dtype: object
 
         See Also
@@ -1018,19 +1021,19 @@ class NestedFrame(pd.DataFrame):
 
         >>> nf_desc = nf.describe()
         >>> nf_desc
-                      a         b   nested.t  nested.flux
-        count  5.000000  5.000000       25.0         25.0
-        mean   0.317310  0.623897  10.095623    45.252724
-        std    0.274904  0.351880   6.434858    30.152261
-        min    0.000114  0.184677   0.547752     1.828828
-        25%    0.146756  0.372520    3.96203    21.162812
-        50%    0.302333  0.691121  10.663306    44.789353
-        75%    0.417022  0.793535  16.014891    69.975836
-        max    0.720324  1.077633  19.365232    98.886109
-
-        See Also
+                      a         b   nested.t  nested.flux  nested.flux_error
+        count  5.000000  5.000000       25.0         25.0               25.0
+        mean   0.317310  0.623897  10.095623    45.252724                1.0
+        std    0.274904  0.351880   6.434858    30.152261                0.0
+        min    0.000114  0.184677   0.547752     1.828828                1.0
+        25%    0.146756  0.372520    3.96203    21.162812                1.0
+        50%    0.302333  0.691121  10.663306    44.789353                1.0
+        75%    0.417022  0.793535  16.014891    69.975836                1.0
+        max    0.720324  1.077633  19.365232    98.886109                1.0
+        
+        -See Also
         --------
-        :meth:`pandas.DataFrame.describe`
+        -:meth:`pandas.DataFrame.describe`
 
         """
 
@@ -1134,16 +1137,16 @@ class NestedFrame(pd.DataFrame):
 
         >>> nf_explode = nf.explode(column="nested")
         >>> nf_explode
-                  a         b          t       flux band
-        0  0.417022  0.604665   3.725204  67.046751    g
-        0  0.417022  0.604665  10.776335  14.038694    g
-        0  0.417022  0.604665   4.089045  96.826158    g
-        1  0.720324  0.293512   6.911215   41.73048    r
-        1  0.720324  0.293512    8.38389  19.810149    r
-        1  0.720324  0.293512  17.562349  31.342418    g
-        2  0.000114  0.184677   7.935349  55.868983    r
-        2  0.000114  0.184677   13.70439  80.074457    r
-        2  0.000114  0.184677   0.547752  69.232262    g
+                  a         b          t       flux  flux_error band
+        0  0.417022  0.604665   3.725204  67.046751           1    g
+        0  0.417022  0.604665  10.776335  14.038694           1    g
+        0  0.417022  0.604665   4.089045  96.826158           1    g
+        1  0.720324  0.293512   6.911215   41.73048           1    r
+        1  0.720324  0.293512    8.38389  19.810149           1    r
+        1  0.720324  0.293512  17.562349  31.342418           1    g
+        2  0.000114  0.184677   7.935349  55.868983           1    r
+        2  0.000114  0.184677   13.70439  80.074457           1    r
+        2  0.000114  0.184677   0.547752  69.232262           1    g
 
         """
 
@@ -1447,11 +1450,11 @@ class NestedFrame(pd.DataFrame):
         >>> nf = nf.query("nested.t > 10")
         >>> nf
                   a         b                                             nested
-        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...
-        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
-        2  0.000114  0.691121  [{t: 11.173797, flux: 28.044399, band: 'r'}; …...
-        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
-        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …...
+        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, flux_error: 1,...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 11.173797, flux: 28.044399, flux_error: 1...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, flux_error: 1,...
+        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, flux_error: 1...
 
 
         See Also
@@ -1630,19 +1633,19 @@ class NestedFrame(pd.DataFrame):
         >>> # this query empties several of the nested dataframes
         >>> nf = nf.query("nested.t > 19")
         >>> nf
-                  a         b                                        nested
-        0  0.417022  0.184677                                          None
-        1  0.720324  0.372520   [{t: 19.365232, flux: 90.85955, band: 'r'}]
-        2  0.000114  0.691121  [{t: 19.157791, flux: 14.672857, band: 'r'}]
-        3  0.302333  0.793535                                          None
-        4  0.146756  1.077633                                          None
+                  a         b                                             nested
+        0  0.417022  0.184677                                               None
+        1  0.720324  0.372520  [{t: 19.365232, flux: 90.85955, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 19.157791, flux: 14.672857, flux_error: 1...
+        3  0.302333  0.793535                                               None
+        4  0.146756  1.077633                                               None
 
 
         >>> # dropna removes rows with those emptied dataframes
         >>> nf.dropna(subset="nested")
-                  a         b                                        nested
-        1  0.720324  0.372520   [{t: 19.365232, flux: 90.85955, band: 'r'}]
-        2  0.000114  0.691121  [{t: 19.157791, flux: 14.672857, band: 'r'}]
+                  a         b                                             nested
+        1  0.720324  0.372520  [{t: 19.365232, flux: 90.85955, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 19.157791, flux: 14.672857, flux_error: 1...
 
 
         `dropna` can also be used on nested columns:
@@ -1651,19 +1654,19 @@ class NestedFrame(pd.DataFrame):
         >>> # Either on the whole dataframe
         >>> nf.dropna(on_nested="nested")
                   a         b                                             nested
-        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, band: 'r'}; …] ...
-        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
-        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g'}; …]...
-        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
-        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
+        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, flux_error: 1, ...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, flux_error: 1,...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, flux_error: 1,...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, flux_error: 1,...
         >>> # or on a specific nested column
         >>> nf.dropna(subset="nested.t")
                   a         b                                             nested
-        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, band: 'r'}; …] ...
-        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
-        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g'}; …]...
-        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
-        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
+        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, flux_error: 1, ...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, flux_error: 1,...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, flux_error: 1,...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, flux_error: 1,...
 
         Notes
         -----
@@ -1770,11 +1773,11 @@ class NestedFrame(pd.DataFrame):
         >>> # Sort nested values
         >>> nf.sort_values(by="nested.band")
                   a         b                                             nested
-        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...
-        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
-        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g'}; …]...
-        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
-        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
+        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, flux_error: 1,...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, flux_error: 1,...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, flux_error: 1,...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, flux_error: 1,...
         """
 
         # Resolve target layer
@@ -2133,12 +2136,12 @@ class NestedFrame(pd.DataFrame):
         ...     return {"first_"+key.split(".")[1]:row[key][0] for key in row.keys()}
 
         >>> nf.map_rows(first_val, columns="nested")
-             first_t  first_flux first_band
-        0   8.383890   31.551563          r
-        1  13.704390   68.650093          g
-        2   4.089045   83.462567          g
-        3  17.562349    1.828828          g
-        4   0.547752   75.014431          g
+             first_t  first_flux  first_flux_error first_band
+        0   8.383890   31.551563                 1          r
+        1  13.704390   68.650093                 1          g
+        2   4.089045   83.462567                 1          g
+        3  17.562349    1.828828                 1          g
+        4   0.547752   75.014431                 1          g
 
         You may want the result of a `map_rows` call to have nested structure,
         we can achieve this by using the `infer_nesting` kwarg:
@@ -2176,11 +2179,11 @@ class NestedFrame(pd.DataFrame):
         ...             output_names=["nested.t_a"],
         ...             append_columns=True)
                   a         b                                             nested
-        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, band: 'r', t_a:...
-        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, band: 'g', t_a...
-        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, band: 'g', t_a...
-        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g', t_a...
-        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, band: 'g', t_a...
+        0  0.417022  0.184677  [{t: 8.38389, flux: 31.551563, flux_error: 1, ...
+        1  0.720324  0.372520  [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2  0.000114  0.691121  [{t: 4.089045, flux: 83.462567, flux_error: 1,...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, flux_error: 1,...
+        4  0.146756  1.077633  [{t: 0.547752, flux: 75.014431, flux_error: 1,...
 
 
         Notes

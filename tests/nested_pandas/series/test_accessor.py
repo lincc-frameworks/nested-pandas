@@ -1174,5 +1174,5 @@ def test_issue266():
     empty_outer_flatten = empty_nnf["outer"].nest.to_flatten_inner("inner")
 
     assert empty_outer_flatten.dtype == NestedDtype.from_columns(
-        {"a": pa.float64(), "b": pa.float64(), "t": pa.float64(), "flux": pa.float64(), "band": pa.string()}
+        {"a": pa.float64(), "b": pa.float64(), "t": pa.float64(), "flux": pa.float64(), "flux_error": pa.int64(), "band": pa.string()}
     )
