@@ -735,6 +735,28 @@ def test_from_flat_omitting_columns():
     assert list(nf.nested.nest.columns) == ["c"]
 
 
+def test_from_flat_all_base_columns_returns_flat():
+    """Test from_flat with no nested columns assigned."""
+    flat_df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+    nf = NestedFrame.from_flat(flat_df, base_columns=flat_df.columns)
+
+    assert isinstance(nf, NestedFrame)
+    assert len(nf.nested_columns) == 0
+    assert_frame_equal(nf, NestedFrame(flat_df))
+
+
+def test_from_flat_defaults_to_all_base_columns():
+    """Test from_flat defaults to a flat NestedFrame construction path."""
+    flat_df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+    nf = NestedFrame.from_flat(flat_df)
+
+    assert isinstance(nf, NestedFrame)
+    assert len(nf.nested_columns) == 0
+    assert_frame_equal(nf, NestedFrame(flat_df))
+
+
 def test_from_lists():
     """Test NestedFrame.from_lists behavior"""
     # Test a dataframe with no rows
@@ -765,9 +787,11 @@ def test_from_lists():
     with pytest.raises(ValueError):
         res = NestedFrame.from_lists(nf, base_columns=["d"], list_columns=["e", "c"])
 
-    # Check for the no list columns error
-    with pytest.raises(ValueError):
-        res = NestedFrame.from_lists(nf, base_columns=["c", "d", "e"])
+    # If no list columns are assigned, return a flat NestedFrame
+    res = NestedFrame.from_lists(nf, base_columns=["c", "d", "e"])
+    assert isinstance(res, NestedFrame)
+    assert len(res.nested_columns) == 0
+    assert_frame_equal(res, NestedFrame(nf))
 
     # Multiple list columns (of uneven length)
     nf2 = NestedFrame(

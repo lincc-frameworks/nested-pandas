@@ -560,7 +560,7 @@ class NestedFrame(pd.DataFrame):
         return NestedFrame.from_lists(self.copy(), list_columns=columns, name=name)
 
     @classmethod
-    def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
+    def from_flat(cls, df, base_columns=None, nested_columns=None, on: str | None = None, name="nested"):
         """Creates a NestedFrame with base and nested columns from a flat
         dataframe.
 
@@ -568,9 +568,11 @@ class NestedFrame(pd.DataFrame):
         ----------
         df: pd.DataFrame or NestedFrame
             A flat dataframe.
-        base_columns: list-like
+        base_columns: list-like, or None
             The columns that should be used as base (flat) columns in the
-            output dataframe.
+            output dataframe. If None, all columns are assumed to be base
+            columns unless `nested_columns` is provided (in which case all
+            non-nested columns are treated as base columns).
         nested_columns: list-like, or None
             The columns that should be packed into a nested column. All columns
             in the list will attempt to be packed into a single nested column
@@ -605,12 +607,24 @@ class NestedFrame(pd.DataFrame):
         1  2  4  [{c: 4, d: 8}; …] (2 rows)
         """
 
+        if base_columns is None:
+            if nested_columns is None:
+                base_columns = df.columns
+            else:
+                base_columns = [col for col in df.columns if col not in nested_columns]
+
         # Resolve new index
         if on is not None:
             # if a base column is chosen remove it
             if on in base_columns:
                 base_columns = [col for col in base_columns if col != on]
             df = df.set_index(on)
+
+        # add nested
+        if nested_columns is None:
+            nested_columns = [col for col in df.columns if col not in base_columns]
+        if len(nested_columns) == 0:
+            return cls(df[base_columns].copy())
 
         # drop duplicates on index
         out_df = df[base_columns][~df.index.duplicated(keep="first")]
@@ -619,9 +633,6 @@ class NestedFrame(pd.DataFrame):
         if not isinstance(out_df, NestedFrame):
             out_df = NestedFrame(out_df)
 
-        # add nested
-        if nested_columns is None:
-            nested_columns = [col for col in df.columns if col not in base_columns]
         return out_df.join_nested(df[nested_columns], name=name)
 
     @classmethod
@@ -679,7 +690,9 @@ class NestedFrame(pd.DataFrame):
                 list_columns = [col for col in df.columns if col not in base_columns]
 
         if len(list_columns) == 0:
-            raise ValueError("No columns were assigned as list columns.")
+            if base_columns is not None:
+                return cls(df[base_columns].copy())
+            return cls(df.copy())
 
         # Pack list columns into a nested column
         if len(df) == 0:
