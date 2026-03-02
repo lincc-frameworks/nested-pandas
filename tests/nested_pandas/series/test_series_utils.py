@@ -24,9 +24,9 @@ def test_align_struct_list_offsets():
     with pytest.raises(ValueError):
         align_struct_list_offsets(pa.array([], type=pa.int64()))
     with pytest.raises(ValueError):
-        align_struct_list_offsets(pa.array([], type=pa.list_(pa.int64())))
+        align_struct_list_offsets(pa.array([], type=pa.large_list(pa.int64())))
 
-    # Raises if one of the fields is not a ListArray
+    # Raises if one of the fields is not a LargeListArray
     with pytest.raises(ValueError):
         align_struct_list_offsets(
             pa.StructArray.from_arrays([pa.array([[1, 2], [3, 4, 5]]), pa.array([1, 2])], ["a", "b"])
@@ -36,22 +36,26 @@ def test_align_struct_list_offsets():
     with pytest.raises(ValueError):
         align_struct_list_offsets(
             pa.StructArray.from_arrays(
-                [pa.array([[1, 2], [3, 4, 5]]), pa.array([[1, 2, 3], [4, 5]])], ["a", "b"]
+                [
+                    pa.array([[1, 2], [3, 4, 5]], type=pa.large_list(pa.int64())),
+                    pa.array([[1, 2, 3], [4, 5]], type=pa.large_list(pa.int64())),
+                ],
+                ["a", "b"],
             )
         )
 
     input_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([[1, 2], [3, 4], [], [5, 6, 7]]),
-            pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]]),
+            pa.array([[1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64())),
+            pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string())),
         ],
         names=["a", "b"],
     )
     assert align_struct_list_offsets(input_array) is input_array
 
-    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]])[1:]
+    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64()))[1:]
     assert a.offsets[0].as_py() == 3
-    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]])
+    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string()))
     assert b.offsets[0].as_py() == 0
     input_array = pa.StructArray.from_arrays(
         arrays=[a, b],
@@ -65,8 +69,8 @@ def test_align_struct_list_offsets():
 def test_align_chunked_struct_list_offsets():
     """Test align_chunked_struct_list_offsets function."""
     # Input is an array, output is chunked array
-    a = pa.array([[1, 2], [3, 4], [], [5, 6, 7]])
-    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]])
+    a = pa.array([[1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64()))
+    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string()))
     input_array = pa.StructArray.from_arrays(
         arrays=[a, b],
         names=["a", "b"],
@@ -89,8 +93,10 @@ def test_align_chunked_struct_list_offsets():
     assert output_array.equals(input_array)
 
     # Input is an "aligned" chunked array, but offsets do not start with zero
-    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]])[1:]
-    b = pa.array([["a", "a", "a", "a"], ["x", "y"], ["y", "x"], [], ["d", "e", "f"]])[1:]
+    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64()))[1:]
+    b = pa.array(
+        [["a", "a", "a", "a"], ["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string())
+    )[1:]
     input_array = pa.chunked_array(
         [
             pa.StructArray.from_arrays(
@@ -104,8 +110,8 @@ def test_align_chunked_struct_list_offsets():
     assert output_array.equals(input_array)
 
     # Input is a "non-aligned" chunked array
-    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]])[1:]
-    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]])
+    a = pa.array([[0, 0, 0], [1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64()))[1:]
+    b = pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string()))
     input_array = pa.chunked_array(
         [
             pa.StructArray.from_arrays(
@@ -125,16 +131,18 @@ def test_validate_struct_list_type():
         validate_struct_list_type(pa.float64())
 
     with pytest.raises(ValueError):
-        validate_struct_list_type(pa.list_(pa.struct({"a": pa.int64()})))
+        validate_struct_list_type(pa.large_list(pa.struct({"a": pa.int64()})))
 
     with pytest.raises(ValueError):
         validate_struct_list_type(pa.struct({"a": pa.float64()}))
 
     with pytest.raises(ValueError):
-        validate_struct_list_type(pa.struct({"a": pa.list_(pa.float64()), "b": pa.float64()}))
+        validate_struct_list_type(pa.struct({"a": pa.large_list(pa.float64()), "b": pa.float64()}))
 
     assert (
-        validate_struct_list_type(pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.float64())}))
+        validate_struct_list_type(
+            pa.struct({"a": pa.large_list(pa.float64()), "b": pa.large_list(pa.float64())})
+        )
         is None
     )
 
@@ -145,14 +153,14 @@ def test_transpose_struct_list_type():
     with pytest.raises(ValueError):
         transpose_struct_list_type(pa.int64())
     with pytest.raises(ValueError):
-        transpose_struct_list_type(pa.list_(pa.int64()))
+        transpose_struct_list_type(pa.large_list(pa.int64()))
 
-    # Raises if one of the fields is not a ListType
+    # Raises if one of the fields is not a LargeListType
     with pytest.raises(ValueError):
         transpose_struct_list_type(pa.struct([("a", pa.int64()), ("b", pa.int64())]))
 
-    input_type = pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.string()))])
-    expected_output = pa.list_(pa.struct([("a", pa.int64()), ("b", pa.string())]))
+    input_type = pa.struct([("a", pa.large_list(pa.int64())), ("b", pa.large_list(pa.string()))])
+    expected_output = pa.large_list(pa.struct([("a", pa.int64()), ("b", pa.string())]))
     assert transpose_struct_list_type(input_type) == expected_output
 
 
@@ -164,8 +172,8 @@ def test_transpose_list_struct_type():
     with pytest.raises(ValueError):
         transpose_list_struct_type(pa.struct([("a", pa.int64()), ("b", pa.int64())]))
 
-    input_type = pa.list_(pa.struct([("a", pa.int64()), ("b", pa.string())]))
-    expected_output = pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.string()))])
+    input_type = pa.large_list(pa.struct([("a", pa.int64()), ("b", pa.string())]))
+    expected_output = pa.struct([("a", pa.large_list(pa.int64())), ("b", pa.large_list(pa.string()))])
     assert transpose_list_struct_type(input_type) == expected_output
 
 
@@ -173,8 +181,8 @@ def test_transpose_struct_list_array():
     """Test transpose_struct_list_array function."""
     input_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([[1, 2], [3, 4], [], [5, 6, 7]]),
-            pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]]),
+            pa.array([[1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64())),
+            pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string())),
         ],
         names=["a", "b"],
     )
@@ -184,7 +192,8 @@ def test_transpose_struct_list_array():
             [{"a": 3, "b": "y"}, {"a": 4, "b": "x"}],
             [],
             [{"a": 5, "b": "d"}, {"a": 6, "b": "e"}, {"a": 7, "b": "f"}],
-        ]
+        ],
+        type=pa.large_list(pa.struct([("a", pa.int64()), ("b", pa.string())])),
     )
     actual = transpose_struct_list_array(input_array)
     assert actual == desired
@@ -198,12 +207,13 @@ def test_transpose_list_struct_array():
             [{"a": 3, "b": "y"}, {"a": 4, "b": "x"}],
             [],
             [{"a": 5, "b": "d"}, {"a": 6, "b": "e"}, {"a": 7, "b": "f"}],
-        ]
+        ],
+        type=pa.large_list(pa.struct([("a", pa.int64()), ("b", pa.string())])),
     )
     desired = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([[1, 2], [3, 4], [], [5, 6, 7]]),
-            pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]]),
+            pa.array([[1, 2], [3, 4], [], [5, 6, 7]], type=pa.large_list(pa.int64())),
+            pa.array([["x", "y"], ["y", "x"], [], ["d", "e", "f"]], type=pa.large_list(pa.string())),
         ],
         names=["a", "b"],
     )
@@ -213,8 +223,14 @@ def test_transpose_list_struct_array():
 
 def test_transpose_list_struct_scalar():
     """Test transpose_list_struct_scalar function."""
-    input_scalar = pa.scalar([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}])
-    desired = pa.scalar({"a": [1, 2], "b": ["x", "y"]})
+    input_scalar = pa.scalar(
+        [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
+        type=pa.large_list(pa.struct([("a", pa.int64()), ("b", pa.string())])),
+    )
+    desired = pa.scalar(
+        {"a": [1, 2], "b": ["x", "y"]},
+        type=pa.struct([("a", pa.large_list(pa.int64())), ("b", pa.large_list(pa.string()))]),
+    )
     actual = transpose_list_struct_scalar(input_scalar)
     assert actual == desired
 
@@ -239,7 +255,7 @@ def test_struct_field_names():
     [
         (pa.float64(), False),
         (pa.list_(pa.float64()), False),
-        (pa.list_(pa.struct([("a", pa.float64()), ("b", pa.float64())])), True),
+        (pa.large_list(pa.struct([("a", pa.float64()), ("b", pa.float64())])), True),
     ],
 )
 def test_nested_types_mapper(pa_type, is_nested):
@@ -254,40 +270,42 @@ def test_nested_types_mapper(pa_type, is_nested):
 
 
 def test_normalize_list_array():
-    """Test normalize_list_array converts to plain list arrays."""
-    list_array = pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))
-    assert normalize_list_array(list_array) is list_array
+    """Test normalize_list_array converts to large_list arrays."""
+    large_list_array = pa.array([[1, 2], [3, 4]], type=pa.large_list(pa.int64()))
+    assert normalize_list_array(large_list_array) is large_list_array
 
     fixed = pa.FixedSizeListArray.from_arrays(pa.array([1, 2, 3, 4]), list_size=2)
     normalized_fixed = normalize_list_array(fixed)
-    expected_list = pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))
-    assert pa.types.is_list(normalized_fixed.type)
-    assert normalized_fixed.equals(expected_list)
+    expected_large = pa.array([[1, 2], [3, 4]], type=pa.large_list(pa.int64()))
+    assert pa.types.is_large_list(normalized_fixed.type)
+    assert normalized_fixed.equals(expected_large)
 
-    large = pa.array([[5, 6], [7, 8]], type=pa.large_list(pa.int64()))
-    normalized_large = normalize_list_array(large)
-    expected_large = pa.array([[5, 6], [7, 8]], type=pa.list_(pa.int64()))
-    assert pa.types.is_list(normalized_large.type)
-    assert normalized_large.equals(expected_large)
+    list_array = pa.array([[5, 6], [7, 8]], type=pa.list_(pa.int64()))
+    normalized_list = normalize_list_array(list_array)
+    expected_normalized = pa.array([[5, 6], [7, 8]], type=pa.large_list(pa.int64()))
+    assert pa.types.is_large_list(normalized_list.type)
+    assert normalized_list.equals(expected_normalized)
 
     with pytest.raises(ValueError):
         normalize_list_array(pa.array([1, 2, 3]))
 
 
 def test_normalize_struct_list_array():
-    """Test normalize_struct_list_array converts struct fields to plain list arrays."""
-    list_struct = pa.StructArray.from_arrays([pa.array([[1], [2], [3]])], names=["a"])
-    assert normalize_struct_list_array(list_struct) is list_struct
+    """Test normalize_struct_list_array converts struct fields to large_list arrays."""
+    large_list_struct = pa.StructArray.from_arrays(
+        [pa.array([[1], [2], [3]], type=pa.large_list(pa.int64()))], names=["a"]
+    )
+    assert normalize_struct_list_array(large_list_struct) is large_list_struct
 
     fixed = pa.FixedSizeListArray.from_arrays(pa.array([1, 2, 3, 4]), list_size=2)
     struct_array = pa.StructArray.from_arrays([fixed], names=["a"])
     normalized = normalize_struct_list_array(struct_array)
 
     expected_array = pa.StructArray.from_arrays(
-        [pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))],
+        [pa.array([[1, 2], [3, 4]], type=pa.large_list(pa.int64()))],
         names=["a"],
     )
-    expected_type = pa.struct([("a", pa.list_(pa.int64()))])
+    expected_type = pa.struct([("a", pa.large_list(pa.int64()))])
 
     assert normalized.type == expected_type
     assert normalized.equals(expected_array)
