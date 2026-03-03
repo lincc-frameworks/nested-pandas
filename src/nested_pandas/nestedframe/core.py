@@ -10,7 +10,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from deprecated import deprecated
-#from numba.core.registry import CPUDispatcher
+from numba.core.registry import CPUDispatcher
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
@@ -30,7 +30,7 @@ from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
 #from . import njit_funcs
-#from nested_pandas.nestedframe import njit_funcs
+from nested_pandas.nestedframe import njit_funcs
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -2010,7 +2010,6 @@ class NestedFrame(pd.DataFrame):
         Apply njit map_rows to njit custom function with requested_columns.
         Currently only supports 1 or 2 arguments custom function.
         """
-        return
         if len(requested_columns) == 1:
             layer, col_name = requested_columns[0]
             if layer == "base":
@@ -2326,13 +2325,13 @@ class NestedFrame(pd.DataFrame):
 
         elif row_container == "args":
             if njit:
-                CPUDispatcher = None
-                if not isinstance(func, CPUDispatcher) or len(requested_columns) > 2:
-                    raise ValueError(
-                        "njit execution is only supported for numba.jit decorated "
-                        "functions with at most 2 arguments"
-                    )
-                results = self._apply_njit_map_rows(requested_columns, func)
+                pass
+                #if not isinstance(func, CPUDispatcher) or len(requested_columns) > 2:
+                #    raise ValueError(
+                #        "njit execution is only supported for numba.jit decorated "
+                #        "functions with at most 2 arguments"
+                #    )
+                #results = self._apply_njit_map_rows(requested_columns, func)
             else:
                 # Default python execution
                 iterators = []
