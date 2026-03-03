@@ -6,7 +6,7 @@ leverages pyarrow and materializes the nested dataframes as a view of the
 data. The following diagram details the actual storage representation of 
 nested-pandas:
 
-.. image:: ./npd_anatomy.png
+.. image:: ./npd_anatomy.svg
    :width: 600
    :align: center
    :alt: Diagram of the internal storage representation of nested-pandas
