@@ -14,7 +14,7 @@ tooling and support for nested dataframes packed into values of top-level
 dataframe columns. `Pyarrow <https://arrow.apache.org/docs/python/index.html>`_ 
 is used internally to aid in scalability and performance.
 
-.. image:: ./about/npd_api.png
+.. image:: ./about/npd_api.svg
   :width: 600
   :align: center
   :alt: API diagram of nested-pandas
