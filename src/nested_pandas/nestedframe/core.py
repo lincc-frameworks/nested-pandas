@@ -2069,6 +2069,7 @@ class NestedFrame(pd.DataFrame):
         output_names: None | str | list[str] = None,
         infer_nesting: bool = True,
         append_columns: bool = False,
+        njit: bool = False,
         **kwargs,
     ) -> NestedFrame:  # type: ignore[override]
         """
@@ -2115,6 +2116,12 @@ class NestedFrame(pd.DataFrame):
             hierarchical column name (e.g. "nested.x"). If their base nested column exists in the
             original NestedFrame, the new output sub-columns will be added into the frame of the
             existing nested column. See an example below.
+        njit : bool, default False
+            If Ture, the function will try to use numba's njit to speed up the execution.
+            This will only work if the custom function is compatible with njit and the requested columns
+            are at most two.
+
+            Note that using njit will disable support for `row_container="dict"`.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -2298,6 +2305,12 @@ class NestedFrame(pd.DataFrame):
         results = []
 
         if row_container == "dict":
+            if njit:
+                raise ValueError(
+                    "njit execution is not supported for `row_container='dict'`, "
+                    "use `row_container='args'` instead."
+                )
+
             arg_dict = {}
             for layer, col in requested_columns:
                 if layer == "base":
@@ -2310,7 +2323,12 @@ class NestedFrame(pd.DataFrame):
             ]
 
         elif row_container == "args":
-            if isinstance(func, CPUDispatcher) and len(requested_columns) <= 2:
+            if njit:
+                if not isinstance(func, CPUDispatcher) or len(requested_columns) > 2:
+                    raise ValueError(
+                        "njit execution is only supported for numba.jit decorated "
+                        "functions with at most 2 arguments"
+                    )
                 results = self._apply_njit_map_rows(requested_columns, func)
             else:
                 # Default python execution

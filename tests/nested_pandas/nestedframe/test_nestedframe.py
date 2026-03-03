@@ -1456,7 +1456,13 @@ def test_map_rows_njit():
 
     expected_max_c = [4, 4, 4]
 
-    result1 = base.map_rows(nested1, columns=["nested.c"], row_container="args", output_names="max_c")
+    result1 = base.map_rows(
+        nested1,
+        columns=["nested.c"],
+        row_container="args",
+        output_names="max_c",
+        njit=True,
+    )
     assert isinstance(result1, NestedFrame)
     assert list(result1.columns) == ["max_c"]
     for i in range(len(result1)):
@@ -1470,7 +1476,13 @@ def test_map_rows_njit():
 
     expected_a_double = [2, 4, 6]
 
-    result2 = base.map_rows(base1, columns=["a"], row_container="args", output_names="a_double")
+    result2 = base.map_rows(
+        base1,
+        columns=["a"],
+        row_container="args",
+        output_names="a_double",
+        njit=True,
+    )
     assert isinstance(result2, NestedFrame)
     assert list(result2.columns) == ["a_double"]
     for i in range(len(result2)):
@@ -1484,7 +1496,11 @@ def test_map_rows_njit():
     expected_sum_c_e = [12, 16, 12]
 
     result3 = base.map_rows(
-        two_nested_sum, columns=["nested.c", "nested2.e"], row_container="args", output_names="sum_c_e"
+        two_nested_sum,
+        columns=["nested.c", "nested2.e"],
+        row_container="args",
+        output_names="sum_c_e",
+        njit=True,
     )
     assert isinstance(result3, NestedFrame)
     assert list(result3.columns) == ["sum_c_e"]
@@ -1498,7 +1514,13 @@ def test_map_rows_njit():
 
     expected_sum_a_b = [3, 6, 9]
 
-    result4 = base.map_rows(two_base_sum, columns=["a", "b"], row_container="args", output_names="sum_a_b")
+    result4 = base.map_rows(
+        two_base_sum,
+        columns=["a", "b"],
+        row_container="args",
+        output_names="sum_a_b",
+        njit=True,
+    )
     assert isinstance(result4, NestedFrame)
     assert list(result4.columns) == ["sum_a_b"]
     for i in range(len(result4)):
@@ -1512,7 +1534,11 @@ def test_map_rows_njit():
     expected_sum_a_c = [7, 10, 9]
 
     result5 = base.map_rows(
-        base_nested_sum, columns=["a", "nested.c"], row_container="args", output_names="sum_a_c"
+        base_nested_sum,
+        columns=["a", "nested.c"],
+        row_container="args",
+        output_names="sum_a_c",
+        njit=True,
     )
     assert isinstance(result5, NestedFrame)
     assert list(result5.columns) == ["sum_a_c"]
@@ -1525,12 +1551,38 @@ def test_map_rows_njit():
         return np.sum(c) + a
 
     result6 = base.map_rows(
-        nested_base_sum, columns=["nested.c", "a"], row_container="args", output_names="sum_c_a"
+        nested_base_sum,
+        columns=["nested.c", "a"],
+        row_container="args",
+        output_names="sum_c_a",
+        njit=True,
     )
     assert isinstance(result6, NestedFrame)
     assert list(result6.columns) == ["sum_c_a"]
     for i in range(len(result6)):
         assert result6["sum_c_a"].values[i] == expected_sum_a_c[i]
+
+    # testing error rasing
+    def two_nested_sum_py(c, e):
+        return np.sum(c) + np.sum(e)
+
+    with pytest.raises(ValueError):
+        base.map_rows(
+            two_nested_sum_py,
+            columns=["nested.c", "nested2.e"],
+            row_container="args",
+            output_names="sum_c_e",
+            njit=True,
+        )
+
+    with pytest.raises(ValueError):
+        base.map_rows(
+            two_nested_sum_py,
+            columns=["nested.c", "nested2.e"],
+            row_container="dict",
+            output_names="sum_c_e",
+            njit=True,
+        )
 
 
 def test_scientific_notation():
