@@ -19,30 +19,32 @@ This creates a normal flat table and groups it into nested rows.
 
 .. code-block:: python
 
-	import pandas as pd
-	import nested_pandas as npd
+    import pandas as pd
+    import nested_pandas as npd
 
-	#Example:For two stars each with two measurements of brightness
-	data = {
-		"star_id": ["Star_A","Star_A","Star_B",Star_B"],
+    #Example:For two stars each with two measurements of brightness
+    data = {
+		"star_id": ["Star_A","Star_A","Star_B","Star_B"],
 		"brightness": [15.3,15.4,12.5,12.6]
-	}
-	df = pd.DataFrame(data)
+    }
+    df = pd.DataFrame(data)
 
-	#In order to get one row per star, with all brightness values in a nested list
-	nested_stars = df.groupby("star_id").nested.pack(name="light_curve)
-	print(nested_stars)
+    #In order to get one row per star, with all brightness values in a nested list
+    nested_stars = df.groupby("star_id").nested.pack(name="light_curve")
+    print(nested_stars)
 
 **2. Advanced Manipulation with .eval()**
 In order to perform fast calculations on nested columns using the ".eval()" method. This is much faster than manually using loops.
 
 .. code-block:: python
 
-	#Example:For adding a calibration constant to a nested magnitude column
-	#This creates 'calibrated_mag' by adding 25.5 to 'mag' inside the 'lc' nested column
-	nf2 = nf.eval("lc.calibrated_mag = lc.mag + 25.5")
+    #Example:For adding a calibration constant to a nested magnitude column
+    #This creates 'calibrated_mag' by adding 25.5 to 'brightness' inside the 'light_curve' nested column
+    nf2 = nested_stars.eval("light_curve.calibrated_mag = light_curve.brightness + 25.5")
+    print(nf2)
 	
-	#Example: Combining flat columns with nested aggregations
-	#This adds a flat value 'a' to the median of nested column 'c'
-	nf2 = nf.eval("result = a + packed.c.median()")
-
+    #Example: Combining flat columns with nested aggregations
+    #This adds a flat value 'a' to the median of nested column 'brightness'
+    a = 10.0
+    nf3 = nested_stars.eval("result = a + light_curve.brightness.median()")
+    print(nf3)
