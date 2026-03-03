@@ -19,7 +19,7 @@ dataframe columns. [Pyarrow](https://arrow.apache.org/docs/python/index.html)
 is used internally to aid in scalability and performance.
 
 <p align="center">
-    <img src="./about/npd_api.svg" alt="nested-pandas API" width="600"/>
+    <img src="./docs/about/npd_api.svg" alt="nested-pandas API" width="600"/>
 </p>
 
 Nested-Pandas allows data like this:
