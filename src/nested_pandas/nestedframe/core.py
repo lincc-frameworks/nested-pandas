@@ -29,7 +29,8 @@ from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 
-from . import njit_funcs
+#from . import njit_funcs
+from nested_pandas.nestedframe import njit_funcs
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
