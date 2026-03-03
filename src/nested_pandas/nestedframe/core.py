@@ -358,7 +358,8 @@ class NestedFrame(pd.DataFrame):
         >>> nf = generate_data(5,10, seed=1)
         >>> nf["nested2"] = nf["nested"]  # create a second nested column for demonstration
         >>> nf.get_subcolumns()
-        ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band', 'nested2.t', 'nested2.flux', 'nested2.flux_error', 'nested2.band']
+        ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band', 'nested2.t', 'nested2.flux',
+        'nested2.flux_error', 'nested2.band']
 
         >>> nf.get_subcolumns("nested")
         ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band']
@@ -377,7 +378,8 @@ class NestedFrame(pd.DataFrame):
         return subcols
 
     @deprecated(
-        version="0.6.0", reason="`add_nested` will be removed in version 0.7.0, use `join_nested` instead."
+        version="0.6.0",
+        reason="`add_nested` will be removed in version 0.7.0, use `join_nested` instead.",
     )
     def add_nested(
         self,
@@ -773,7 +775,7 @@ class NestedFrame(pd.DataFrame):
         2  0.000114  0.691121  [{flux: 83.462567, flux_error: 1, band: 'g'}; ...
         3  0.302333  0.793535  [{flux: 1.828828, flux_error: 1, band: 'g'}; …...
         4  0.146756  1.077633  [{flux: 75.014431, flux_error: 1, band: 'g'}; ...
-            
+
         """
 
         # axis 1 requires special handling for nested columns
@@ -1030,7 +1032,7 @@ class NestedFrame(pd.DataFrame):
         50%    0.302333  0.691121  10.663306    44.789353                1.0
         75%    0.417022  0.793535  16.014891    69.975836                1.0
         max    0.720324  1.077633  19.365232    98.886109                1.0
-        
+
         -See Also
         --------
         -:meth:`pandas.DataFrame.describe`
@@ -1843,7 +1845,10 @@ class NestedFrame(pd.DataFrame):
                 return None
             return new_df
 
-    @deprecated(version="0.6.0", reason="`reduce` will be removed in version 0.7.0, use `map_rows` instead.")
+    @deprecated(
+        version="0.6.0",
+        reason="`reduce` will be removed in version 0.7.0, use `map_rows` instead.",
+    )
     def reduce(self, func, *args, infer_nesting=True, append_columns=False, **kwargs) -> NestedFrame:  # type: ignore[override]
         """
         Takes a function and applies it to each top-level row of the NestedFrame.
@@ -2249,7 +2254,10 @@ class NestedFrame(pd.DataFrame):
                 else:
                     arg_dict[".".join([layer, col])] = self[layer].array.iter_field_lists(col)
             results = [
-                func({col: val for col, val in zip(arg_dict.keys(), row, strict=True)}, **kwargs)
+                func(
+                    {col: val for col, val in zip(arg_dict.keys(), row, strict=True)},
+                    **kwargs,
+                )
                 for row in zip(*arg_dict.values(), strict=True)
             ]
 

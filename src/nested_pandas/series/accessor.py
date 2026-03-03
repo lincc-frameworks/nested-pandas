@@ -18,6 +18,7 @@ from nested_pandas.series.utils import nested_types_mapper
 
 __all__ = ["NestSeriesAccessor"]
 
+
 @register_series_accessor("nest")
 class NestSeriesAccessor(Mapping):
     """Accessor for operations on Series of NestedDtype
@@ -902,7 +903,8 @@ class NestSeriesAccessor(Mapping):
         id
         0    [{a: 0.417022, b: 'b', t: 8.38389, flux: 80.07...
         1    [{a: 0.302333, b: 'b', t: 17.562349, flux: 69....
-        Name: outer, dtype: nested<a: [double], b: [string], t: [double], flux: [double], flux_error: [int64], band: [string]>
+        Name: outer, dtype: nested<a: [double], b: [string], t: [double], flux: [double],
+        flux_error: [int64], band: [string]>
 
         >>> concated_nf_series.nest.to_flat()  # doctest: +NORMALIZE_WHITESPACE
                    a  b          t       flux  flux_error band
