@@ -1,0 +1,42 @@
+# This workflow tests against the pandas development version
+# to detect compatibility issues with upcoming pandas releases early.
+#
+# See: https://pandas.pydata.org/docs/getting_started/install.html#installing-the-development-version-of-pandas
+#
+# This job is allowed to fail since pandas dev may introduce breaking changes.
+# Failures here are informational and do not block merges.
+
+name: Test against pandas development version
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-pandas-dev:
+
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        uv pip install --system -e .[dev]
+        pip install --pre --extra-index-url https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pandas
+        if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+    - name: Run unit tests with pytest
+      run: |
+        python -m pytest --cov=nested_pandas
