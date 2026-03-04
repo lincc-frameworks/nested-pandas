@@ -101,7 +101,9 @@ class NestedFrame(pd.DataFrame):
     @property
     def base_columns(self) -> list[str]:
         """Returns the list of base (non-nested) column names"""
-        nested_mask = self.dtypes.apply(lambda dtype: not isinstance(dtype, NestedDtype))
+        nested_mask = self.dtypes.apply(
+            lambda dtype: not isinstance(dtype, NestedDtype)
+        )
         return self.columns[nested_mask].tolist()
 
     def _repr_html_(self) -> str | None:
@@ -114,9 +116,13 @@ class NestedFrame(pd.DataFrame):
                 # If max_rows is None, just show the header
                 return super().to_html(max_rows=None, show_dimensions=True)
             if self.shape[0] > pd.get_option("display.max_rows"):
-                return super().to_html(max_rows=pd.get_option("display.min_rows"), show_dimensions=True)
+                return super().to_html(
+                    max_rows=pd.get_option("display.min_rows"), show_dimensions=True
+                )
             else:
-                return super().to_html(max_rows=pd.get_option("display.max_rows"), show_dimensions=True)
+                return super().to_html(
+                    max_rows=pd.get_option("display.max_rows"), show_dimensions=True
+                )
 
         # Nested Column Formatting
 
@@ -128,7 +134,9 @@ class NestedFrame(pd.DataFrame):
             # Grab length, then truncate to one row for display
             n_rows = len(chunk)
             chunk = chunk.head(1).round(8)  # only show first row
-            chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
+            chunk.astype(
+                {col: object for col in chunk.columns}
+            )  # cast to string for info row
 
             # Add a row that shows the number of additional rows not shown
             len_row = pd.DataFrame(
@@ -187,7 +195,9 @@ class NestedFrame(pd.DataFrame):
 
         return html_repr
 
-    def _parse_hierarchical_components(self, delimited_path: str, delimiter: str = ".") -> list[str]:
+    def _parse_hierarchical_components(
+        self, delimited_path: str, delimiter: str = "."
+    ) -> list[str]:
         """
         Given a string that may be a delimited path, parse it into its components,
         respecting backticks that are used to protect component names that may contain the delimiter.
@@ -251,7 +261,9 @@ class NestedFrame(pd.DataFrame):
             field = ".".join(components[1:])
             return self[nested].nest.to_flat(columns=[field])[field]
         else:
-            raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
+            raise KeyError(
+                f"Column '{cleaned_item}' not found in nested columns or base columns"
+            )
 
     @staticmethod
     def _is_key_list(item):
@@ -268,7 +280,9 @@ class NestedFrame(pd.DataFrame):
         non_nested_keys = [k for k in item if k in self.columns]
         result = super().__getitem__(non_nested_keys)
         components = [self._parse_hierarchical_components(k) for k in item]
-        nested_components = [c for c in components if self._is_known_hierarchical_column(c)]
+        nested_components = [
+            c for c in components if self._is_known_hierarchical_column(c)
+        ]
         nested_columns = defaultdict(list)
         for comps in nested_components:
             nested_columns[comps[0]].append(".".join(comps[1:]))
@@ -283,7 +297,9 @@ class NestedFrame(pd.DataFrame):
         # Special handling paths for assignment of dataframes to nested columns
         if isinstance(key, str) and isinstance(value, pd.DataFrame | NestedFrame):
             # if all columns are NestedDtype, combine them into a single nested column
-            if np.array([isinstance(dtype, NestedDtype) for dtype in value.dtypes]).all():
+            if np.array(
+                [isinstance(dtype, NestedDtype) for dtype in value.dtypes]
+            ).all():
                 for i, col in enumerate(value.columns):
                     if i == 0:
                         new_nested = value[col]
@@ -291,7 +307,9 @@ class NestedFrame(pd.DataFrame):
                         # there must be a better way than through list columns
                         list_cols = value[col].to_lists()
                         for column in value[col].columns:
-                            new_nested = new_nested.nest.set_list_column(column, list_cols[column])
+                            new_nested = new_nested.nest.set_list_column(
+                                column, list_cols[column]
+                            )
                 value = new_nested
             # Assign a DataFrame as a new column, auto-nesting it
             elif key not in self.columns:
@@ -358,8 +376,7 @@ class NestedFrame(pd.DataFrame):
         >>> nf = generate_data(5,10, seed=1)
         >>> nf["nested2"] = nf["nested"]  # create a second nested column for demonstration
         >>> nf.get_subcolumns()
-        ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band', 'nested2.t', 'nested2.flux',
-        'nested2.flux_error', 'nested2.band']
+        ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band', 'nested2.t', 'nested2.flux', 'nested2.flux_error', 'nested2.band']
 
         >>> nf.get_subcolumns("nested")
         ['nested.t', 'nested.flux', 'nested.flux_error', 'nested.band']
@@ -562,7 +579,9 @@ class NestedFrame(pd.DataFrame):
         return NestedFrame.from_lists(self.copy(), list_columns=columns, name=name)
 
     @classmethod
-    def from_flat(cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"):
+    def from_flat(
+        cls, df, base_columns, nested_columns=None, on: str | None = None, name="nested"
+    ):
         """Creates a NestedFrame with base and nested columns from a flat
         dataframe.
 
@@ -696,7 +715,9 @@ class NestedFrame(pd.DataFrame):
                 # This is a simple heuristic but infers more than its dtype
                 # which will probably be an object.
                 sample_val = df[col].iloc[0]
-                if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, str | bytes):
+                if not hasattr(sample_val, "__iter__") and not isinstance(
+                    sample_val, str | bytes
+                ):
                     raise ValueError(
                         f"Cannot pack column {col} which does not contain an iterable list based "
                         "on its first value, {sample_val}."
@@ -787,8 +808,14 @@ class NestedFrame(pd.DataFrame):
                 labels = [columns] if isinstance(columns, str) else columns
                 columns = None
                 axis = 1
-            nested_labels = [label for label in labels if self._is_known_hierarchical_column(label)]
-            base_labels = [label for label in labels if not self._is_known_hierarchical_column(label)]
+            nested_labels = [
+                label for label in labels if self._is_known_hierarchical_column(label)
+            ]
+            base_labels = [
+                label
+                for label in labels
+                if not self._is_known_hierarchical_column(label)
+            ]
 
             # split nested_labels by nested column
             if len(nested_labels) > 0:
@@ -796,7 +823,11 @@ class NestedFrame(pd.DataFrame):
 
                 # drop targeted sub-columns for each nested column
                 for col in nested_cols:
-                    sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
+                    sub_cols = [
+                        label.split(".")[1]
+                        for label in nested_labels
+                        if label.split(".")[0] == col
+                    ]
                     if inplace:
                         self[col] = self[col].nest.drop(sub_cols)
                     else:
@@ -883,7 +914,9 @@ class NestedFrame(pd.DataFrame):
 
         # handle base columns
         base_col = [col for col in self.columns if col not in self.nested_columns]
-        base_min = super().__getitem__(base_col).min(numeric_only=numeric_only, **kwargs)
+        base_min = (
+            super().__getitem__(base_col).min(numeric_only=numeric_only, **kwargs)
+        )
 
         if exclude_nest:
             return base_min
@@ -958,7 +991,9 @@ class NestedFrame(pd.DataFrame):
 
         # handle base columns
         base_col = [col for col in self.columns if col not in self.nested_columns]
-        base_max = super().__getitem__(base_col).max(numeric_only=numeric_only, **kwargs)
+        base_max = (
+            super().__getitem__(base_col).max(numeric_only=numeric_only, **kwargs)
+        )
 
         if exclude_nest:
             return base_max
@@ -976,7 +1011,9 @@ class NestedFrame(pd.DataFrame):
         else:
             return pd.concat([base_max] + nested_maxs)
 
-    def describe(self, exclude_nest: bool = False, percentiles=None, include=None, exclude=None):
+    def describe(
+        self, exclude_nest: bool = False, percentiles=None, include=None, exclude=None
+    ):
         """
 
         Generate descriptive statistics, including nested columns with prefix to indicate the source.
@@ -1046,13 +1083,19 @@ class NestedFrame(pd.DataFrame):
             check.extend(self.nested_columns)
 
         if not self.nested_columns:
-            return NestedFrame(super().describe(percentiles=percentiles, include=include, exclude=exclude))
+            return NestedFrame(
+                super().describe(
+                    percentiles=percentiles, include=include, exclude=exclude
+                )
+            )
 
         for checkable in check:
             # check the base columns
             if checkable == "_base":
                 try:
-                    base_col = [col for col in self.columns if col not in self.nested_columns]
+                    base_col = [
+                        col for col in self.columns if col not in self.nested_columns
+                    ]
                     base_desc = (
                         super()
                         .__getitem__(base_col)
@@ -1185,10 +1228,14 @@ class NestedFrame(pd.DataFrame):
         w_ordinal_idx = self.reset_index(drop=False, names=index_col_name)
 
         # Call pandas.DataFrame.explode for non-nested columns
-        all_but_requested_nested_columns = [col for col in w_ordinal_idx.columns if col not in nested_columns]
+        all_but_requested_nested_columns = [
+            col for col in w_ordinal_idx.columns if col not in nested_columns
+        ]
         base_exploded = w_ordinal_idx[all_but_requested_nested_columns]
         if len(all_but_requested_nested_columns) > 0 and len(base_columns) > 0:
-            base_exploded = super(NestedFrame, base_exploded).explode(base_columns, ignore_index=False)
+            base_exploded = super(NestedFrame, base_exploded).explode(
+                base_columns, ignore_index=False
+            )
             base_exploded = NestedFrame(base_exploded)
 
         # Check if it was actually exploded, or no list-columns were there.
@@ -1293,7 +1340,11 @@ class NestedFrame(pd.DataFrame):
             return super().fillna(value=value, axis=axis, inplace=inplace, limit=limit)
 
         base_cols = [col for col in self.columns if col not in self.nested_columns]
-        filled_df = super().__getitem__(base_cols).fillna(value=value, axis=axis, inplace=False, limit=limit)
+        filled_df = (
+            super()
+            .__getitem__(base_cols)
+            .fillna(value=value, axis=axis, inplace=False, limit=limit)
+        )
 
         for nest_col in self.nested_columns:
             nested_df = self[nest_col].explode()
@@ -1306,7 +1357,9 @@ class NestedFrame(pd.DataFrame):
                         nested_value[subcol] = v
             else:
                 nested_value = value
-            nested_df = nested_df.fillna(value=nested_value, axis=axis, inplace=False, limit=None)
+            nested_df = nested_df.fillna(
+                value=nested_value, axis=axis, inplace=False, limit=None
+            )
             filled_df = filled_df.join_nested(nested_df, nest_col)
 
         if inplace:
@@ -1351,7 +1404,9 @@ class NestedFrame(pd.DataFrame):
         _, aliases = _identify_aliases(expr)
         self._aliases: dict[str, str] | None = aliases
 
-        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
+        kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (
+            _NestResolver(self),
+        )
         kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
         answer = super().eval(expr, **kwargs)
@@ -1404,7 +1459,9 @@ class NestedFrame(pd.DataFrame):
         separable = _subexprs_by_nest([], expr_tree)
         return set(separable.keys())
 
-    def query(self, expr: str, *, inplace: bool = False, **kwargs) -> NestedFrame | None:
+    def query(
+        self, expr: str, *, inplace: bool = False, **kwargs
+    ) -> NestedFrame | None:
         """Query the columns of a NestedFrame with a boolean expression. Specified
         queries can target nested columns in addition to the typical column set
 
@@ -1482,7 +1539,9 @@ class NestedFrame(pd.DataFrame):
         # supported, so preflight the expression.
         nest_names = self.extract_nest_names(expr, **kwargs)
         if len(nest_names) > 1:
-            raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
+            raise ValueError(
+                "Queries cannot target multiple structs/layers, write a separate query for each"
+            )
         result = self.eval(expr, **kwargs)
         # If the result is a _SeriesFromNest, then the evaluation has caused unpacking,
         # which means that a nested attribute was referenced.  Apply this result
@@ -1538,7 +1597,9 @@ class NestedFrame(pd.DataFrame):
                     if layer in nested_cols:
                         subset_target.append(layer)
                     else:
-                        raise ValueError(f"layer '{layer}' not found in the base columns")
+                        raise ValueError(
+                            f"layer '{layer}' not found in the base columns"
+                        )
 
             # Check for 1 target
             subset_target = np.unique(subset_target)
@@ -1796,7 +1857,9 @@ class NestedFrame(pd.DataFrame):
         # Ensure one target layer, preventing multi-layer operations
         target = np.unique(target)
         if len(target) > 1:
-            raise ValueError("Queries cannot target multiple structs/layers, write a separate query for each")
+            raise ValueError(
+                "Queries cannot target multiple structs/layers, write a separate query for each"
+            )
         target = str(target[0])
 
         # Apply pandas sort_values
@@ -1977,7 +2040,9 @@ class NestedFrame(pd.DataFrame):
             else:
                 iterators.append(self[layer].array.iter_field_lists(col))
 
-        results = [func(*cols, *extra_args, **kwargs) for cols in zip(*iterators, strict=True)]
+        results = [
+            func(*cols, *extra_args, **kwargs) for cols in zip(*iterators, strict=True)
+        ]
         results_nf = NestedFrame(results, index=self.index)
 
         if infer_nesting:
@@ -1994,11 +2059,19 @@ class NestedFrame(pd.DataFrame):
 
             # pack results into nested structures
             for layer in nested_cols:
-                layer_cols = [col for col in results_nf.columns if col.startswith(f"{layer}.")]
-                rename_df = results_nf[layer_cols].rename(columns=lambda x: x.split(".", 1)[1])
+                layer_cols = [
+                    col for col in results_nf.columns if col.startswith(f"{layer}.")
+                ]
+                rename_df = results_nf[layer_cols].rename(
+                    columns=lambda x: x.split(".", 1)[1]
+                )
                 nested_col = pack_lists(rename_df, name=layer)
                 results_nf = results_nf[
-                    [col for col in results_nf.columns if not col.startswith(f"{layer}.")]
+                    [
+                        col
+                        for col in results_nf.columns
+                        if not col.startswith(f"{layer}.")
+                    ]
                 ]
                 results_nf[layer] = nested_col
 
@@ -2221,7 +2294,11 @@ class NestedFrame(pd.DataFrame):
             columns = self.base_columns + self.get_subcolumns(nested_columns="all")
         elif isinstance(columns, str):
             # If it's a nested column, grab all sub-columns
-            columns = self.get_subcolumns(columns) if columns in self.nested_columns else [columns]
+            columns = (
+                self.get_subcolumns(columns)
+                if columns in self.nested_columns
+                else [columns]
+            )
 
         # Check arg validity
         requested_columns = []
@@ -2252,7 +2329,9 @@ class NestedFrame(pd.DataFrame):
                 if layer == "base":
                     arg_dict[col] = self[col]
                 else:
-                    arg_dict[".".join([layer, col])] = self[layer].array.iter_field_lists(col)
+                    arg_dict[".".join([layer, col])] = self[
+                        layer
+                    ].array.iter_field_lists(col)
             results = [
                 func(
                     {col: val for col, val in zip(arg_dict.keys(), row, strict=True)},
@@ -2304,17 +2383,27 @@ class NestedFrame(pd.DataFrame):
 
             # pack results into nested structures
             for layer in nested_cols:
-                layer_cols = [col for col in results_nf.columns if col.startswith(f"{layer}.")]
-                rename_df = results_nf[layer_cols].rename(columns=lambda x: x.split(".", 1)[1])
+                layer_cols = [
+                    col for col in results_nf.columns if col.startswith(f"{layer}.")
+                ]
+                rename_df = results_nf[layer_cols].rename(
+                    columns=lambda x: x.split(".", 1)[1]
+                )
                 nested_col = pack_lists(rename_df, name=layer)
                 results_nf = results_nf[
-                    [col for col in results_nf.columns if not col.startswith(f"{layer}.")]
+                    [
+                        col
+                        for col in results_nf.columns
+                        if not col.startswith(f"{layer}.")
+                    ]
                 ]
                 results_nf[layer] = nested_col
 
         if append_columns:
             # Append sub-columns to existing nested columns
-            self_nested_cols = [col for col in results_nf.nested_columns if col in self.nested_columns]
+            self_nested_cols = [
+                col for col in results_nf.nested_columns if col in self.nested_columns
+            ]
             for col in self_nested_cols:
                 sub_columns = results_nf.get_subcolumns(col)
                 for sub_col in sub_columns:
