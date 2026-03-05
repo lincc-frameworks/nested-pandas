@@ -374,7 +374,11 @@ class NestedExtensionArray(ExtensionArray):
         # We cannot use pa.compute.replace_with_mask(), it is not implemented for struct arrays:
         # https://github.com/apache/arrow/issues/29558
         # self._struct_array = pa.compute.replace_with_mask(self._struct_array, pa_mask, value)
-        self.struct_array = replace_with_mask(self.struct_array, pa_mask, value)
+        result = replace_with_mask(self.struct_array, pa_mask, value)
+        # Skip alignment validation: replace_with_mask operates field-by-field on already-aligned
+        # arrays (or uses pa.compute.if_else on whole struct elements), so the result is always aligned.
+        struct_storage = StructListStorage(result, validate=False)
+        self._list_storage = ListStructStorage.from_struct_list_storage(struct_storage)
 
     def __len__(self) -> int:
         return len(self._storage)
