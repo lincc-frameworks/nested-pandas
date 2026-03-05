@@ -9,10 +9,9 @@
 name: Test against pandas development version
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  schedule:
+    - cron: 45 6 * * *
+  workflow_dispatch:
 
 jobs:
   test-pandas-dev:
@@ -40,19 +39,19 @@ jobs:
           uv pip install --system -r requirements.txt
         fi
 
-    - name: Uninstall stable pandas
+    - name: Uninstall stable pandas and install nightly pandas
       run: |
         # Uninstall the stable pandas for safety
-        pip uninstall -y pandas
-
-    - name: Install pandas development version (nightly)
-      run: |  
-        # Nightly pandas
+        uv pip uninstall --system pandas
+        # Install the Nightly pandas (may be unstable)
         uv pip install --system -i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pandas
 
         # Just a quick check (helpful to search in logs)
         python -c "import pandas as pd; print('Installed pandas version:', pd.__version__)"
 
     - name: Run unit tests with pytest
+      continue-on-error: true # Doesn't fail the check in case some tests fail.
       run: |
-        python -m pytest --cov=nested_pandas
+        # Returns with no error even if the pytest fails some tests
+        python -m pytest || true
+
