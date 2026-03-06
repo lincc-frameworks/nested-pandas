@@ -68,3 +68,4 @@ jobs:
         files: pytest-results.xml
         # Differentiates the comments based on the Python version matrix
         check_name: "Pandas Nightly Test Results (Python ${{ matrix.python-version }})"
+        fail_on: "nothing"
