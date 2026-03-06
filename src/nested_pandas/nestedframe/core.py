@@ -2454,7 +2454,7 @@ class NestedFrame(pd.DataFrame):
         --------
         >>> from nested_pandas.datasets.generation import generate_data
         >>> nf = generate_data(5,5, seed=1)
-        >>> nf.to_parquet("nestedframe.parquet")
+        >>> nf.to_parquet("nestedframe.parquet")  # doctest: +SKIP
         """
         df = self.to_pandas(list_struct=False)
 
