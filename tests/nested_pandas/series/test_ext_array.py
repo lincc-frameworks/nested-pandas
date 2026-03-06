@@ -200,7 +200,9 @@ def test_from_sequence_with_arrow_array_and_dtype():
     b = [-4.0, None, -6.0]
 
     pa_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
-    new_pa_type = pa.struct([pa.field("a", pa.list_(pa.float64())), pa.field("b", pa.list_(pa.float64()))])
+    new_pa_type = pa.struct(
+        [pa.field("a", pa.large_list(pa.float64())), pa.field("b", pa.large_list(pa.float64()))]
+    )
 
     pa_array = pa.array(
         [{"a": a, "b": b}, {"a": a, "b": b}, None],
@@ -285,7 +287,9 @@ def test_convert_df_to_pa_scalar():
 
     assert pa_scalar == pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
-        type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+        type=pa.struct(
+            [pa.field("a", pa.large_list(pa.int64())), pa.field("b", pa.large_list(pa.float64()))]
+        ),
     )
 
 
@@ -296,7 +300,9 @@ def test_convert_df_to_pa_from_scalar():
 
     assert pa_scalar == pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
-        type=pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))]),
+        type=pa.struct(
+            [pa.field("a", pa.large_list(pa.int64())), pa.field("b", pa.large_list(pa.float64()))]
+        ),
     )
 
 
@@ -307,7 +313,9 @@ def test_convert_df_to_pa_scalar_from_pyarrow_dtyped_df():
 
     assert pa_scalar == pa.scalar(
         {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
-        type=pa.struct([pa.field("a", pa.list_(pa.int32())), pa.field("b", pa.list_(pa.float64()))]),
+        type=pa.struct(
+            [pa.field("a", pa.large_list(pa.int32())), pa.field("b", pa.large_list(pa.float64()))]
+        ),
     )
 
 
@@ -321,7 +329,9 @@ def test__box_pa_array_from_series_of_df():
     )
     list_of_dicts = list(NestedExtensionArray._box_pa_array(series, pa_type=None))
 
-    desired_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+    desired_type = pa.struct(
+        [pa.field("a", pa.large_list(pa.int64())), pa.field("b", pa.large_list(pa.float64()))]
+    )
 
     assert list_of_dicts == [
         pa.scalar({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, type=desired_type),
@@ -337,7 +347,9 @@ def test__box_pa_array_from_list_of_df():
     ]
     list_of_dicts = list(NestedExtensionArray._box_pa_array(list_of_dfs, pa_type=None))
 
-    desired_type = pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+    desired_type = pa.struct(
+        [pa.field("a", pa.large_list(pa.int64())), pa.field("b", pa.large_list(pa.float64()))]
+    )
 
     assert list_of_dicts == [
         pa.scalar({"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]}, type=desired_type),
@@ -811,7 +823,8 @@ def test_chunked_array():
     ext_array = NestedExtensionArray(struct_array)
 
     # pyarrow returns a single bool for ==
-    assert ext_array.struct_array == pa.chunked_array(struct_array)
+    # ext_array normalizes list fields to large_list internally
+    assert ext_array.struct_array == pa.chunked_array(struct_array).cast(ext_array.struct_array.type)
 
 
 def test_chunked_list_struct_array():
@@ -829,7 +842,8 @@ def test_chunked_list_struct_array():
         [
             [{"a": 1, "b": -4.0}, {"a": 2, "b": -5.0}, {"a": 3, "b": -6.0}],
             [{"a": 1, "b": -3.0}, {"a": 2, "b": -4.0}, {"a": 1, "b": -5.0}],
-        ]
+        ],
+        type=pa.large_list(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.float64())])),
     )
     desired = pa.chunked_array([list_array])
     # pyarrow returns a single bool for ==
@@ -853,8 +867,8 @@ def test_to_pyarrow_scalar():
             {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
             {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
         ],
-        type=pa.list_(
-            pa.struct([pa.field("a", pa.list_(pa.int64())), pa.field("b", pa.list_(pa.float64()))])
+        type=pa.large_list(
+            pa.struct([pa.field("a", pa.large_list(pa.int64())), pa.field("b", pa.large_list(pa.float64()))])
         ),
     )
     desired_list_struct = pa.scalar(
@@ -862,25 +876,48 @@ def test_to_pyarrow_scalar():
             [{"a": 1, "b": -4.0}, {"a": 2, "b": -5.0}, {"a": 3, "b": -6.0}],
             [{"a": 1, "b": -3.0}, {"a": 2, "b": -4.0}, {"a": 1, "b": -5.0}],
         ],
-        type=pa.list_(pa.list_(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.float64())]))),
+        type=pa.large_list(
+            pa.large_list(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.float64())]))
+        ),
     )
     # pyarrow returns a single bool for ==
     assert ext_array.to_pyarrow_scalar(list_struct=False) == desired_struct_list
     assert ext_array.to_pyarrow_scalar(list_struct=True) == desired_list_struct
 
 
-def test_list_offsets_single_chunk():
-    """Test that the .list_offset property is correct for a single chunk."""
+def test_to_pyarrow_scalar_large_list_false():
+    """Test that to_pyarrow_scalar(large_list=False) returns a list (int32) scalar."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint8())),
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])]),
             pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
         ],
         names=["a", "b"],
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    desired = pa.array([0, 3, 6], type=pa.int32())
+    scalar = ext_array.to_pyarrow_scalar(large_list=False)
+    assert pa.types.is_list(scalar.type)
+
+    # large_list=True (default) keeps large_list
+    scalar_large = ext_array.to_pyarrow_scalar()
+    assert pa.types.is_large_list(scalar_large.type)
+
+
+def test_list_offsets_single_chunk():
+    """Test that the .list_offset property is correct for a single chunk."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.large_list(pa.uint8())),
+            pa.array(
+                [-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])], type=pa.large_list(pa.float64())
+            ),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    desired = pa.array([0, 3, 6], type=pa.int64())
     # pyarrow returns a single bool for ==
     assert ext_array.list_offsets == desired
 
@@ -889,8 +926,10 @@ def test_list_offsets_multiple_chunks():
     """Test that the .list_offset property is correct for multiple chunk_lens."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.list_(pa.uint8())),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1])], type=pa.large_list(pa.uint8())),
+            pa.array(
+                [-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])], type=pa.large_list(pa.float64())
+            ),
         ],
         names=["a", "b"],
     )
@@ -1272,7 +1311,8 @@ def test_dropna():
 def test___arrow_array__():
     """Test that the extension array can be converted to a pyarrow array."""
     list_array = pa.array(
-        [[{"a": 1, "b": 2}, {"a": 3, "b": 4}], [{"a": 5, "b": 6}], [{"a": -1, "b": -2}], []]
+        [[{"a": 1, "b": 2}, {"a": 3, "b": 4}], [{"a": 5, "b": 6}], [{"a": -1, "b": -2}], []],
+        type=pa.large_list(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.int64())])),
     )
     ext_array = NestedExtensionArray(list_array)
 
@@ -1355,7 +1395,9 @@ def test___array__():
             None,
             pa.scalar(
                 {"a": [-4.0, 5.0, None, 7.0], "b": ["hello", "world", "!", ""]},
-                type=pa.struct([pa.field("a", pa.list_(pa.float64())), pa.field("b", pa.list_(pa.string()))]),
+                type=pa.struct(
+                    [pa.field("a", pa.large_list(pa.float64())), pa.field("b", pa.large_list(pa.string()))]
+                ),
             ),
         ),
         (
@@ -1407,7 +1449,9 @@ def test__box_pa_scalar(value, pa_type, desired):
             None,
             pa.array(
                 [None, {"a": [-4.0, 5.0, None, 7.0], "b": ["hello", "world", "!", None]}],
-                type=pa.struct([pa.field("a", pa.list_(pa.float64())), pa.field("b", pa.list_(pa.string()))]),
+                type=pa.struct(
+                    [pa.field("a", pa.large_list(pa.float64())), pa.field("b", pa.large_list(pa.string()))]
+                ),
             ),
         ),
         (
@@ -2018,7 +2062,7 @@ def test_pop_fields_zero_chunks():
     )
     assert ext_array.num_chunks == 0, "Test setup is invalid"
     ext_array.pop_fields(["a"])
-    assert ext_array._pyarrow_dtype == pa.struct({"b": pa.list_(pa.int64())})
+    assert ext_array._pyarrow_dtype == pa.struct({"b": pa.large_list(pa.int64())})
 
 
 def test_delete_last_field_raises():
@@ -2089,6 +2133,26 @@ def test_to_arrow_ext_array_with_list_struct_true():
     )
 
 
+def test_to_arrow_ext_array_large_list_false():
+    """Tests that to_arrow_ext_array(large_list=False) returns list (int32) dtype."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1, 2, 3]), np.array([1, 2, 1, 2])]),
+            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+        ],
+        names=["a", "b"],
+    )
+    ext_array = NestedExtensionArray(struct_array)
+
+    # Default list_struct=False: outer type is struct, inner fields should be list_ (int32)
+    arrow_ext_array = ext_array.to_arrow_ext_array(large_list=False)
+    assert pa.types.is_list(arrow_ext_array.dtype.pyarrow_dtype.field("a").type)
+
+    # large_list=True (default) keeps large_list in inner fields
+    arrow_ext_array_large = ext_array.to_arrow_ext_array()
+    assert pa.types.is_large_list(arrow_ext_array_large.dtype.pyarrow_dtype.field("a").type)
+
+
 def test_series_interpolate():
     """We do not support interpolate() on NestedExtensionArray."""
     with pytest.raises(NotImplementedError):
@@ -2105,15 +2169,21 @@ def test___init___with_list_struct_array():
     ext_array = NestedExtensionArray(list_array)
     assert ext_array.field_names == ["a", "b"]
     assert ext_array.flat_length == 4
-    assert pa.array(ext_array) == list_array
+    # list_array uses pa.list_, ext_array normalizes to pa.large_list internally
+    assert pa.array(ext_array).cast(list_array.type) == list_array
 
 
 def test__struct_array():
     """Test ._struct_array property"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+            pa.array(
+                [np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])], type=pa.large_list(pa.float64())
+            ),
+            pa.array(
+                [-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])],
+                type=pa.large_list(pa.float64()),
+            ),
         ],
         names=["a", "b"],
     )
@@ -2126,8 +2196,13 @@ def test__pa_table():
     """Test ._pa_table property"""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
-            pa.array([np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])]),
-            pa.array([-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])]),
+            pa.array(
+                [np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 1.0, 2.0])], type=pa.large_list(pa.float64())
+            ),
+            pa.array(
+                [-np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0, 6.0])],
+                type=pa.large_list(pa.float64()),
+            ),
         ],
         names=["a", "b"],
     )

@@ -63,7 +63,9 @@ def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
         True if the given type is a list-type with struct values,
         False otherwise.
     """
-    return pa.types.is_list(pa_type) and pa.types.is_struct(pa_type.value_type)
+    return (pa.types.is_large_list(pa_type) or pa.types.is_list(pa_type)) and pa.types.is_struct(
+        pa_type.value_type
+    )
 
 
 def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
@@ -88,12 +90,12 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
     if not pa.types.is_struct(array.type):
         raise ValueError(f"Expected a StructArray, got {array.type}")
 
-    first_offsets: pa.ListArray | None = None
+    first_offsets: pa.LargeListArray | None = None
     for field in array.type:
         inner_array = array.field(field.name)
-        if not pa.types.is_list(inner_array.type):
-            raise ValueError(f"Expected a ListArray, got {inner_array.type}")
-        list_array = cast(pa.ListArray, inner_array)
+        if not pa.types.is_large_list(inner_array.type):
+            raise ValueError(f"Expected a LargeListArray, got {inner_array.type}")
+        list_array = cast(pa.LargeListArray, inner_array)
 
         if first_offsets is None:
             first_offsets = list_array.offsets
@@ -110,7 +112,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
     list_arrays = []
     for field in array.type:
         inner_array = array.field(field.name)
-        list_array = cast(pa.ListArray, inner_array)
+        list_array = cast(pa.LargeListArray, inner_array)
 
         if value_lengths is None:
             value_lengths = list_array.value_lengths()
@@ -120,7 +122,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
             )
 
         list_arrays.append(
-            pa.ListArray.from_arrays(
+            pa.LargeListArray.from_arrays(
                 values=list_array.values[list_array.offsets[0].as_py() : list_array.offsets[-1].as_py()],
                 offsets=new_offsets,
             )
@@ -159,7 +161,7 @@ def align_chunked_struct_list_offsets(array: pa.Array | pa.ChunkedArray) -> pa.C
     return pa.chunked_array(chunks, type=array.type)
 
 
-def transpose_struct_list_type(t: pa.StructType) -> pa.ListType:
+def transpose_struct_list_type(t: pa.StructType) -> pa.LargeListType:
     """Converts a type of struct-list array into a type of list-struct array.
 
     Parameters
@@ -169,7 +171,7 @@ def transpose_struct_list_type(t: pa.StructType) -> pa.ListType:
 
     Returns
     -------
-    pa.DataType
+    pa.LargeListType
         Type of list-struct array.
 
     Raises
@@ -182,16 +184,16 @@ def transpose_struct_list_type(t: pa.StructType) -> pa.ListType:
 
     fields = []
     for field in t:
-        if not pa.types.is_list(field.type):
-            raise ValueError(f"Expected a ListType, got {field.type}")
-        list_type = cast(pa.ListType, field.type)
+        if not pa.types.is_large_list(field.type):
+            raise ValueError(f"Expected a LargeListType, got {field.type}")
+        list_type = cast(pa.LargeListType, field.type)
         fields.append(pa.field(field.name, list_type.value_type))
 
-    list_type = cast(pa.ListType, pa.list_(pa.struct(fields)))
+    list_type = cast(pa.LargeListType, pa.large_list(pa.struct(fields)))
     return list_type
 
 
-def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) -> pa.ListArray:
+def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) -> pa.LargeListArray:
     """Converts a struct-array of lists into a list-array of structs.
 
     Parameters
@@ -204,7 +206,7 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
 
     Returns
     -------
-    pa.ListArray
+    pa.LargeListArray
         List array of structs.
     """
     if validate:
@@ -229,7 +231,7 @@ def transpose_struct_list_array(array: pa.StructArray, validate: bool = True) ->
         [field.values[field.offsets[0].as_py() : field.offsets[-1].as_py()] for field in array.flatten()],
         names=struct_field_names(array.type),
     )
-    return pa.ListArray.from_arrays(
+    return pa.LargeListArray.from_arrays(
         offsets=offsets,
         values=struct_flat_array,
         mask=mask,
@@ -259,12 +261,12 @@ def transpose_struct_list_chunked(chunked_array: pa.ChunkedArray, validate: bool
     )
 
 
-def transpose_list_struct_scalar(scalar: pa.ListScalar) -> pa.StructScalar:
+def transpose_list_struct_scalar(scalar: pa.LargeListScalar | pa.ListScalar) -> pa.StructScalar:
     """Converts a list-scalar of structs into a struct-scalar of lists.
 
     Parameters
     ----------
-    scalar : pa.ListScalar
+    scalar : pa.LargeListScalar or pa.ListScalar
         Input list-struct scalar.
 
     Returns
@@ -280,10 +282,10 @@ def transpose_list_struct_scalar(scalar: pa.ListScalar) -> pa.StructScalar:
     return cast(pa.StructScalar, struct_scalar)
 
 
-def validate_list_struct_type(t: pa.ListType) -> None:
-    """Raise a ValueError if not a list-struct type."""
-    if not pa.types.is_list(t):
-        raise ValueError(f"Expected a ListType, got {t}")
+def validate_list_struct_type(t: pa.LargeListType) -> None:
+    """Raise a ValueError if not a large-list-struct type."""
+    if not pa.types.is_large_list(t):
+        raise ValueError(f"Expected a LargeListType, got {t}")
 
     if not pa.types.is_struct(t.value_type):
         raise ValueError(f"Expected a StructType as a list value type, got {t.value_type}")
@@ -295,8 +297,8 @@ def validate_struct_list_type(t: pa.StructType) -> None:
         raise ValueError(f"Expected a StructType, got {t}")
 
     for field in struct_fields(t):
-        if not pa.types.is_list(field.type):
-            raise ValueError(f"Expected a ListType for field {field.name}, got {field.type}")
+        if not pa.types.is_large_list(field.type):
+            raise ValueError(f"Expected a LargeListType for field {field.name}, got {field.type}")
 
 
 def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
@@ -322,18 +324,18 @@ def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
     struct_type = cast(pa.StructType, t.value_type)
     fields = []
     for field in struct_type:
-        fields.append(pa.field(field.name, pa.list_(field.type)))
+        fields.append(pa.field(field.name, pa.large_list(field.type)))
 
     struct_type = cast(pa.StructType, pa.struct(fields))
     return struct_type
 
 
-def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
+def transpose_list_struct_array(array: pa.LargeListArray) -> pa.StructArray:
     """Converts a list-array of structs into a struct-array of lists.
 
     Parameters
     ----------
-    array : pa.ListArray
+    array : pa.LargeListArray
         Input list array of structs.
 
     Returns
@@ -348,7 +350,7 @@ def transpose_list_struct_array(array: pa.ListArray) -> pa.StructArray:
 
     fields = []
     for field_values in values.flatten():
-        list_array = pa.ListArray.from_arrays(offsets, field_values)
+        list_array = pa.LargeListArray.from_arrays(offsets, field_values)
         fields.append(list_array)
 
     return pa.StructArray.from_arrays(
@@ -380,7 +382,7 @@ def nested_types_mapper(type: pa.DataType) -> pd.ArrowDtype | NestedDtype:
     """Type mapper for pyarrow .to_pandas(types_mapper) methods."""
     from nested_pandas.series.dtype import NestedDtype
 
-    if pa.types.is_list(type):
+    if pa.types.is_large_list(type):
         try:
             return NestedDtype(type)
         except (ValueError, TypeError):
@@ -446,8 +448,8 @@ def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.Chun
 
 def normalize_list_array(
     array: pa.ListArray | pa.FixedSizeListArray | pa.LargeListArray | pa.ChunkedArray,
-) -> pa.ListArray | pa.ChunkedArray:
-    """Convert fixed-size and large list arrays to standard ``pa.ListArray``-based arrays.
+) -> pa.LargeListArray | pa.ChunkedArray:
+    """Convert fixed-size and regular list arrays to standard ``pa.LargeListArray``-based arrays.
 
     Parameters
     ----------
@@ -457,17 +459,17 @@ def normalize_list_array(
 
     Returns
     -------
-    pa.ListArray or pa.ChunkedArray
+    pa.LargeListArray or pa.ChunkedArray
         A list array (or chunked list array) where the list type is normalized to
-        ``pa.ListType`` while preserving the original value type.
+        ``pa.LargeListType`` while preserving the original value type.
 
     Raises
     ------
     ValueError
         If the input is not a list-type array (i.e. does not have a ``.type.value_type``).
     """
-    # Pass list-array as is
-    if pa.types.is_list(array.type):
+    # Pass large-list-array as is
+    if pa.types.is_large_list(array.type):
         return array
 
     try:
@@ -477,11 +479,11 @@ def normalize_list_array(
             "Input array must be a list-type array: pa.ListArray, pa.LargeListArray or pa.FixedSizeListArray"
         ) from None
 
-    return array.cast(pa.list_(value_type))
+    return array.cast(pa.large_list(value_type))
 
 
 def normalize_struct_list_type(struct_type: pa.StructType) -> pa.StructType:
-    """Convert all struct-list fields to "normal" list types.
+    """Convert all struct-list fields to ``pa.large_list`` types.
 
     Parameters
     ----------
@@ -492,7 +494,7 @@ def normalize_struct_list_type(struct_type: pa.StructType) -> pa.StructType:
     Returns
     -------
     pa.StructType
-        Output struct type with all fields as pa.ListType.
+        Output struct type with all fields as pa.LargeListType.
 
     Raises
     ------
@@ -507,8 +509,58 @@ def normalize_struct_list_type(struct_type: pa.StructType) -> pa.StructType:
             value_type = field.type.value_type
         except AttributeError:
             raise ValueError("Input struct_type must be a struct-list type") from None
-        fields.append(pa.field(field.name, pa.list_(value_type)))
+        fields.append(pa.field(field.name, pa.large_list(value_type)))
     return pa.struct(fields)
+
+
+def downcast_large_list_type(t: pa.LargeListType | pa.StructType) -> pa.ListType | pa.StructType:
+    """Convert a ``large_list`` type or struct-of-``large_list`` type to regular ``list_`` type(s).
+
+    Parameters
+    ----------
+    t : pa.LargeListType or pa.StructType
+        Input type. If a ``large_list`` type, it is converted to ``list_``.
+        If a struct type, all ``large_list`` fields are converted to ``list_``.
+
+    Returns
+    -------
+    pa.ListType or pa.StructType
+        Downcast type using int32 offsets.
+    """
+    if pa.types.is_large_list(t):
+        return pa.list_(cast(pa.LargeListType, t).value_type)
+    if pa.types.is_struct(t):
+        struct_t = cast(pa.StructType, t)
+        fields = []
+        for field in struct_fields(struct_t):
+            if pa.types.is_large_list(field.type):
+                fields.append(pa.field(field.name, pa.list_(field.type.value_type)))
+            else:
+                fields.append(field)
+        return pa.struct(fields)
+    return cast(pa.ListType | pa.StructType, t)
+
+
+def downcast_large_list_array(
+    array: pa.Array,
+) -> pa.ListArray:
+    """Cast a ``LargeListArray`` (or ChunkedArray thereof) to a regular ``ListArray``.
+
+    This is a compatibility helper for consumers that do not support ``large_list``
+    (e.g. Parquet files written without Arrow schema metadata, older PyArrow
+    consumers, etc.).
+
+    Parameters
+    ----------
+    array : pa.LargeListArray or pa.ChunkedArray
+        Input large-list array (or chunked array with large-list type).
+
+    Returns
+    -------
+    pa.ListArray or pa.ChunkedArray
+        The downcast array using int32 offsets.
+    """
+    return array.cast(downcast_large_list_type(array.type))
 
 
 def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.StructArray | pa.ChunkedArray:

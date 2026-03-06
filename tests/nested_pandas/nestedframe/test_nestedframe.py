@@ -1899,9 +1899,10 @@ def test_explode_non_unique_index():
         lambda x: {"unaligned_nested.unaligned_t": x[:2]}, columns="nested.t", row_container="args"
     ).reset_index(drop=True)
     # Add a list column which has the same lengths
-    nf["aligned_list_t"] = nf["nested"].nest.to_lists("t")["t"]
+    # large_list=False: pandas < 3 does not support DataFrame.explode on large_list columns
+    nf["aligned_list_t"] = nf["nested"].nest.to_lists("t", large_list=False)["t"]
     # Add a list column which has different lengths
-    nf["unaligned_list_t"] = nf["nested"].nest.to_lists("t")["t"].list[:2]
+    nf["unaligned_list_t"] = nf["nested"].nest.to_lists("t", large_list=False)["t"].list[:2]
     # Make index non-unique
     nf.index = np.tile(np.arange(10), 10)
     nf.index.name = "my_index"

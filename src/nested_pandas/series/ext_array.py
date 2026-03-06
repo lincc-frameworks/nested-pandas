@@ -64,6 +64,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     chunk_lengths,
+    downcast_large_list_type,
     is_pa_type_a_list,
     normalize_list_array,
     normalize_struct_list_type,
@@ -185,7 +186,7 @@ def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.A
     # If mask is [False, True, False, True], mask_cumsum will be [0, 1, 1, 2]
     # So we put value items to the right positions in broadcast_value, while duplicate some other items for
     # the positions where mask is False.
-    mask_cumsum = pa.compute.cumulative_sum(mask.cast(pa.int32()))
+    mask_cumsum = pa.compute.cumulative_sum(mask.cast(pa.int64()))
     value_index = pa.compute.subtract(mask_cumsum, 1)
     value_index = pa.compute.if_else(pa.compute.less(value_index, 0), 0, value_index)
 
@@ -208,7 +209,7 @@ def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) 
             ty = scalar.type
         else:
             array = pa.array(series)
-            ty = pa.list_(array.type)
+            ty = pa.large_list(array.type)
             scalar = pa.scalar(array, type=ty)
         d[column] = scalar
         types[column] = ty
@@ -916,7 +917,7 @@ class NestedExtensionArray(ExtensionArray):
         return self._dtype.pyarrow_dtype
 
     @property
-    def _pyarrow_list_struct_dtype(self) -> pa.ListType:
+    def _pyarrow_list_struct_dtype(self) -> pa.LargeListType:
         """PyArrow data type of the list-struct view over the ext. array"""
         return transpose_struct_list_type(self._pyarrow_dtype)
 
@@ -925,7 +926,7 @@ class NestedExtensionArray(ExtensionArray):
         """Create a NestedExtensionArray from pandas' ArrowExtensionArray"""
         return cls(array._pa_array)
 
-    def to_arrow_ext_array(self, list_struct: bool = False) -> ArrowExtensionArray:
+    def to_arrow_ext_array(self, list_struct: bool = False, large_list: bool = True) -> ArrowExtensionArray:
         """Convert the extension array to pandas' ArrowExtensionArray
 
         Parameters
@@ -933,12 +934,19 @@ class NestedExtensionArray(ExtensionArray):
         list_struct : bool, optional
             If False (default), return struct-list array, otherwise return
             list-struct array.
+        large_list : bool, optional
+            If True (default), keep ``large_list`` (int64 offsets). Required
+            when the total number of nested elements across all rows exceeds
+            ~2.1 billion (int32 max).
         """
-        if list_struct:
-            return ArrowExtensionArray(self.list_array)
-        return ArrowExtensionArray(self.struct_array)
+        arr = self.list_array if list_struct else self.struct_array
+        if not large_list:
+            arr = arr.cast(downcast_large_list_type(arr.type))
+        return ArrowExtensionArray(arr)
 
-    def to_pyarrow_scalar(self, list_struct: bool = False) -> pa.ListScalar:
+    def to_pyarrow_scalar(
+        self, list_struct: bool = False, large_list: bool = True
+    ) -> pa.LargeListScalar | pa.ListScalar:
         """Convert to a pyarrow scalar of a list type
 
         Parameters
@@ -946,14 +954,19 @@ class NestedExtensionArray(ExtensionArray):
         list_struct : bool, optional
             If False (default), return list-struct-list scalar,
             otherwise list-list-struct scalar.
+        large_list : bool, optional
+            If True (default), use ``large_list`` (int64 offsets). Required
+            when the total number of nested elements across all rows exceeds
+            ~2.1 billion (int32 max).
 
         Returns
         -------
-        pyarrow.ListScalar
+        pyarrow.LargeListScalar or pyarrow.ListScalar
         """
         pa_array = self.list_array if list_struct else self.struct_array
-        pa_type = pa.list_(pa_array.type)
-        return cast(pa.ListScalar, pa.scalar(pa_array, type=pa_type))
+        list_type = pa.large_list if large_list else pa.list_
+        pa_type = list_type(pa_array.type)
+        return cast(pa.LargeListScalar | pa.ListScalar, pa.scalar(pa_array, type=pa_type))
 
     @property
     def list_offsets(self) -> pa.Array:
@@ -973,8 +986,8 @@ class NestedExtensionArray(ExtensionArray):
 
         zero_and_lengths = pa.chunked_array(
             [
-                pa.array([0], type=pa.int32()),
-                pa.array(self.list_lengths, type=pa.int32()),
+                pa.array([0], type=pa.int64()),
+                pa.array(self.list_lengths, type=pa.int64()),
             ]
         )
         offsets = pa.compute.cumulative_sum(zero_and_lengths)
@@ -1028,7 +1041,7 @@ class NestedExtensionArray(ExtensionArray):
         """
         for chunk in self.struct_array.iterchunks():
             struct_array: pa.StructArray = cast(pa.StructArray, chunk)
-            list_array: pa.ListArray = cast(pa.ListArray, struct_array.field(field))
+            list_array: pa.LargeListArray = cast(pa.LargeListArray, struct_array.field(field))
             for list_scalar in list_array:
                 yield np.asarray(list_scalar.values)
 
@@ -1104,7 +1117,7 @@ class NestedExtensionArray(ExtensionArray):
 
         if isinstance(pa_array, pa.ChunkedArray):
             pa_array = pa_array.combine_chunks()
-        field_list_array = pa.ListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
+        field_list_array = pa.LargeListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
 
         return self.set_list_field(field, field_list_array, keep_dtype=keep_dtype)
 
