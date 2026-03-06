@@ -11,7 +11,7 @@ name: Test against pandas development version
 on:
   pull_request:
   schedule:
-    - cron: '45 6 * * *'
+    - cron: 45 6 * * *
   workflow_dispatch:
 
 jobs:
@@ -53,19 +53,19 @@ jobs:
         uv pip uninstall --system pandas
         uv pip install --system -i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pandas
 
+        # Just a quick check (helpful to search in logs)
         python -c "import pandas as pd; print('Installed pandas version:', pd.__version__)"
 
     - name: Run unit tests with pytest
+      continue-on-error: true
       run: |
-        # Run pytest and output the results to an XML file. 
-        # || true ensures the step doesn't crash the workflow if tests fail.
-        python -m pytest --junitxml=pytest-results.xml || true
+        # Runs pytest and exports the report in xml format
+        python -m pytest --junitxml=pytest-results.xml
 
     - name: Publish Test Results as PR Comment
       uses: EnricoMi/publish-unit-test-result-action@v2
       if: always()
       with:
         files: pytest-results.xml
-        # Differentiates the comments based on the Python version matrix
         check_name: "Pandas Nightly Test Results (Python ${{ matrix.python-version }})"
         fail_on: "nothing"
