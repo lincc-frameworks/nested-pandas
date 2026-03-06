@@ -10,7 +10,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from deprecated import deprecated
-from numba.core.registry import CPUDispatcher
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
@@ -28,8 +27,6 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
-
-from . import njit_funcs
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -2009,6 +2006,16 @@ class NestedFrame(pd.DataFrame):
         Apply njit map_rows to njit custom function with requested_columns.
         Currently only supports 1 or 2 arguments custom function.
         """
+        try:
+            import numba  # noqa
+        except ImportError as err:
+            raise ImportError(
+                "njit=True requires numba, please install with pip install numba"
+                "or conda install conda-forge::numba"
+            ) from err
+
+        from . import njit_funcs
+
         if len(requested_columns) == 1:
             layer, col_name = requested_columns[0]
             if layer == "base":
@@ -2324,12 +2331,14 @@ class NestedFrame(pd.DataFrame):
 
         elif row_container == "args":
             if njit:
-                if not isinstance(func, CPUDispatcher) or len(requested_columns) > 2:
+                try:
+                    results = self._apply_njit_map_rows(requested_columns, func)
+                # except Exception as err:
+                except Exception as err:
                     raise ValueError(
-                        "njit execution is only supported for numba.jit decorated "
-                        "functions with at most 2 arguments"
-                    )
-                results = self._apply_njit_map_rows(requested_columns, func)
+                        "njit execution for map_rowsis only supported for "
+                        "numba.jit decorated functions with at most 2 arguments"
+                    ) from err
             else:
                 # Default python execution
                 iterators = []

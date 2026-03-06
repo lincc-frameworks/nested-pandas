@@ -1566,6 +1566,7 @@ def test_map_rows_njit():
     def two_nested_sum_py(c, e):
         return np.sum(c) + np.sum(e)
 
+    # using python custom function with njit=True should raise an error
     with pytest.raises(ValueError):
         base.map_rows(
             two_nested_sum_py,
@@ -1575,6 +1576,7 @@ def test_map_rows_njit():
             njit=True,
         )
 
+    # row_container="dict" is not compatible with njit, should raise an error
     with pytest.raises(ValueError):
         base.map_rows(
             two_nested_sum_py,
