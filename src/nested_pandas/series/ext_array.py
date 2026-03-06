@@ -64,6 +64,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     chunk_lengths,
+    compute_chunk_boundaries,
     is_pa_type_a_list,
     normalize_list_array,
     normalize_struct_list_type,
@@ -73,6 +74,12 @@ from nested_pandas.series.utils import (
 )
 
 __all__ = ["NestedExtensionArray"]
+
+DEFAULT_CHUNK_SIZE = 1_048_576
+"""Target number of outer rows per chunk for :meth:`NestedExtensionArray.rechunk`.
+
+Matches PyArrow's default Parquet row group size.
+"""
 
 
 BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK = True
@@ -1005,6 +1012,41 @@ class NestedExtensionArray(ExtensionArray):
         """Number of chunk_lens in underlying pyarrow.ChunkedArray"""
         return self._storage.num_chunks
 
+    def rechunk(self, chunk_size: int | None = None) -> NestedExtensionArray:  # type: ignore[name-defined] # noqa: F821
+        """Rechunk the array to approximately ``chunk_size`` outer rows per chunk.
+
+        Parameters
+        ----------
+        chunk_size : int or None
+            Target number of outer rows per chunk.  If ``None``, uses
+            ``DEFAULT_CHUNK_SIZE`` (PyArrow's default Parquet row group size,
+            1_048_576).  Chunks may be smaller when the flat (inner) row count
+            would overflow int32 offsets (see ``_MAX_FLAT_SIZE``).
+
+        Returns
+        -------
+        NestedExtensionArray
+            A new array with rebalanced chunks.
+        """
+        if chunk_size is None:
+            chunk_size = DEFAULT_CHUNK_SIZE
+        if chunk_size < 1:
+            raise ValueError("chunk_size must be >= 1")
+
+        list_lengths = self.list_lengths
+        boundaries = compute_chunk_boundaries(list_lengths, chunk_size)
+
+        combined = self.list_array
+        chunks = []
+        start = 0
+        for end in boundaries:
+            # combine_chunks() slices combined[start:end] into a fresh ListArray
+            # with zero-based offsets, guaranteeing no int32 overflow.
+            chunk = combined[start:end].combine_chunks()
+            chunks.append(chunk)
+            start = end
+        return type(self)(pa.chunked_array(chunks, type=combined.type))
+
     def get_list_index(self) -> np.ndarray:
         """Keys mapping values to lists"""
         if len(self) == 0:
@@ -1102,11 +1144,47 @@ class NestedExtensionArray(ExtensionArray):
         if len(pa_array) != self.flat_length:
             raise ValueError("The input must be a struct_scalar or have the same length as the flat arrays")
 
-        if isinstance(pa_array, pa.ChunkedArray):
-            pa_array = pa_array.combine_chunks()
-        field_list_array = pa.ListArray.from_arrays(values=pa_array, offsets=self.list_offsets)
+        # Convert flat input to ChunkedArray for uniform handling
+        flat_chunked = pa.chunked_array([pa_array]) if isinstance(pa_array, pa.Array) else pa_array
 
-        return self.set_list_field(field, field_list_array, keep_dtype=keep_dtype)
+        # Build one ListArray per outer chunk, slicing the flat input accordingly.
+        # This avoids a global combine_chunks() of the flat array and a global
+        # list_offsets computation.
+        list_chunks = []
+        flat_offset = 0
+        for outer_chunk in self.list_array.iterchunks():
+            outer_chunk = cast(pa.ListArray, outer_chunk)
+            offsets = outer_chunk.offsets
+            flat_start = offsets[0].as_py()
+            flat_end = offsets[-1].as_py()
+            chunk_flat_size = flat_end - flat_start
+
+            flat_slice_chunked = flat_chunked[flat_offset : flat_offset + chunk_flat_size]
+            # Avoid an unnecessary copy when the slice already lands on a single
+            # contiguous chunk (the common path when both self and pa_array are
+            # single-chunk arrays).
+            if flat_slice_chunked.num_chunks == 1:
+                flat_slice = flat_slice_chunked.chunk(0)
+            else:
+                flat_slice = flat_slice_chunked.combine_chunks()
+            flat_offset += chunk_flat_size
+
+            # Normalize offsets to start at 0 (required when outer_chunk is a view
+            # with non-zero offsets[0] pointing into a larger flat buffer)
+            chunk_offsets = pa.compute.subtract(offsets, offsets[0]) if flat_start != 0 else offsets
+
+            list_chunks.append(pa.ListArray.from_arrays(offsets=chunk_offsets, values=flat_slice))
+
+        new_list_array = pa.chunked_array(list_chunks, type=pa.list_(pa_array.type))
+
+        # Update the table directly — set_list_field would call pa.array(value, ...)
+        # which does not handle ChunkedArray inputs reliably.
+        if field in self.field_names:
+            field_idx = self.field_names.index(field)
+            pa_table = self.pa_table.drop(field).add_column(field_idx, field, new_list_array)
+        else:
+            pa_table = self.pa_table.append_column(field, new_list_array)
+        self.pa_table = pa_table
 
     def set_list_field(self, field: str, value: ArrayLike, *, keep_dtype: bool = False) -> None:
         """Set the field from list-array

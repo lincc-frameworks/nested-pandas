@@ -16,6 +16,7 @@ import pyarrow as pa
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
+from nested_pandas.series.utils import rechunk as rechunk_array
 
 __all__ = ["pack", "pack_flat", "pack_lists", "pack_seq"]
 
@@ -237,11 +238,23 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
                 )
             )
         struct_array = pa.chunked_array(chunks)
-    else:  # "flatten" the chunked arrays
-        struct_array = pa.StructArray.from_arrays(
-            [arr.combine_chunks() for arr in pa_chunked_arrays.values()],
-            names=pa_chunked_arrays.keys(),
-        )
+    else:
+        # Rechunk all columns to match the column with the fewest chunks.
+        # This minimises combine_chunks() calls on other columns and produces
+        # the coarsest output chunk structure, which is better for downstream ops.
+        reference = min(pa_chunked_arrays.values(), key=lambda a: a.num_chunks)
+        ref_chunk_lens = [len(c) for c in reference.iterchunks()]
+        aligned = {col: rechunk_array(arr, ref_chunk_lens) for col, arr in pa_chunked_arrays.items()}
+        num_chunks = reference.num_chunks
+        struct_chunks = []
+        for i in range(num_chunks):
+            struct_chunks.append(
+                pa.StructArray.from_arrays(
+                    [aligned[col].chunk(i) for col in aligned],
+                    names=list(aligned.keys()),
+                )
+            )
+        struct_array = pa.chunked_array(struct_chunks)
 
     ext_array = NestedExtensionArray(struct_array, validate=validate)
     return NestedSeries(

@@ -444,6 +444,64 @@ def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.Chun
     return pa.chunked_array(chunks)
 
 
+_MAX_FLAT_SIZE = 2**31 - 2
+"""Maximum flat (inner) row count per chunk.
+
+``pa.ListArray`` uses int32 offsets, so a single chunk cannot reference more
+flat values than int32 can hold.  This constant is the upper bound used by
+``compute_chunk_boundaries`` to split chunks before overflow.
+"""
+
+
+def compute_chunk_boundaries(list_lengths: np.ndarray, chunk_size: int) -> list[int]:
+    """Compute chunk boundary indices from list lengths.
+
+    Returns a list of end indices (exclusive) for each chunk, such that:
+
+    - each chunk has at most ``chunk_size`` outer rows
+    - cumulative flat (inner) row count per chunk does not exceed
+      ``_MAX_FLAT_SIZE`` (2**31 - 2), which is the maximum safe value for
+      ``pa.ListArray`` int32 offsets
+
+    Parameters
+    ----------
+    list_lengths : np.ndarray
+        Array of list lengths (number of inner elements per outer row).
+    chunk_size : int
+        Target number of outer rows per chunk.
+
+    Returns
+    -------
+    list[int]
+        End indices (exclusive) for each chunk.
+    """
+    n = len(list_lengths)
+    if n == 0:
+        return []
+
+    # O(n) one-time cumulative sum; use int64 to avoid overflow during computation
+    cumflat_ext = np.empty(n + 1, dtype=np.int64)
+    cumflat_ext[0] = 0
+    cumflat_ext[1:] = np.cumsum(list_lengths.astype(np.int64))
+
+    boundaries = []
+    start = 0
+    while start < n:
+        row_end = min(start + chunk_size, n)
+        flat_limit = cumflat_ext[start] + _MAX_FLAT_SIZE
+
+        # Binary search: find the last end s.t. per-chunk flat count <= _MAX_FLAT_SIZE.
+        # searchsorted 'right' gives first idx where cumflat_ext[idx] > flat_limit,
+        # so the last valid exclusive end is idx - 1.
+        idx = int(np.searchsorted(cumflat_ext, flat_limit, side="right"))
+        flat_end = min(idx - 1, row_end)
+        end = max(flat_end, start + 1)  # always advance at least one row
+
+        boundaries.append(end)
+        start = end
+    return boundaries
+
+
 def normalize_list_array(
     array: pa.ListArray | pa.FixedSizeListArray | pa.LargeListArray | pa.ChunkedArray,
 ) -> pa.ListArray | pa.ChunkedArray:

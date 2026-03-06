@@ -12,7 +12,12 @@ from pandas.testing import assert_frame_equal, assert_series_equal
 from nested_pandas import NestedDtype
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import NestedFrame
-from nested_pandas.series.ext_array import NestedExtensionArray, convert_df_to_pa_scalar, replace_with_mask
+from nested_pandas.series.ext_array import (
+    NestedExtensionArray,
+    convert_df_to_pa_scalar,
+    replace_with_mask,
+)
+from nested_pandas.series.utils import _MAX_FLAT_SIZE, compute_chunk_boundaries
 
 
 def test_replace_with_mask():
@@ -2150,3 +2155,151 @@ def test__from_factorized():
         NestedExtensionArray._from_factorized(
             [0], NestedExtensionArray.from_sequence([{"a": [1, 2, 3], "b": [4, 5, 6]}])
         )
+
+
+# ── compute_chunk_boundaries ──────────────────────────────────────────────────
+
+
+def test_compute_chunk_boundaries_empty():
+    """Empty input returns empty boundaries."""
+    assert compute_chunk_boundaries(np.array([], dtype=np.int64), chunk_size=10) == []
+
+
+def test_compute_chunk_boundaries_uniform():
+    """Uniform list_lengths produce evenly-spaced boundaries."""
+    # 10 rows, each with 3 inner elements, chunk_size=4
+    boundaries = compute_chunk_boundaries(np.full(10, 3, dtype=np.int64), chunk_size=4)
+    assert boundaries == [4, 8, 10]
+
+
+def test_compute_chunk_boundaries_custom_chunk_size():
+    """chunk_size=1 produces one boundary per row."""
+    n = 5
+    lengths = np.ones(n, dtype=np.int64)
+    boundaries = compute_chunk_boundaries(lengths, chunk_size=1)
+    assert boundaries == list(range(1, n + 1))
+
+
+def test_compute_chunk_boundaries_overflow_guard():
+    """Rows whose flat count would overflow int32 are split at single-row granularity."""
+    # Two rows, each larger than _MAX_FLAT_SIZE would allow in a combined chunk
+    big = _MAX_FLAT_SIZE + 1
+    lengths = np.array([big, big], dtype=np.int64)
+    boundaries = compute_chunk_boundaries(lengths, chunk_size=100)
+    # Each row must be its own chunk because together they exceed _MAX_FLAT_SIZE
+    assert boundaries == [1, 2]
+
+
+def test_compute_chunk_boundaries_single_huge_row():
+    """A single row larger than _MAX_FLAT_SIZE is still returned (unavoidable)."""
+    lengths = np.array([_MAX_FLAT_SIZE + 100], dtype=np.int64)
+    boundaries = compute_chunk_boundaries(lengths, chunk_size=10)
+    assert boundaries == [1]
+
+
+# ── NestedExtensionArray.rechunk ──────────────────────────────────────────────
+
+
+def _make_many_chunk_array(n_rows: int = 20) -> NestedExtensionArray:
+    """Build a NestedExtensionArray with one chunk per row (simulating repeated pd.concat)."""
+    parts = [
+        NestedExtensionArray.from_sequence(
+            [{"a": [float(i), float(i + 1)], "b": [float(i * 10), float(i * 10 + 1)]}]
+        )
+        for i in range(n_rows)
+    ]
+    return NestedExtensionArray._concat_same_type(parts)
+
+
+def test_rechunk_default_chunk_size():
+    """rechunk() with default chunk_size collapses many small chunks into one (for small arrays)."""
+    arr = _make_many_chunk_array(10)
+    assert arr.num_chunks > 1
+    rechunked = arr.rechunk()
+    # For 10 rows, all fit in one DEFAULT_CHUNK_SIZE chunk
+    assert rechunked.num_chunks == 1
+
+
+def test_rechunk_custom_chunk_size():
+    """rechunk(chunk_size=3) produces ceil(n/3) chunks."""
+    n = 9
+    arr = _make_many_chunk_array(n)
+    rechunked = arr.rechunk(chunk_size=3)
+    assert rechunked.num_chunks == 3
+
+
+def test_rechunk_custom_chunk_size_remainder():
+    """rechunk with non-divisible sizes includes a smaller last chunk."""
+    n = 10
+    arr = _make_many_chunk_array(n)
+    rechunked = arr.rechunk(chunk_size=3)
+    assert rechunked.num_chunks == 4  # 3+3+3+1
+
+
+def test_rechunk_single_chunk_input():
+    """rechunk on an already-single-chunk array with chunk_size >= len returns one chunk."""
+    arr = NestedExtensionArray.from_sequence([{"a": [1, 2], "b": [3.0, 4.0]} for _ in range(5)])
+    assert arr.num_chunks == 1
+    rechunked = arr.rechunk(chunk_size=10)
+    assert rechunked.num_chunks == 1
+
+
+def test_rechunk_preserves_data():
+    """rechunk does not alter the values."""
+    arr = _make_many_chunk_array(20)
+    rechunked = arr.rechunk(chunk_size=5)
+    assert arr.equals(rechunked)
+
+
+def test_rechunk_empty_array():
+    """rechunk on an empty array returns an empty array without error."""
+    arr = NestedExtensionArray.from_sequence([], dtype=NestedDtype.from_columns({"a": pa.int64()}))
+    rechunked = arr.rechunk()
+    assert len(rechunked) == 0
+
+
+def test_rechunk_invalid_chunk_size():
+    """rechunk raises ValueError for chunk_size < 1."""
+    arr = _make_many_chunk_array(4)
+    with pytest.raises(ValueError, match="chunk_size must be >= 1"):
+        arr.rechunk(chunk_size=0)
+
+
+def test_rechunk_many_chunks_reduces_count():
+    """Start with 100 chunks, rechunk to ≤10 chunks."""
+    arr = _make_many_chunk_array(100)
+    assert arr.num_chunks == 100
+    rechunked = arr.rechunk(chunk_size=15)
+    assert rechunked.num_chunks <= 7  # ceil(100/15)
+    assert arr.equals(rechunked)
+
+
+# ── set_flat_field with chunked data ──────────────────────────────────────────
+
+
+def test_set_flat_field_on_many_chunk_array():
+    """set_flat_field works correctly when the array has many small chunks."""
+    arr = _make_many_chunk_array(10)
+    assert arr.num_chunks > 1
+
+    # Replace field "b" with a new flat array
+    new_b = np.arange(arr.flat_length, dtype=np.float64)
+    arr.set_flat_field("b", new_b)
+
+    flat_b = arr.pa_table.column("b").combine_chunks().values.to_pylist()
+    assert flat_b == list(new_b)
+
+
+def test_set_flat_field_on_single_chunk_array():
+    """set_flat_field produces the same flat values regardless of chunk structure."""
+    arr_single = NestedExtensionArray.from_sequence([{"a": [1.0, 2.0], "b": [10.0, 11.0]} for _ in range(5)])
+    arr_many = _make_many_chunk_array(5)
+
+    new_b = np.arange(arr_single.flat_length, dtype=np.float64)
+    arr_single.set_flat_field("b", new_b)
+    arr_many.set_flat_field("b", new_b)
+
+    # Both arrays should have the same flat "b" values after the update
+    single_b = arr_single.pa_table.column("b").combine_chunks().values.to_pylist()
+    many_b = arr_many.pa_table.column("b").combine_chunks().values.to_pylist()
+    assert single_b == many_b
