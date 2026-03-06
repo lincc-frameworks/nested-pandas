@@ -17,6 +17,14 @@ on:
 jobs:
   test-pandas-dev:
     runs-on: ubuntu-latest
+    
+    # Required permissions to allow the bot to post a comment on the PR
+    permissions:
+      contents: read
+      issues: read
+      checks: write
+      pull-requests: write
+
     strategy:
       matrix:
         python-version: ['3.11', '3.12', '3.13', '3.14']
@@ -42,18 +50,21 @@ jobs:
 
     - name: Uninstall stable pandas and install nightly pandas
       run: |
-        # Uninstall the stable pandas for safety
         uv pip uninstall --system pandas
-        # Install the Nightly pandas (may be unstable)
         uv pip install --system -i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pandas
 
-        # Just a quick check (helpful to search in logs)
         python -c "import pandas as pd; print('Installed pandas version:', pd.__version__)"
 
     - name: Run unit tests with pytest
-      continue-on-error: true
       run: |
-        uv pip install --system pytest-github-actions-annotate-failures
-        
-        # The plugin will automatically hook into pytest and output the annotations
-        python -m pytest
+        # Run pytest and output the results to an XML file. 
+        # || true ensures the step doesn't crash the workflow if tests fail.
+        python -m pytest --junitxml=pytest-results.xml || true
+
+    - name: Publish Test Results as PR Comment
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      if: always()
+      with:
+        files: pytest-results.xml
+        # Differentiates the comments based on the Python version matrix
+        check_name: "Pandas Nightly Test Results (Python ${{ matrix.python-version }})"
