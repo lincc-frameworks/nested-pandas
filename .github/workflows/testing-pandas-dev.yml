@@ -11,7 +11,7 @@ name: Test against pandas development version
 on:
   pull_request:
   schedule:
-    - cron: 45 6 * * *
+    - cron: '45 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -23,6 +23,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
+    
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v6
       with:
@@ -52,36 +53,7 @@ jobs:
     - name: Run unit tests with pytest
       continue-on-error: true
       run: |
-        # Run pytest and save the output. Use || true so the step doesn't fail here.
-        python -m pytest > pytest.log || true
-        cat pytest.log
+        uv pip install --system pytest-github-actions-annotate-failures
         
-        # Parse the log and create annotations.json
-        python -c '
-        import json, re
-        
-        annotations = []
-        with open("pytest.log") as f:
-            for line in f:
-                if line.startswith("FAILED ") or line.startswith("ERROR "):
-                    # Extract the file path and error message from the summary line
-                    match = re.search(r"^(?:FAILED|ERROR) (.*?)::(.*?)\s+-\s+(.*)", line)
-                    if match:
-                        annotations.append({
-                            "file": match.group(1).strip(),
-                            "line": 1,
-                            "title": f"Pandas Dev Failure: {match.group(2).strip()}",
-                            "message": match.group(3).strip(),
-                            "annotation_level": "warning"
-                        })
-        
-        with open("annotations.json", "w") as f:
-            json.dump(annotations, f)
-        '
-
-    - name: Annotate failures
-      uses: yuzutech/annotations-action@v0.4.0
-      with:
-        repo-token: "${{ secrets.GITHUB_TOKEN }}"
-        title: 'Pandas Nightly Tests'
-        input: './annotations.json'
+        # The plugin will automatically hook into pytest and output the annotations
+        python -m pytest
