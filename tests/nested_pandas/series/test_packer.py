@@ -280,7 +280,7 @@ def test_pack_lists():
             ],
         },
         index=[1, 2, 3, 4],
-        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        dtype=pd.ArrowDtype(pa.large_list(pa.int64())),
     )
     series = packer.pack_lists(packed_df)
     offsets_reused(series)
@@ -303,8 +303,8 @@ def test_pack_lists_with_chunked_arrays():
     )
     list_df = pd.DataFrame({"a": chunked_a, "b": chunked_b}, index=[0, 1, 2, 3, 4, 5])
     series = packer.pack_lists(list_df)
-    assert_series_equal(series.nest.to_lists()["a"], chunked_a)
-    assert_series_equal(series.nest.to_lists()["b"], chunked_b)
+    assert_series_equal(series.nest.to_lists()["a"], chunked_a, check_dtype=False)
+    assert_series_equal(series.nest.to_lists()["b"], chunked_b, check_dtype=False)
 
 
 def test_pack_lists_with_uneven_chunked_arrays():
@@ -321,8 +321,8 @@ def test_pack_lists_with_uneven_chunked_arrays():
     )
     list_df = pd.DataFrame({"a": chunked_a, "b": chunked_b}, index=[0, 1, 2, 3, 4, 5])
     series = packer.pack_lists(list_df)
-    assert_series_equal(series.nest.to_lists()["a"], chunked_a)
-    assert_series_equal(series.nest.to_lists()["b"], chunked_b)
+    assert_series_equal(series.nest.to_lists()["a"], chunked_a, check_dtype=False)
+    assert_series_equal(series.nest.to_lists()["b"], chunked_b, check_dtype=False)
 
 
 def test_pack_seq_with_dfs_and_index():
@@ -484,7 +484,7 @@ def test_view_sorted_df_as_list_arrays():
             ],
         },
         index=[1, 2, 3, 4],
-        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        dtype=pd.ArrowDtype(pa.large_list(pa.int64())),
     )
     assert_frame_equal(nested_df, desired_nested)
 
@@ -522,7 +522,7 @@ def test_view_sorted_series_as_list_array():
             np.array([7, 8, 9]),
         ],
         index=[1, 2, 3, 4],
-        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        dtype=pd.ArrowDtype(pa.large_list(pa.int64())),
         name="my_series",
     )
     assert_series_equal(nested, desired_nested)
@@ -554,7 +554,7 @@ def test_view_sorted_series_as_list_array_chunked_input():
     desired = NestedSeries(
         pa.array([[0, 1], [2, None], [4]]),
         index=unique_index,
-        dtype=pd.ArrowDtype(pa.list_(pa.int64())),
+        dtype=pd.ArrowDtype(pa.large_list(pa.int64())),
         name="a",
     )
 
@@ -589,7 +589,7 @@ def test_view_sorted_series_as_list_array_chunked_input():
 def test_calculate_sorted_index_offsets(index, offsets):
     """Test calculate_sorted_index_offsets()."""
     actual = packer.calculate_sorted_index_offsets(index)
-    assert actual.dtype == np.int32
+    assert actual.dtype == np.int64
     assert_array_equal(actual, offsets)
 
 
