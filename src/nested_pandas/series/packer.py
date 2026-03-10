@@ -71,7 +71,7 @@ def pack_flat(
     The dtype of the column is `nested_pandas.NestedDtype` with
     the corresponding pyarrow type. The index of the output series is
     the unique index of the input dataframe. The Series has `.nest` accessor,
-    see `nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    see :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
 
     Parameters
     ----------
@@ -89,7 +89,7 @@ def pack_flat(
 
     See Also
     --------
-    nested_pandas.series.accessor.NestedSeriesAccessor : .nest accessor for the output series.
+    nested_pandas.series.accessor.NestSeriesAccessor : .nest accessor for the output series.
     nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
@@ -190,7 +190,7 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     The dtype of the column is `nested_pandas.NestedDtype` with the corresponding
     pyarrow type. The index of the output series is the unique index of the
     input dataframe. The Series has `.nest` accessor, see
-    `nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
 
     For every row, all the nested array (aka pyarrow list) lengths must be
     the same.

@@ -190,7 +190,7 @@ class NestSeriesAccessor(Mapping):
             Name of the field to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a scalar or have the same length
-             as the flat arrays, e.g. `self.flat_length`.
+            as the flat arrays, e.g. `self.flat_length`.
 
         Returns
         -------
@@ -223,7 +223,7 @@ class NestSeriesAccessor(Mapping):
             Name of the column to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a scalar or have the same length
-             as the flat arrays, e.g. `self.flat_length`.
+            as the flat arrays, e.g. `self.flat_length`.
 
         Returns
         -------
@@ -258,7 +258,7 @@ class NestSeriesAccessor(Mapping):
             Name of the field to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a scalar or have the same length
-             as the flat arrays, e.g. `self.flat_length`.
+            as the flat arrays, e.g. `self.flat_length`.
 
         Returns
         -------
@@ -290,7 +290,7 @@ class NestSeriesAccessor(Mapping):
             Name of the column to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a scalar or have the same length
-             as the flat arrays, e.g. `self.flat_length`.
+            as the flat arrays, e.g. `self.flat_length`.
 
         Returns
         -------
@@ -328,7 +328,7 @@ class NestSeriesAccessor(Mapping):
             Name of the field to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a list-array of the same length
-             as the series.
+            as the series.
 
         Returns
         -------
@@ -362,7 +362,7 @@ class NestSeriesAccessor(Mapping):
             Name of the column to set. If not present, it will be added.
         value : ArrayLike
             Array of values to set. It must be a list-array of the same length
-             as the series.
+            as the series.
 
         Returns
         -------
@@ -838,12 +838,13 @@ class NestSeriesAccessor(Mapping):
         a nested series.
 
         Each row of this Series is changed in the following way:
+
         1. Each nested item in the given field is converted to a "flat" frame.
-          If a nested item contains fields that are also nested, those are
-          brought up as their own nested structures in the resulting "flat"
-          frame.
+           If a nested item contains fields that are also nested, those are
+           brought up as their own nested structures in the resulting "flat"
+           frame.
         2. All items of other fields are repeated as many times as that frame
-          length.
+           length.
 
         It has the same effect as doing
         `nested_df.drop(field, axis=1).join(nested_df[field].nest.to_flat())`
