@@ -61,12 +61,12 @@ class NestSeriesAccessor(Mapping):
         >>> nf = generate_data(5, 2, seed=1)
 
         >>> nf["nested"].nest.to_lists()
-                                   t                       flux       band
-        0  [ 8.38389029 13.4093502 ]  [80.07445687 89.46066635]  ['r' 'g']
-        1  [13.70439001  8.34609605]  [96.82615757  8.50442114]  ['g' 'g']
-        2  [ 4.08904499 11.17379657]  [31.34241782  3.90547832]  ['g' 'g']
-        3  [17.56234873  2.80773877]  [69.23226157 16.98304196]  ['r' 'r']
-        4    [0.54775186 3.96202978]  [87.63891523 87.81425034]  ['g' 'r']
+                                   t                       flux flux_error       band
+        0  [ 8.38389029 13.4093502 ]  [80.07445687 89.46066635]      [1 1]  ['r' 'g']
+        1  [13.70439001  8.34609605]  [96.82615757  8.50442114]      [1 1]  ['g' 'g']
+        2  [ 4.08904499 11.17379657]  [31.34241782  3.90547832]      [1 1]  ['g' 'g']
+        3  [17.56234873  2.80773877]  [69.23226157 16.98304196]      [1 1]  ['r' 'r']
+        4    [0.54775186 3.96202978]  [87.63891523 87.81425034]      [1 1]  ['g' 'r']
         """
         columns = columns if columns is not None else list(self._series.array.field_names)
 
@@ -101,17 +101,17 @@ class NestSeriesAccessor(Mapping):
         >>> nf = generate_data(5, 2, seed=1)
 
         >>> nf["nested"].nest.to_flat()
-                   t       flux band
-        0    8.38389  80.074457    r
-        0   13.40935  89.460666    g
-        1   13.70439  96.826158    g
-        1   8.346096   8.504421    g
-        2   4.089045  31.342418    g
-        2  11.173797   3.905478    g
-        3  17.562349  69.232262    r
-        3   2.807739  16.983042    r
-        4   0.547752  87.638915    g
-        4    3.96203   87.81425    r
+                   t       flux  flux_error band
+        0    8.38389  80.074457           1    r
+        0   13.40935  89.460666           1    g
+        1   13.70439  96.826158           1    g
+        1   8.346096   8.504421           1    g
+        2   4.089045  31.342418           1    g
+        2  11.173797   3.905478           1    g
+        3  17.562349  69.232262           1    r
+        3   2.807739  16.983042           1    r
+        4   0.547752  87.638915           1    g
+        4    3.96203   87.81425           1    r
 
         """
         columns = columns if columns is not None else list(self._series.array.field_names)
@@ -158,7 +158,10 @@ class NestSeriesAccessor(Mapping):
         return self._series.array.flat_length
 
     @property
-    @deprecated(version="0.6.0", reason="`fields` will be removed in version 0.7.0, use `columns` instead.")
+    @deprecated(
+        version="0.6.0",
+        reason="`fields` will be removed in version 0.7.0, use `columns` instead.",
+    )
     def fields(self) -> list[str]:
         """Names of the nested columns"""
         return self.columns
@@ -177,7 +180,8 @@ class NestSeriesAccessor(Mapping):
         return flat_index
 
     @deprecated(
-        version="0.6.0", reason="`with_field` will be removed in version 0.7.0, use `set_column` instead."
+        version="0.6.0",
+        reason="`with_field` will be removed in version 0.7.0, use `set_column` instead.",
     )
     def with_field(self, field: str, value: ArrayLike) -> NestedSeries:
         """Set the field from flat-array of values and return a new series
@@ -206,9 +210,9 @@ class NestSeriesAccessor(Mapping):
         >>> nested_with_avg = nf["nested"].nest.with_field("avg_flux", 50.0)
         >>> # Look at one row of the series
         >>> nested_with_avg[0]
-                  t       flux band  avg_flux
-        0   8.38389  80.074457    r      50.0
-        1  13.40935  89.460666    g      50.0
+                  t       flux  flux_error band  avg_flux
+        0   8.38389  80.074457           1    r      50.0
+        1  13.40935  89.460666           1    g      50.0
         """
         return self.set_column(field, value)
 
@@ -239,9 +243,9 @@ class NestSeriesAccessor(Mapping):
         >>> nested_with_avg = nf["nested"].nest.set_column("avg_flux", 50.0)
         >>> # Look at one row of the series
         >>> nested_with_avg[0]
-                  t       flux band  avg_flux
-        0   8.38389  80.074457    r      50.0
-        1  13.40935  89.460666    g      50.0
+                  t       flux  flux_error band  avg_flux
+        0   8.38389  80.074457           1    r      50.0
+        1  13.40935  89.460666           1    g      50.0
         """
         return self.set_flat_column(column, value)
 
@@ -275,9 +279,9 @@ class NestSeriesAccessor(Mapping):
         ...                                                     50.0)
         >>> # Look at one row of the series
         >>> nested_with_avg[0]
-                  t       flux band  avg_flux
-        0   8.38389  80.074457    r      50.0
-        1  13.40935  89.460666    g      50.0
+                  t       flux  flux_error band  avg_flux
+        0   8.38389  80.074457           1    r      50.0
+        1  13.40935  89.460666           1    g      50.0
         """
         return self.set_flat_column(field, value)
 
@@ -307,9 +311,9 @@ class NestSeriesAccessor(Mapping):
         ...                                                     50.0)
         >>> # Look at one row of the series
         >>> nested_with_avg[0]
-                  t       flux band  avg_flux
-        0   8.38389  80.074457    r      50.0
-        1  13.40935  89.460666    g      50.0
+                  t       flux  flux_error band  avg_flux
+        0   8.38389  80.074457           1    r      50.0
+        1  13.40935  89.460666           1    g      50.0
         """
         new_array = self._series.array.copy()
         new_array.set_flat_field(column, value)
@@ -346,9 +350,9 @@ class NestSeriesAccessor(Mapping):
         ...                                                  ["r","r"]])
         >>> # Look at one row of the series
         >>> nf_new_band[0]
-                  t       flux band new_band
-        0  2.935118  39.676747    g        g
-        1  3.725204  41.919451    r        g
+                  t       flux  flux_error band new_band
+        0  2.935118  39.676747           1    g        g
+        1  3.725204  41.919451           1    r        g
 
         """
         return self.set_list_column(field, value)
@@ -380,9 +384,9 @@ class NestSeriesAccessor(Mapping):
         ...                                                  ["r","r"]])
         >>> # Look at one row of the series
         >>> nf_new_band[0]
-                  t       flux band new_band
-        0  2.935118  39.676747    g        g
-        1  3.725204  41.919451    r        g
+                  t       flux  flux_error band new_band
+        0  2.935118  39.676747           1    g        g
+        1  3.725204  41.919451           1    r        g
 
         """
         new_array = self._series.array.copy()
@@ -424,9 +428,9 @@ class NestSeriesAccessor(Mapping):
 
         >>> # Look at one row of the series
         >>> nf_filled[0]
-                   t       flux band  a
-        0   3.725204  20.445225    g  1
-        1  10.776335  67.046751    r  1
+                   t       flux  flux_error band  a
+        0   3.725204  20.445225           1    g  1
+        1  10.776335  67.046751           1    r  1
         """
         return self.set_filled_column(field, value)
 
@@ -461,16 +465,17 @@ class NestSeriesAccessor(Mapping):
 
         >>> # Look at one row of the series
         >>> nf_filled[0]
-                   t       flux band  a
-        0   3.725204  20.445225    g  1
-        1  10.776335  67.046751    r  1
+                   t       flux  flux_error band  a
+        0   3.725204  20.445225           1    g  1
+        1  10.776335  67.046751           1    r  1
         """
         new_array = self._series.array.copy()
         new_array.fill_field_lists(column, value)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
     @deprecated(
-        version="0.6.0", reason="`without_field` will be removed in version 0.7.0, use `drop` instead."
+        version="0.6.0",
+        reason="`without_field` will be removed in version 0.7.0, use `drop` instead.",
     )
     def without_field(self, field: str | list[str]) -> NestedSeries:
         """Remove the field(s) from the series and return a new series
@@ -494,12 +499,12 @@ class NestSeriesAccessor(Mapping):
         >>> nf = generate_data(5, 2, seed=1)
 
         >>> nf["nested"].nest.without_field("flux")
-        0      [{t: 8.38389, band: 'r'}; …] (2 rows)
-        1     [{t: 13.70439, band: 'g'}; …] (2 rows)
-        2     [{t: 4.089045, band: 'g'}; …] (2 rows)
-        3    [{t: 17.562349, band: 'r'}; …] (2 rows)
-        4     [{t: 0.547752, band: 'g'}; …] (2 rows)
-        Name: nested, dtype: nested<t: [double], band: [string]>
+        0    [{t: 8.38389, flux_error: 1, band: 'r'}; …] (2...
+        1    [{t: 13.70439, flux_error: 1, band: 'g'}; …] (...
+        2    [{t: 4.089045, flux_error: 1, band: 'g'}; …] (...
+        3    [{t: 17.562349, flux_error: 1, band: 'r'}; …] ...
+        4    [{t: 0.547752, flux_error: 1, band: 'g'}; …] (...
+        Name: nested, dtype: nested<t: [double], flux_error: [int64], band: [string]>
         """
         return self.drop(field)
 
@@ -525,12 +530,12 @@ class NestSeriesAccessor(Mapping):
         >>> nf = generate_data(5, 2, seed=1)
 
         >>> nf["nested"].nest.drop("flux")
-        0      [{t: 8.38389, band: 'r'}; …] (2 rows)
-        1     [{t: 13.70439, band: 'g'}; …] (2 rows)
-        2     [{t: 4.089045, band: 'g'}; …] (2 rows)
-        3    [{t: 17.562349, band: 'r'}; …] (2 rows)
-        4     [{t: 0.547752, band: 'g'}; …] (2 rows)
-        Name: nested, dtype: nested<t: [double], band: [string]>
+        0    [{t: 8.38389, flux_error: 1, band: 'r'}; …] (2...
+        1    [{t: 13.70439, flux_error: 1, band: 'g'}; …] (...
+        2    [{t: 4.089045, flux_error: 1, band: 'g'}; …] (...
+        3    [{t: 17.562349, flux_error: 1, band: 'r'}; …] ...
+        4    [{t: 0.547752, flux_error: 1, band: 'g'}; …] (...
+        Name: nested, dtype: nested<t: [double], flux_error: [int64], band: [string]>
         """
         if isinstance(column, str):
             column = [column]
@@ -539,7 +544,10 @@ class NestSeriesAccessor(Mapping):
         new_array.pop_fields(column)
         return NestedSeries(new_array, copy=False, index=self._series.index, name=self._series.name)
 
-    @deprecated(version="0.6.0", reason="`query_flat` will be removed in version 0.7.0, use `query` instead.")
+    @deprecated(
+        version="0.6.0",
+        reason="`query_flat` will be removed in version 0.7.0, use `query` instead.",
+    )
     def query_flat(self, query: str) -> NestedSeries:
         """Query the flat arrays with a boolean expression
 
@@ -563,12 +571,12 @@ class NestSeriesAccessor(Mapping):
         >>> nf = generate_data(5, 5, seed=1)
 
         >>> nf["nested"].nest.query_flat("flux > 50")
-        0          [{t: 13.40935, flux: 98.886109, band: 'g'}]
-        1    [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
-        2          [{t: 4.089045, flux: 83.462567, band: 'g'}]
-        3    [{t: 2.807739, flux: 78.927933, band: 'r'}; …]...
-        4    [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
-        dtype: nested<t: [double], flux: [double], band: [string]>
+        0    [{t: 13.40935, flux: 98.886109, flux_error: 1,...
+        1    [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2    [{t: 4.089045, flux: 83.462567, flux_error: 1,...
+        3    [{t: 2.807739, flux: 78.927933, flux_error: 1,...
+        4    [{t: 0.547752, flux: 75.014431, flux_error: 1,...
+        dtype: nested<t: [double], flux: [double], flux_error: [int64], band: [string]>
         """
         return self.query(query)
 
@@ -595,12 +603,12 @@ class NestSeriesAccessor(Mapping):
         >>> nf = generate_data(5, 5, seed=1)
 
         >>> nf["nested"].nest.query("flux > 50")
-        0          [{t: 13.40935, flux: 98.886109, band: 'g'}]
-        1    [{t: 13.70439, flux: 68.650093, band: 'g'}; …]...
-        2          [{t: 4.089045, flux: 83.462567, band: 'g'}]
-        3    [{t: 2.807739, flux: 78.927933, band: 'r'}; …]...
-        4    [{t: 0.547752, flux: 75.014431, band: 'g'}; …]...
-        dtype: nested<t: [double], flux: [double], band: [string]>
+        0    [{t: 13.40935, flux: 98.886109, flux_error: 1,...
+        1    [{t: 13.70439, flux: 68.650093, flux_error: 1,...
+        2    [{t: 4.089045, flux: 83.462567, flux_error: 1,...
+        3    [{t: 2.807739, flux: 78.927933, flux_error: 1,...
+        4    [{t: 0.547752, flux: 75.014431, flux_error: 1,...
+        dtype: nested<t: [double], flux: [double], flux_error: [int64], band: [string]>
         """
         flat = self.to_flat().query(query)
 
@@ -873,24 +881,24 @@ class NestSeriesAccessor(Mapping):
         >>> nf["id"] = [0, 0, 0, 1, 1]
         >>> nf
                   a  b                                              inner  id
-        0  0.417022  b  [{t: 8.38389, flux: 80.074457, band: 'r'}; …] ...   0
-        1  0.720324  b  [{t: 13.70439, flux: 96.826158, band: 'g'}; …]...   0
-        2  0.000114  b  [{t: 4.089045, flux: 31.342418, band: 'g'}; …]...   0
-        3  0.302333  b  [{t: 17.562349, flux: 69.232262, band: 'r'}; …...   1
-        4  0.146756  b  [{t: 0.547752, flux: 87.638915, band: 'g'}; …]...   1
+        0  0.417022  b  [{t: 8.38389, flux: 80.074457, flux_error: 1, ...   0
+        1  0.720324  b  [{t: 13.70439, flux: 96.826158, flux_error: 1,...   0
+        2  0.000114  b  [{t: 4.089045, flux: 31.342418, flux_error: 1,...   0
+        3  0.302333  b  [{t: 17.562349, flux: 69.232262, flux_error: 1...   1
+        4  0.146756  b  [{t: 0.547752, flux: 87.638915, flux_error: 1,...   1
 
         >>> nf.inner.nest.to_flat()
-                   t       flux band
-        0    8.38389  80.074457    r
-        0   13.40935  89.460666    g
-        1   13.70439  96.826158    g
-        1   8.346096   8.504421    g
-        2   4.089045  31.342418    g
-        2  11.173797   3.905478    g
-        3  17.562349  69.232262    r
-        3   2.807739  16.983042    r
-        4   0.547752  87.638915    g
-        4    3.96203   87.81425    r
+                   t       flux  flux_error band
+        0    8.38389  80.074457           1    r
+        0   13.40935  89.460666           1    g
+        1   13.70439  96.826158           1    g
+        1   8.346096   8.504421           1    g
+        2   4.089045  31.342418           1    g
+        2  11.173797   3.905478           1    g
+        3  17.562349  69.232262           1    r
+        3   2.807739  16.983042           1    r
+        4   0.547752  87.638915           1    g
+        4    3.96203   87.81425           1    r
 
         Create a dataframe with double-nested column "outer"
 
@@ -900,25 +908,26 @@ class NestSeriesAccessor(Mapping):
         This is like "concatenation" of the initial nf frame on duplicated `id` rows
 
         >>> concated_nf_series = dnf["outer"].nest.to_flatten_inner("inner")
-        >>> concated_nf_series
+        >>> concated_nf_series  # doctest: +NORMALIZE_WHITESPACE
         id
         0    [{a: 0.417022, b: 'b', t: 8.38389, flux: 80.07...
         1    [{a: 0.302333, b: 'b', t: 17.562349, flux: 69....
-        Name: outer, dtype: nested<a: [double], b: [string], t: [double], flux: [double], band: [string]>
+        Name: outer, dtype: nested<a: [double], b: [string], t: [double],
+        flux: [double], flux_error: [int64], band: [string]>
 
         >>> concated_nf_series.nest.to_flat()  # doctest: +NORMALIZE_WHITESPACE
-                   a  b          t       flux band
+                   a  b          t       flux  flux_error band
         id
-        0   0.417022  b    8.38389  80.074457    r
-        0   0.417022  b   13.40935  89.460666    g
-        0   0.720324  b   13.70439  96.826158    g
-        0   0.720324  b   8.346096   8.504421    g
-        0   0.000114  b   4.089045  31.342418    g
-        0   0.000114  b  11.173797   3.905478    g
-        1   0.302333  b  17.562349  69.232262    r
-        1   0.302333  b   2.807739  16.983042    r
-        1   0.146756  b   0.547752  87.638915    g
-        1   0.146756  b    3.96203   87.81425    r
+        0   0.417022  b    8.38389  80.074457           1    r
+        0   0.417022  b   13.40935  89.460666           1    g
+        0   0.720324  b   13.70439  96.826158           1    g
+        0   0.720324  b   8.346096   8.504421           1    g
+        0   0.000114  b   4.089045  31.342418           1    g
+        0   0.000114  b  11.173797   3.905478           1    g
+        1   0.302333  b  17.562349  69.232262           1    r
+        1   0.302333  b   2.807739  16.983042           1    r
+        1   0.146756  b   0.547752  87.638915           1    g
+        1   0.146756  b    3.96203   87.81425           1    r
         """
         if not isinstance(self._series.dtype.column_dtype(field), NestedDtype):
             raise ValueError(

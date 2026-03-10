@@ -46,6 +46,7 @@ def generate_data(n_base, n_layer, seed=None) -> NestedFrame:
             layer_data = {
                 "t": randomstate.random(layer_size * n_base) * 20,
                 "flux": randomstate.random(layer_size * n_base) * 100,
+                "flux_error": np.full(layer_size * n_base, 1),
                 "band": randomstate.choice(["r", "g"], size=layer_size * n_base),
                 "index": np.arange(layer_size * n_base) % n_base,
             }
