@@ -1224,6 +1224,25 @@ def test__concat_same_type():
     assert actual.equals(desired)
 
 
+def test__concat_same_type_rechunks_fragmented():
+    """Concatenating many one-row arrays produces a non-fragmented result."""
+    n = DEFAULT_MIN_CHUNK_SIZE * 4
+    parts = [NestedExtensionArray.from_sequence([{"a": [float(i)], "b": [float(i)]}]) for i in range(n)]
+    result = NestedExtensionArray._concat_same_type(parts)
+    assert not result.is_fragmented()
+
+
+def test__concat_same_type_skips_rechunk_when_clean():
+    """Concatenating two already-clean large arrays does not trigger rechunking."""
+    chunk = NestedExtensionArray.from_sequence(
+        [{"a": [float(i)], "b": [float(i)]} for i in range(DEFAULT_MIN_CHUNK_SIZE)]
+    )
+    result = NestedExtensionArray._concat_same_type([chunk, chunk])
+    # Two equal-sized chunks: not fragmented, so no rechunk was needed
+    assert result.num_chunks == 2
+    assert not result.is_fragmented()
+
+
 def test_equals():
     """Test that two NestedExtensionArrays are equal."""
     dtype = NestedDtype.from_columns({"a": pa.int64(), "b": pa.float64()})
@@ -2201,6 +2220,12 @@ def test_compute_chunk_boundaries_single_huge_row():
 # ── NestedExtensionArray.rechunk ──────────────────────────────────────────────
 
 
+def _concat_raw(*arrays: NestedExtensionArray) -> NestedExtensionArray:
+    """Concatenate arrays without auto-rechunking, for testing fragmented layouts."""
+    chunks = [chunk for arr in arrays for chunk in arr.list_array.chunks]
+    return NestedExtensionArray(pa.chunked_array(chunks))
+
+
 def _make_many_chunk_array(n_rows: int = 20) -> NestedExtensionArray:
     """Build a NestedExtensionArray with one chunk per row (simulating repeated pd.concat)."""
     parts = [
@@ -2209,7 +2234,7 @@ def _make_many_chunk_array(n_rows: int = 20) -> NestedExtensionArray:
         )
         for i in range(n_rows)
     ]
-    return NestedExtensionArray._concat_same_type(parts)
+    return _concat_raw(*parts)
 
 
 def test_rechunk_default_chunk_size():
@@ -2315,7 +2340,7 @@ def test_is_fragmented_tail_grows_to_full_chunk():
     # Tail of DEFAULT_MIN_CHUNK_SIZE one-row chunks: total == min_chunk_size → fragmented
     one_row = NestedExtensionArray.from_sequence([{"a": [1], "b": [2.0]}])
     parts = [base] + [one_row] * DEFAULT_MIN_CHUNK_SIZE
-    arr = NestedExtensionArray._concat_same_type(parts)
+    arr = _concat_raw(*parts)
     assert arr.is_fragmented()
 
 
@@ -2326,7 +2351,7 @@ def test_is_fragmented_body_chunk_too_small():
     )
     small = NestedExtensionArray.from_sequence([{"a": [1], "b": [2.0]}])
     # Layout: [large, small, large] — the middle chunk is a body chunk and too small
-    arr = NestedExtensionArray._concat_same_type([large, small, large])
+    arr = _concat_raw(large, small, large)
     assert arr.is_fragmented()
 
 

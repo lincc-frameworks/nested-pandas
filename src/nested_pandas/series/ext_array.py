@@ -602,7 +602,10 @@ class NestedExtensionArray(ExtensionArray):
     def _concat_same_type(cls, to_concat: Sequence[Self]) -> Self:  # type: ignore[name-defined] # noqa: F821
         chunks = [chunk for ext_array in to_concat for chunk in ext_array.list_array.iterchunks()]
         pa_array = pa.chunked_array(chunks)
-        return cls(pa_array)
+        result = cls(pa_array)
+        if result.is_fragmented():
+            return result.rechunk()
+        return result
 
     def equals(self, other) -> bool:
         """
