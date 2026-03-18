@@ -13,6 +13,7 @@ from nested_pandas import NestedDtype
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import NestedFrame
 from nested_pandas.series.ext_array import (
+    DEFAULT_MIN_CHUNK_SIZE,
     NestedExtensionArray,
     convert_df_to_pa_scalar,
     replace_with_mask,
@@ -2161,15 +2162,15 @@ def test__from_factorized():
 
 
 def test_compute_chunk_boundaries_empty():
-    """Empty input returns empty boundaries."""
-    assert compute_chunk_boundaries(np.array([], dtype=np.int64), chunk_size=10) == []
+    """Empty input returns [0] (no chunks)."""
+    assert compute_chunk_boundaries(np.array([], dtype=np.int64), chunk_size=10) == [0]
 
 
 def test_compute_chunk_boundaries_uniform():
     """Uniform list_lengths produce evenly-spaced boundaries."""
     # 10 rows, each with 3 inner elements, chunk_size=4
     boundaries = compute_chunk_boundaries(np.full(10, 3, dtype=np.int64), chunk_size=4)
-    assert boundaries == [4, 8, 10]
+    assert boundaries == [0, 4, 8, 10]
 
 
 def test_compute_chunk_boundaries_custom_chunk_size():
@@ -2177,7 +2178,7 @@ def test_compute_chunk_boundaries_custom_chunk_size():
     n = 5
     lengths = np.ones(n, dtype=np.int64)
     boundaries = compute_chunk_boundaries(lengths, chunk_size=1)
-    assert boundaries == list(range(1, n + 1))
+    assert boundaries == list(range(0, n + 1))
 
 
 def test_compute_chunk_boundaries_overflow_guard():
@@ -2187,14 +2188,14 @@ def test_compute_chunk_boundaries_overflow_guard():
     lengths = np.array([big, big], dtype=np.int64)
     boundaries = compute_chunk_boundaries(lengths, chunk_size=100)
     # Each row must be its own chunk because together they exceed _MAX_FLAT_SIZE
-    assert boundaries == [1, 2]
+    assert boundaries == [0, 1, 2]
 
 
 def test_compute_chunk_boundaries_single_huge_row():
     """A single row larger than _MAX_FLAT_SIZE is still returned (unavoidable)."""
     lengths = np.array([_MAX_FLAT_SIZE + 100], dtype=np.int64)
     boundaries = compute_chunk_boundaries(lengths, chunk_size=10)
-    assert boundaries == [1]
+    assert boundaries == [0, 1]
 
 
 # ── NestedExtensionArray.rechunk ──────────────────────────────────────────────
@@ -2272,6 +2273,97 @@ def test_rechunk_many_chunks_reduces_count():
     rechunked = arr.rechunk(chunk_size=15)
     assert rechunked.num_chunks <= 7  # ceil(100/15)
     assert arr.equals(rechunked)
+
+
+# ── is_fragmented ─────────────────────────────────────────────────────────────
+
+
+def test_is_fragmented_single_clean_chunk():
+    """A freshly constructed single-chunk array is not fragmented."""
+    arr = NestedExtensionArray.from_sequence(
+        [{"a": [1, 2], "b": [3.0, 4.0]} for _ in range(DEFAULT_MIN_CHUNK_SIZE)]
+    )
+    assert arr.num_chunks == 1
+    assert not arr.is_fragmented()
+
+
+def test_is_fragmented_many_tiny_chunks():
+    """Many 1-row chunks whose tail total >= min_chunk_size are fragmented."""
+    arr = _make_many_chunk_array(DEFAULT_MIN_CHUNK_SIZE * 2)
+    assert arr.num_chunks == DEFAULT_MIN_CHUNK_SIZE * 2
+    assert arr.is_fragmented()
+
+
+def test_is_fragmented_small_tail_not_fragmented():
+    """A large base chunk plus a small tail (total < min_chunk_size) is not fragmented."""
+    base = NestedExtensionArray.from_sequence(
+        [{"a": [1, 2], "b": [3.0, 4.0]} for _ in range(DEFAULT_MIN_CHUNK_SIZE)]
+    )
+    small = NestedExtensionArray.from_sequence(
+        [{"a": [1], "b": [2.0]} for _ in range(DEFAULT_MIN_CHUNK_SIZE // 2 - 1)]
+    )
+    arr = NestedExtensionArray._concat_same_type([base, small])
+    assert arr.num_chunks == 2
+    assert not arr.is_fragmented()
+
+
+def test_is_fragmented_tail_grows_to_full_chunk():
+    """Once the tail accumulates >= min_chunk_size rows the array is fragmented."""
+    base = NestedExtensionArray.from_sequence(
+        [{"a": [1, 2], "b": [3.0, 4.0]} for _ in range(DEFAULT_MIN_CHUNK_SIZE)]
+    )
+    # Tail of DEFAULT_MIN_CHUNK_SIZE one-row chunks: total == min_chunk_size → fragmented
+    one_row = NestedExtensionArray.from_sequence([{"a": [1], "b": [2.0]}])
+    parts = [base] + [one_row] * DEFAULT_MIN_CHUNK_SIZE
+    arr = NestedExtensionArray._concat_same_type(parts)
+    assert arr.is_fragmented()
+
+
+def test_is_fragmented_body_chunk_too_small():
+    """A small chunk surrounded by large ones (not in the tail) is fragmented."""
+    large = NestedExtensionArray.from_sequence(
+        [{"a": [1], "b": [2.0]} for _ in range(DEFAULT_MIN_CHUNK_SIZE)]
+    )
+    small = NestedExtensionArray.from_sequence([{"a": [1], "b": [2.0]}])
+    # Layout: [large, small, large] — the middle chunk is a body chunk and too small
+    arr = NestedExtensionArray._concat_same_type([large, small, large])
+    assert arr.is_fragmented()
+
+
+def test_is_fragmented_after_rechunk():
+    """After rechunk(), is_fragmented() returns False."""
+    arr = _make_many_chunk_array(DEFAULT_MIN_CHUNK_SIZE * 2)
+    assert arr.is_fragmented()
+    assert not arr.rechunk().is_fragmented()
+
+
+def test_is_fragmented_custom_min_chunk_size():
+    """min_chunk_size parameter controls the size threshold."""
+    # 2 chunks of n=500 rows each
+    n = 500
+    arr = _make_many_chunk_array(n * 2)
+    rechunked = arr.rechunk(chunk_size=n)
+    assert rechunked.num_chunks == 2
+    # With min_chunk_size=1000: both chunks are body chunks and 500 < 1000 → fragmented
+    assert rechunked.is_fragmented(min_chunk_size=1000)
+    # With min_chunk_size=100: both chunks are large enough → not fragmented
+    assert not rechunked.is_fragmented(min_chunk_size=100)
+
+
+def test_rechunk_fast_path_returns_self():
+    """rechunk() returns self (not a copy) when the array is already clean."""
+    arr = NestedExtensionArray.from_sequence(
+        [{"a": [1, 2], "b": [3.0, 4.0]} for _ in range(DEFAULT_MIN_CHUNK_SIZE)]
+    )
+    assert not arr.is_fragmented()
+    assert arr.rechunk() is arr
+
+
+def test_rechunk_copies_when_fragmented():
+    """rechunk() returns a different object when the array is fragmented."""
+    arr = _make_many_chunk_array(DEFAULT_MIN_CHUNK_SIZE * 2)
+    assert arr.is_fragmented()
+    assert arr.rechunk() is not arr
 
 
 # ── set_flat_field with chunked data ──────────────────────────────────────────

@@ -63,6 +63,7 @@ from nested_pandas.series._storage import (
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
+    _MAX_FLAT_SIZE,
     chunk_lengths,
     compute_chunk_boundaries,
     is_pa_type_a_list,
@@ -80,6 +81,9 @@ DEFAULT_CHUNK_SIZE = 1_048_576
 
 Matches PyArrow's default Parquet row group size.
 """
+
+DEFAULT_MIN_CHUNK_SIZE = 4_096
+"""Minimum outer rows per chunk before :meth:`NestedExtensionArray.is_fragmented` flags excess chunks."""
 
 
 BOXED_NESTED_EXTENSION_ARRAY_FORMAT_TRICK = True
@@ -1012,6 +1016,70 @@ class NestedExtensionArray(ExtensionArray):
         """Number of chunk_lens in underlying pyarrow.ChunkedArray"""
         return self._storage.num_chunks
 
+    def is_fragmented(
+        self,
+        min_chunk_size: int | None = None,
+    ) -> bool:
+        """Check whether :meth:`rechunk` would improve memory layout.
+
+        Returns ``True`` if any of the following hold:
+
+        - Any "body" chunk (all chunks except a trailing run of small ones)
+          has fewer than ``min_chunk_size`` outer rows.
+        - The trailing run of small chunks ("tail") has accumulated enough
+          rows in total to form a proper chunk (i.e. total >= ``min_chunk_size``).
+
+        The tail allowance amortises detection cost for incremental-append
+        workloads: a rechunk is triggered roughly once per ``min_chunk_size``
+        single-row appends rather than after every second append.
+
+        Parameters
+        ----------
+        min_chunk_size : int or None
+            Minimum acceptable average outer rows per chunk.
+            Defaults to ``DEFAULT_MIN_CHUNK_SIZE`` (1_024).
+
+        Returns
+        -------
+        bool
+        """
+        if min_chunk_size is None:
+            min_chunk_size = DEFAULT_MIN_CHUNK_SIZE
+
+        chunks = list(self.list_array.iterchunks())
+
+        # Find where the trailing run of small chunks ("tail") begins.
+        # Scan right-to-left: stop at the first chunk that is large enough.
+        tail_start = len(chunks)
+        tail_rows = 0
+        for i in range(len(chunks) - 1, -1, -1):
+            if len(chunks[i]) >= min_chunk_size:
+                break
+            tail_start = i
+            tail_rows += len(chunks[i])
+
+        # Every "body" chunk (before the tail) must be full-size.
+        for chunk in chunks[:tail_start]:
+            if len(chunk) < min_chunk_size:
+                return True
+
+        # The tail is acceptable while its total row count is below min_chunk_size.
+        # Once the tail could form a proper chunk it is worth consolidating.
+        return tail_rows >= min_chunk_size
+
+    def _chunk_boundaries(self, chunk_size: int) -> list[int]:
+        """Compute chunk boundaries for this array.
+
+        Uses the total flat size from chunk metadata (O(n_chunks)) to avoid
+        computing list_lengths when there is no int32 overflow risk.
+        """
+        n = len(self)
+        total_flat = sum(len(chunk.values) for chunk in self.list_array.chunks)
+        if total_flat <= _MAX_FLAT_SIZE:
+            # No overflow risk: boundaries are pure arithmetic, no need to compute list_lengths.
+            return list(range(0, n, chunk_size)) + [n]
+        return compute_chunk_boundaries(self.list_lengths, chunk_size)
+
     def rechunk(self, chunk_size: int | None = None) -> NestedExtensionArray:  # type: ignore[name-defined] # noqa: F821
         """Rechunk the array to approximately ``chunk_size`` outer rows per chunk.
 
@@ -1026,25 +1094,29 @@ class NestedExtensionArray(ExtensionArray):
         Returns
         -------
         NestedExtensionArray
-            A new array with rebalanced chunks.
+            A new array with rebalanced chunks, or ``self`` if already clean.
         """
         if chunk_size is None:
             chunk_size = DEFAULT_CHUNK_SIZE
         if chunk_size < 1:
             raise ValueError("chunk_size must be >= 1")
 
-        list_lengths = self.list_lengths
-        boundaries = compute_chunk_boundaries(list_lengths, chunk_size)
+        boundaries = self._chunk_boundaries(chunk_size)
+
+        # Fast-path: already in the exact layout rechunk would produce.
+        # Build expected sizes from boundaries and compare to current chunk sizes.
+        expected_sizes = [boundaries[i + 1] - boundaries[i] for i in range(len(boundaries) - 1)]
+        actual_sizes = [len(c) for c in self.list_array.iterchunks()]
+        if actual_sizes == expected_sizes:
+            return self
 
         combined = self.list_array
-        chunks = []
-        start = 0
-        for end in boundaries:
+        chunks = [
             # combine_chunks() slices combined[start:end] into a fresh ListArray
             # with zero-based offsets, guaranteeing no int32 overflow.
-            chunk = combined[start:end].combine_chunks()
-            chunks.append(chunk)
-            start = end
+            combined[start:end].combine_chunks()
+            for start, end in zip(boundaries[:-1], boundaries[1:], strict=True)
+        ]
         return type(self)(pa.chunked_array(chunks, type=combined.type))
 
     def get_list_index(self) -> np.ndarray:

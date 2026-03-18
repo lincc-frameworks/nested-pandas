@@ -456,12 +456,13 @@ flat values than int32 can hold.  This constant is the upper bound used by
 def compute_chunk_boundaries(list_lengths: np.ndarray, chunk_size: int) -> list[int]:
     """Compute chunk boundary indices from list lengths.
 
-    Returns a list of end indices (exclusive) for each chunk, such that:
+    Returns offsets in Arrow style: ``[0, end0, end1, ..., n]``, so that
+    chunk ``i`` spans rows ``boundaries[i] : boundaries[i+1]``.  Each chunk
+    satisfies:
 
-    - each chunk has at most ``chunk_size`` outer rows
-    - cumulative flat (inner) row count per chunk does not exceed
-      ``_MAX_FLAT_SIZE`` (2**31 - 2), which is the maximum safe value for
-      ``pa.ListArray`` int32 offsets
+    - at most ``chunk_size`` outer rows
+    - cumulative flat (inner) row count does not exceed ``_MAX_FLAT_SIZE``
+      (2**31 - 2), the maximum safe value for ``pa.ListArray`` int32 offsets
 
     Parameters
     ----------
@@ -473,18 +474,19 @@ def compute_chunk_boundaries(list_lengths: np.ndarray, chunk_size: int) -> list[
     Returns
     -------
     list[int]
-        End indices (exclusive) for each chunk.
+        Offsets array ``[0, end0, end1, ..., n]`` with ``len(boundaries) - 1``
+        chunks.  Returns ``[0]`` (no chunks) when ``list_lengths`` is empty.
     """
     n = len(list_lengths)
     if n == 0:
-        return []
+        return [0]
 
     # O(n) one-time cumulative sum; use int64 to avoid overflow during computation
     cumflat_ext = np.empty(n + 1, dtype=np.int64)
     cumflat_ext[0] = 0
     cumflat_ext[1:] = np.cumsum(list_lengths.astype(np.int64))
 
-    boundaries = []
+    boundaries = [0]
     start = 0
     while start < n:
         row_end = min(start + chunk_size, n)
