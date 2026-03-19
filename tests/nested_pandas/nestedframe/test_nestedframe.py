@@ -1675,6 +1675,97 @@ def test_drop():
     assert "f" not in dropped_multcols.nested2.nest.columns
 
 
+def test_split():
+    """Test that split correctly splits a nested column by a categorical sub-column"""
+    nf = generate_data(5, 5, seed=1)
+
+    # Test basic split
+    result = nf.split("nested", by="band")
+    assert "nested" in result.columns
+    assert "nested_r" in result.columns
+    assert "nested_g" in result.columns
+    assert isinstance(result["nested_r"].dtype, NestedDtype)
+    assert isinstance(result["nested_g"].dtype, NestedDtype)
+
+    # Test filtering correctness
+    assert (result["nested_r"].nest["band"] == "r").all()
+    assert (result["nested_g"].nest["band"] == "g").all()
+
+    # Test values=None
+    unique_bands = nf["nested.band"].unique()
+    for band in unique_bands:
+        assert f"nested_{band}" in result.columns
+
+    # values= as list subset
+    result_subset = nf.split("nested", by="band", values=["g"])
+    assert "nested_g" in result_subset.columns
+    assert "nested_r" not in result_subset.columns
+
+    # values= as string: iterated as characters
+    result_str = nf.split("nested", by="band", values="rg")
+    assert "nested_r" in result_str.columns
+    assert "nested_g" in result_str.columns
+
+    # values= as empty list
+    result_empty_list = nf.split("nested", by="band", values=[])
+    assert "nested_r" not in result_empty_list.columns
+    assert "nested_g" not in result_empty_list.columns
+    assert "nested" in result_empty_list.columns
+
+    # values= as empty string
+    result_empty_str = nf.split("nested", by="band", values="")
+    assert "nested_r" not in result_empty_str.columns
+    assert "nested_g" not in result_empty_str.columns
+
+    # Test values= with values not present in the data, equivalent to values="z5" or values=["z", "5"]
+    result_missing = nf.split("nested", by="band", values=["z", 5])
+    assert "nested_z" in result_missing.columns
+    assert "nested_5" in result_missing.columns
+    assert result_missing["nested_z"].isna().all()
+    assert result_missing["nested_5"].isna().all()
+
+    # drop_by_col=True
+    result_drop_by = nf.split("nested", by="band", drop_by_col=True)
+    assert "band" not in result_drop_by["nested_r"].nest.columns
+    assert "band" not in result_drop_by["nested_g"].nest.columns
+    assert "t" in result_drop_by["nested_r"].nest.columns
+    assert "flux" in result_drop_by["nested_r"].nest.columns
+
+    # drop_nested=True
+    result_drop_nested = nf.split("nested", by="band", drop_nested=True)
+    assert "nested" not in result_drop_nested.columns
+    assert "nested_r" in result_drop_nested.columns
+    assert "nested_g" in result_drop_nested.columns
+
+    # both drop options together
+    result_drop_both = nf.split("nested", by="band", drop_by_col=True, drop_nested=True)
+    assert "nested" not in result_drop_both.columns
+    assert "band" not in result_drop_both["nested_r"].nest.columns
+
+    # original frame is not modified
+    assert "nested_r" not in nf.columns
+    assert "nested_g" not in nf.columns
+
+
+def test_split_errors():
+    """Test that split raises ValueError for invalid inputs"""
+    nf = generate_data(5, 5, seed=1)
+
+    with pytest.raises(ValueError, match="not a nested column"):
+        nf.split("doesnotexist", by="band")
+
+    with pytest.raises(ValueError, match="not a sub-column"):
+        nf.split("nested", by="doesnotexist")
+
+
+def test_split_empty_frame():
+    """Test that split handles an empty NestedFrame correctly"""
+    nf = generate_data(5, 5, seed=1).iloc[:0]
+    result = nf.split("nested", by="band")
+    assert isinstance(result, NestedFrame)
+    assert len(result) == 0
+
+
 def test_min():
     """Test min function return correct result with and without the nested columns"""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "c": ["x", "y", "z"]}, index=[0, 1, 2])
