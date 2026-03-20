@@ -171,7 +171,7 @@ class NestSeriesAccessor(Mapping):
     @property
     def flat_index(self) -> pd.Index:
         """Index of the flattened arrays"""
-        flat_index = np.repeat(self._series.index, np.diff(self._series.array.list_offsets))
+        flat_index = np.repeat(self._series.index, self._series.array.list_lengths)
         # pd.Index supports np.repeat, so flat_index is the same type as self._series.index
         flat_index = cast(pd.Index, flat_index)
         return flat_index

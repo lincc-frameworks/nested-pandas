@@ -65,6 +65,7 @@ from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     _MAX_FLAT_SIZE,
     chunk_lengths,
+    chunk_sizes_are_fragmented,
     compute_chunk_boundaries,
     is_pa_type_a_list,
     normalize_list_array,
@@ -677,12 +678,6 @@ class NestedExtensionArray(ExtensionArray):
 
         return array
 
-    # Adopted from ArrowExtensionArray
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        state["_storage"] = ListStructStorage(self.list_array.combine_chunks())
-        return state
-
     # End of Additional magic methods #
 
     @classmethod
@@ -1048,27 +1043,8 @@ class NestedExtensionArray(ExtensionArray):
         """
         if min_chunk_size is None:
             min_chunk_size = DEFAULT_MIN_CHUNK_SIZE
-
-        chunks = list(self.list_array.iterchunks())
-
-        # Find where the trailing run of small chunks ("tail") begins.
-        # Scan right-to-left: stop at the first chunk that is large enough.
-        tail_start = len(chunks)
-        tail_rows = 0
-        for i in range(len(chunks) - 1, -1, -1):
-            if len(chunks[i]) >= min_chunk_size:
-                break
-            tail_start = i
-            tail_rows += len(chunks[i])
-
-        # Every "body" chunk (before the tail) must be full-size.
-        for chunk in chunks[:tail_start]:
-            if len(chunk) < min_chunk_size:
-                return True
-
-        # The tail is acceptable while its total row count is below min_chunk_size.
-        # Once the tail could form a proper chunk it is worth consolidating.
-        return tail_rows >= min_chunk_size
+        sizes = [len(c) for c in self.list_array.iterchunks()]
+        return chunk_sizes_are_fragmented(sizes, min_chunk_size)
 
     def _chunk_boundaries(self, chunk_size: int) -> list[int]:
         """Compute chunk boundaries for this array.

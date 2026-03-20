@@ -14,8 +14,9 @@ import pandas as pd
 import pyarrow as pa
 
 from nested_pandas.series.dtype import NestedDtype
-from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.ext_array import DEFAULT_CHUNK_SIZE, DEFAULT_MIN_CHUNK_SIZE, NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
+from nested_pandas.series.utils import chunk_sizes_are_fragmented, compute_chunk_boundaries
 from nested_pandas.series.utils import rechunk as rechunk_array
 
 __all__ = ["pack", "pack_flat", "pack_lists", "pack_seq"]
@@ -224,39 +225,50 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
         for column, arr in pa_arrays_maybe_chunked.items()
     }
 
-    # If all chunk arrays have the same chunk lengths, we can build a chunked struct array with no
-    # data copying.
-    chunk_lengths = pa.array([[len(chunk) for chunk in arr.chunks] for arr in pa_chunked_arrays.values()])
-    if all(chunk_length == chunk_lengths[0] for chunk_length in chunk_lengths):
-        chunks = []
-        num_chunks = next(iter(pa_chunked_arrays.values())).num_chunks
-        for i in range(num_chunks):
-            chunks.append(
-                pa.StructArray.from_arrays(
-                    [arr.chunk(i) for arr in pa_chunked_arrays.values()],
-                    names=pa_chunked_arrays.keys(),
-                )
-            )
-        struct_array = pa.chunked_array(chunks)
-    else:
-        # Rechunk all columns to match the column with the fewest chunks.
-        # This minimises combine_chunks() calls on other columns and produces
-        # the coarsest output chunk structure, which is better for downstream ops.
-        reference = min(pa_chunked_arrays.values(), key=lambda a: a.num_chunks)
-        ref_chunk_lens = [len(c) for c in reference.iterchunks()]
-        aligned = {col: rechunk_array(arr, ref_chunk_lens) for col, arr in pa_chunked_arrays.items()}
-        num_chunks = reference.num_chunks
-        struct_chunks = []
-        for i in range(num_chunks):
-            struct_chunks.append(
-                pa.StructArray.from_arrays(
-                    [aligned[col].chunk(i) for col in aligned],
-                    names=list(aligned.keys()),
-                )
-            )
-        struct_array = pa.chunked_array(struct_chunks)
+    first_col = next(iter(pa_chunked_arrays.values()))
+    first_sizes = [len(c) for c in first_col.chunks]
+    all_aligned = all([len(c) for c in arr.chunks] == first_sizes for arr in pa_chunked_arrays.values())
+    struct_type = pa.struct([pa.field(col, arr.type) for col, arr in pa_chunked_arrays.items()])
 
-    ext_array = NestedExtensionArray(struct_array, validate=validate)
+    if all_aligned and not chunk_sizes_are_fragmented(first_sizes, DEFAULT_MIN_CHUNK_SIZE):
+        # All columns share the same non-fragmented chunk layout — build struct with no data copying.
+        struct_chunks = [
+            pa.StructArray.from_arrays(
+                [arr.chunk(i) for arr in pa_chunked_arrays.values()],
+                names=list(pa_chunked_arrays.keys()),
+            )
+            for i in range(first_col.num_chunks)
+        ]
+        struct_array = pa.chunked_array(struct_chunks, type=struct_type)
+        ext_array = NestedExtensionArray(struct_array, validate=validate)
+    elif all_aligned:
+        # Aligned but fragmented — building struct from aligned columns is cheap (no copying),
+        # then rechunk the struct to merge small chunks.
+        struct_chunks = [
+            pa.StructArray.from_arrays(
+                [arr.chunk(i) for arr in pa_chunked_arrays.values()],
+                names=list(pa_chunked_arrays.keys()),
+            )
+            for i in range(first_col.num_chunks)
+        ]
+        struct_array = pa.chunked_array(struct_chunks, type=struct_type)
+        ext_array = NestedExtensionArray(struct_array, validate=validate).rechunk()
+    else:
+        # Misaligned chunks — rechunk all columns to DEFAULT_CHUNK_SIZE boundaries first,
+        # then build struct. This avoids building a misaligned struct and a second rechunk.
+        n = len(df)
+        full, rem = divmod(n, DEFAULT_CHUNK_SIZE)
+        target_sizes = [DEFAULT_CHUNK_SIZE] * full + ([rem] if rem else [])
+        aligned = {col: rechunk_array(arr, target_sizes) for col, arr in pa_chunked_arrays.items()}
+        struct_chunks = [
+            pa.StructArray.from_arrays(
+                [aligned[col].chunk(i) for col in aligned],
+                names=list(aligned.keys()),
+            )
+            for i in range(len(target_sizes))
+        ]
+        struct_array = pa.chunked_array(struct_chunks)
+        ext_array = NestedExtensionArray(struct_array, validate=validate)
     return NestedSeries(
         ext_array,
         index=df.index,
@@ -284,9 +296,12 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
 
     offset_array = calculate_sorted_index_offsets(df.index)
     unique_index = df.index[offset_array[:-1]]
+    boundaries = compute_chunk_boundaries(np.diff(offset_array), DEFAULT_CHUNK_SIZE)
 
     series_ = {
-        column: view_sorted_series_as_list_array(df[column], offset_array, unique_index)
+        column: view_sorted_series_as_list_array(
+            df[column], offset=offset_array, boundaries=boundaries, unique_index=unique_index
+        )
         for column in df.columns
     }
 
@@ -297,7 +312,9 @@ def view_sorted_df_as_list_arrays(df: pd.DataFrame) -> pd.DataFrame:
 
 def view_sorted_series_as_list_array(
     series: NestedSeries,
+    *,
     offset: np.ndarray | None = None,
+    boundaries: list[int] | None = None,
     unique_index: np.ndarray | None = None,
 ) -> NestedSeries:
     """Make a nested array representation of a "flat" series.
@@ -308,7 +325,12 @@ def view_sorted_series_as_list_array(
         Input series, with repeated indexes. It must be sorted by its index.
 
     offset: np.ndarray or None, optional
-        Pre-calculated offsets of the input series index.
+        Pre-calculated int64 offsets of the input series index.
+    boundaries: list[int] or None, optional
+        Pre-calculated chunk boundaries from ``compute_chunk_boundaries``.
+        If given, ``offset`` must also be provided. Passing this avoids
+        recomputing boundaries when processing multiple columns that share
+        the same offset array.
     unique_index: np.ndarray or None, optional
         Pre-calculated unique index of the input series. If given it must be
         equal to `series.index.unique()` and `series.index.values[offset[:-1]]`.
@@ -326,6 +348,8 @@ def view_sorted_series_as_list_array(
         offset = calculate_sorted_index_offsets(series.index)
     if unique_index is None:
         unique_index = series.index[offset[:-1]]
+    if boundaries is None:
+        boundaries = compute_chunk_boundaries(np.diff(offset), DEFAULT_CHUNK_SIZE)
 
     # Input series may be represented by pyarrow.ChunkedArray, in this case pa.array(series) would fail
     # with "TypeError: Cannot convert a 'ChunkedArray' to a 'ListArray'".
@@ -333,14 +357,23 @@ def view_sorted_series_as_list_array(
     flat_array = pa.array(series, from_pandas=True)
     if isinstance(flat_array, pa.ChunkedArray):
         flat_array = flat_array.combine_chunks()
-    list_array = pa.ListArray.from_arrays(
-        offset,
-        flat_array,
-    )
+
+    # Split into chunks so each ListArray fits within int32 offset limits and
+    # aligns with DEFAULT_CHUNK_SIZE. Since all columns in a DataFrame share
+    # the same offset array, they produce identical boundaries and are aligned,
+    # which lets pack_lists take the zero-copy aligned path.
+    list_chunks = [
+        pa.ListArray.from_arrays(
+            offsets=(offset[b_start : b_end + 1] - offset[b_start]).astype(np.int32),
+            values=flat_array[int(offset[b_start]) : int(offset[b_end])],
+        )
+        for b_start, b_end in zip(boundaries[:-1], boundaries[1:], strict=True)
+    ]
+    chunked_list_array = pa.chunked_array(list_chunks, type=pa.list_(flat_array.type))
 
     return NestedSeries(
-        list_array,
-        dtype=pd.ArrowDtype(list_array.type),
+        chunked_list_array,
+        dtype=pd.ArrowDtype(chunked_list_array.type),
         index=unique_index,
         copy=False,
         name=series.name,
@@ -358,8 +391,10 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        Output array of offsets, one element more than the number of unique
-        index values.
+        Output array of int64 offsets, one element more than the number of
+        unique index values. int64 is used to avoid overflow for large flat
+        arrays; callers that build ``pa.ListArray`` chunks must cast each
+        per-chunk slice to int32 after normalising to zero.
     """
     if not index.is_monotonic_increasing:
         raise ValueError("The index must be sorted")
@@ -369,7 +404,4 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
     offset_but_last = np.nonzero(~index.duplicated(keep="first"))[0]
     offset = np.append(offset_but_last, len(index))
 
-    # Arrow uses int32 for offsets
-    offset = offset.astype(np.int32)
-
-    return offset
+    return offset.astype(np.int64)

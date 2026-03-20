@@ -1198,6 +1198,18 @@ def test_pickability():
     assert ext_array.equals(pickled)
 
 
+def test_pickability_multi_chunk():
+    """Test that the extension array preserves chunks across pickle round-trip."""
+    chunk1 = NestedExtensionArray.from_sequence([{"a": [1, 2], "b": [-1.0, -2.0]}, {"a": [3], "b": [-3.0]}])
+    chunk2 = NestedExtensionArray.from_sequence([{"a": [4, 5, 6], "b": [-4.0, -5.0, -6.0]}, None])
+    ext_array = NestedExtensionArray._concat_same_type([chunk1, chunk2])
+    assert ext_array.num_chunks == 2
+
+    pickled = pickle.loads(pickle.dumps(ext_array))
+    assert ext_array.equals(pickled)
+    assert pickled.num_chunks == 2
+
+
 def test__concat_same_type():
     """Test concatenating of three NestedExtensionArrays with the same dtype."""
     dtype = NestedDtype.from_columns({"a": pa.int64(), "b": pa.float64()})

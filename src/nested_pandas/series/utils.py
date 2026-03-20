@@ -411,6 +411,25 @@ def chunk_lengths(array: pa.ChunkedArray) -> list[int]:
     return [len(chunk) for chunk in array.iterchunks()]
 
 
+def chunk_sizes_are_fragmented(sizes: list[int], min_chunk_size: int) -> bool:
+    """Return True if the given chunk sizes represent a fragmented layout.
+
+    Mirrors the logic of ``NestedExtensionArray.is_fragmented`` but operates
+    directly on a list of chunk sizes, avoiding the need to construct an array.
+    """
+    tail_start = len(sizes)
+    tail_rows = 0
+    for i in range(len(sizes) - 1, -1, -1):
+        if sizes[i] >= min_chunk_size:
+            break
+        tail_start = i
+        tail_rows += sizes[i]
+    for size in sizes[:tail_start]:
+        if size < min_chunk_size:
+            return True
+    return tail_rows >= min_chunk_size
+
+
 def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.ChunkedArray:
     """Rechunk array to the same chunks a given chunked array.
 
