@@ -448,6 +448,13 @@ def from_pyarrow(
     -------
     NestedFrame
 
+    Examples
+    --------
+    >>> import nested_pandas as npd
+    >>> import pyarrow as pa
+    >>> table = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    >>> nf = npd.from_pyarrow(table)
+
     """
 
     if reject_nesting is None:
