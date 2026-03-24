@@ -318,13 +318,13 @@ class NestedExtensionArray(ExtensionArray):
                 return type(self)(pa.chunked_array([], type=self.dtype.pyarrow_dtype), validate=False)
             pa_item = pa.array(item)
             if item.dtype.kind in "iu":
-                return type(self)(self.struct_array.take(pa_item), validate=False)
-            if item.dtype.kind == "b":
-                return type(self)(self.struct_array.filter(pa_item), validate=False)
-            # It should be covered by check_array_indexer above
-            raise IndexError(
-                "Only integers, slices and integer or boolean arrays are valid indices."
-            )  # pragma: no cover
+                pa_item = self.struct_array.take(pa_item)
+            elif item.dtype.kind == "b":
+                pa_item = self.struct_array.filter(pa_item)
+            else:  # pragma: no cover
+                raise IndexError("Only integers, slices and integer or boolean arrays are valid indices.")
+            result = type(self)(pa_item, validate=False)
+            return result._rechunk_if_fragmented()
 
         if isinstance(item, tuple):
             item = unpack_tuple_and_ellipses(item)
@@ -337,7 +337,8 @@ class NestedExtensionArray(ExtensionArray):
             return self._convert_struct_scalar_to_df(scalar_or_array, copy=False)
         # Logically, it must be a pa.ChunkedArray if it is not a scalar
         pa_array = cast(pa.ChunkedArray, scalar_or_array)
-        return type(self)(pa_array, validate=False)
+        result = type(self)(pa_array, validate=False)
+        return result._rechunk_if_fragmented()
 
     def __setitem__(self, key, value) -> None:
         # TODO: optimize for many chunk_lens
@@ -544,22 +545,28 @@ class NestedExtensionArray(ExtensionArray):
             fill_mask = indices_array < 0
             if not fill_mask.any():
                 # Nothing to fill, using list-array should be faster
-                return type(self)(self.list_array.take(indices))
+                result = type(self)(self.list_array.take(indices))
+                return result._rechunk_if_fragmented()
             validate_indices(indices_array, len(self))
             indices_array = pa.array(indices_array, mask=fill_mask)
 
-            result = self.struct_array.take(indices_array)
+            taken = self.struct_array.take(indices_array)
             if not pa.compute.is_null(fill_value).as_py():
-                result = pa.compute.if_else(fill_mask, fill_value, result)
+                taken = pa.compute.if_else(fill_mask, fill_value, taken)
             # Validate for fill_value
-            return type(self)(result, validate=True)
+            result = type(self)(taken, validate=True)
+            return result._rechunk_if_fragmented()
 
         if (indices_array < 0).any():
             # Don't modify in-place
             indices_array = np.copy(indices_array)
             indices_array[indices_array < 0] += len(self)
         # list_array should be faster
-        return type(self)(self.list_array.take(indices_array))
+        result = type(self)(self.list_array.take(indices_array))
+        return result._rechunk_if_fragmented()
+
+    def _rechunk_if_fragmented(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return self.rechunk() if self.is_fragmented() else self
 
     def copy(self) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Return a copy of the extension array.
@@ -973,17 +980,22 @@ class NestedExtensionArray(ExtensionArray):
 
         Returns
         -------
-        pa.ChunkedArray
-            The list offsets of the field arrays.
+        pa.Array
+            Cumulative offsets of length ``len(self) + 1``.  For a single-chunk
+            array the dtype is ``int32`` (matching the underlying
+            ``pa.ListArray`` buffer).  For a multi-chunk array the dtype is
+            ``int64`` to avoid silent overflow when the total number of flat
+            rows exceeds ``2**31``.
         """
         # Cheap path for a single chunk
         if self._storage.num_chunks == 1:
             return self.list_array.chunk(0).offsets
 
+        # Use int64 to avoid overflow when total flat rows exceed 2^31.
         zero_and_lengths = pa.chunked_array(
             [
-                pa.array([0], type=pa.int32()),
-                pa.array(self.list_lengths, type=pa.int32()),
+                pa.array([0], type=pa.int64()),
+                pa.array(self.list_lengths, type=pa.int64()),
             ]
         )
         offsets = pa.compute.cumulative_sum(zero_and_lengths)

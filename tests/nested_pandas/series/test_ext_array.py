@@ -903,7 +903,8 @@ def test_list_offsets_multiple_chunks():
     chunked_arrray = pa.chunked_array([struct_array, struct_array[:1], struct_array])
     ext_array = NestedExtensionArray(chunked_arrray)
 
-    desired = chunked_arrray.combine_chunks().field("a").offsets
+    # multi-chunk path returns int64 to avoid overflow when total flat rows exceed 2^31
+    desired = chunked_arrray.combine_chunks().field("a").offsets.cast(pa.int64())
     # pyarrow returns a single bool for ==
     assert ext_array.list_offsets == desired
 
