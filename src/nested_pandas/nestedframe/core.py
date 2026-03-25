@@ -879,10 +879,17 @@ class NestedFrame(pd.DataFrame):
                 f"Available sub-columns: {list(self[nested_col].nest.columns)}"
             )
 
-        if len(self) == 0:
-            return self.copy()
+        has_values = values is not None
+        split_values = self[f"{nested_col}.{by}"].unique() if not has_values else list(values)
 
-        split_values = self[f"{nested_col}.{by}"].unique() if values is None else list(values)
+        if len(self) == 0:
+            result = self.copy()
+            if has_values:
+                for val in split_values:
+                    result[f"{nested_col}_{val}"] = None
+            if drop_nested:
+                result = result.drop(labels=[nested_col], axis=1)
+            return result
 
         is_str = pd.api.types.is_string_dtype(self[f"{nested_col}.{by}"])
 
@@ -891,7 +898,9 @@ class NestedFrame(pd.DataFrame):
         for val in split_values:
             val_repr = f"'{val}'" if is_str else val
             queried = self.query(f"{nested_col}.{by}=={val_repr}")
-            if queried is None:
+            if queried is None or len(queried) == 0:
+                if has_values:
+                    result[f"{nested_col}_{val}"] = None
                 continue
             filtered = queried[nested_col]
             if drop_by_col:

@@ -1765,6 +1765,18 @@ def test_split_empty_frame():
     assert isinstance(result, NestedFrame)
     assert len(result) == 0
 
+    # values provided columns must appear as all-NA
+    result_explicit = nf.split("nested", by="band", values=["r", "g"])
+    assert "nested_r" in result_explicit.columns
+    assert "nested_g" in result_explicit.columns
+    assert result_explicit["nested_r"].isna().all()
+    assert result_explicit["nested_g"].isna().all()
+
+    # drop_nested=True must still be honoured on empty frame
+    result_drop = nf.split("nested", by="band", values=["r"], drop_nested=True)
+    assert "nested" not in result_drop.columns
+    assert "nested_r" in result_drop.columns
+
 
 def test_min():
     """Test min function return correct result with and without the nested columns"""
