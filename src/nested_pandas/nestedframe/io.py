@@ -85,8 +85,8 @@ def read_parquet(
     ignore_pandas_metadata: bool, default=True
         If True (default), ignore the pandas metadata stored in the Parquet file's
         schema when constructing the NestedFrame. This prevents the index from being
-        set based on the pandas metadata, and avoids other inconsistencies introduced
-        by stale or unexpected metadata embedded in older Parquet files.
+        set based on the pandas metadata, and avoids column dtype casting driven by
+        stale pandas metadata embedded in older Parquet files.
 
         .. note::
             This differs from the default pandas behavior (pd.read_parquet),
@@ -464,8 +464,8 @@ def from_pyarrow(
     ignore_pandas_metadata: bool, default=True
         If True (default), ignore the pandas metadata stored in the Parquet file's
         schema when constructing the NestedFrame. This prevents the index from being
-        set based on the pandas metadata, and avoids other inconsistencies introduced
-        by stale or unexpected metadata embedded in older Parquet files.
+        set based on the pandas metadata, and avoids column dtype casting driven by
+        stale pandas metadata embedded in older Parquet files.
 
         .. note::
             This differs from the default pandas behavior (pd.read_parquet),
