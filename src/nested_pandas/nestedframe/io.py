@@ -83,16 +83,11 @@ def read_parquet(
         for HTTP, as inferring the type for HTTP is particularly expensive because
         it requires downloading the contents of the pointer in its entirety.
     use_pandas_metadata: bool, default=True
-        If True (default), use the pandas metadata stored in the Parquet file's
-        schema when constructing the NestedFrame. This prevents the index from being
-        set based on the pandas metadata, and avoids unintended column dtype
-        casting from embedded pandas metadata.
-
-        .. note::
-            This differs from the default pandas behavior (pd.read_parquet),
-            which reads and applies pandas metadata by default. nested-pandas
-            intentionally defaults to True to provide consistent behavior
-            regardless of how the Parquet file was created.
+        If True (default), apply the pandas metadata stored in the Parquet
+        file's schema when constructing the NestedFrame (e.g. restoring the
+        index and column dtypes). This matches the default behavior of
+        pd.read_parquet. Set to False to ignore the metadata, which can
+        be useful when the embedded metadata is stale or inconsistent.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
@@ -462,16 +457,11 @@ def from_pyarrow(
     autocast_list: bool, default=False
         If True, automatically cast list columns to nested columns with NestedDType.
     use_pandas_metadata: bool, default=True
-        If True (default), use the pandas metadata stored in the Parquet file's
-        schema when constructing the NestedFrame. This prevents the index from being
-        set based on the pandas metadata, and avoids unintended column dtype
-        casting from embedded pandas metadata.
-
-        .. note::
-            This differs from the default pandas behavior (pd.read_parquet),
-            which reads and applies pandas metadata by default. nested-pandas
-            intentionally defaults to True to provide consistent behavior
-            regardless of how the Parquet file was created.
+        If True (default), apply the pandas metadata stored in the Parquet
+        file's schema when constructing the NestedFrame (e.g. restoring the
+        index and column dtypes). This matches the default behavior of
+        pd.read_parquet. Set to False to ignore the metadata, which can
+        be useful when the embedded metadata is stale or inconsistent.
 
     Returns
     -------
