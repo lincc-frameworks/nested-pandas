@@ -266,7 +266,7 @@ class NestedFrame(pd.DataFrame):
         if unknown_cols:
             raise KeyError(f"{unknown_cols} not in index")
         non_nested_keys = [k for k in item if k in self.columns]
-        result = super().__getitem__(non_nested_keys)
+        result = super().__getitem__(non_nested_keys).copy()
         components = [self._parse_hierarchical_components(k) for k in item]
         nested_components = [c for c in components if self._is_known_hierarchical_column(c)]
         nested_columns = defaultdict(list)
