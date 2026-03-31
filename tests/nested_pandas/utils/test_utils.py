@@ -120,7 +120,9 @@ def test_count_nested_arrow_int32_dtype():
 
     expected_dtype = pd.ArrowDtype(pa.int32())
     for col in counts.columns:
-        assert counts[col].dtype == expected_dtype, f"Column {col} has dtype {counts[col].dtype}, expected {expected_dtype}"
+        assert counts[col].dtype == expected_dtype, (
+            f"Column {col} has dtype {counts[col].dtype}, expected {expected_dtype}"
+        )
 
     # Values should be 0, not NaN, for missing band/row combinations
     assert 0 in counts.values or all(counts.notna().all())

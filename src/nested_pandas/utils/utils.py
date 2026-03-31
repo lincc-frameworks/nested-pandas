@@ -1,6 +1,6 @@
 import numpy as np
-import pyarrow as pa
 import pandas as pd
+import pyarrow as pa
 
 from nested_pandas import NestedFrame
 
