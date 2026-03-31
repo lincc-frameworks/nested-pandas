@@ -94,3 +94,47 @@ def test_check_expr_nesting():
     b4 = base.join_nested(nested, "test")
     assert b4.extract_nest_names("test.c>5&b==2") == {"test", ""}
     assert b4.extract_nest_names("test.c > 5 & b == 2") == {"test", ""}
+
+
+def test_count_nested_arrow_int32_dtype():
+    """Test that count_nested always returns arrow int32 columns, even after
+    a query that causes some by-values to be absent for certain rows.
+    Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/472
+    """
+    import pyarrow as pa
+
+    base = NestedFrame(data={"a": [1, 2, 3]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={
+            "flux": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "band": ["g", "r", "g", "r", "g"],
+        },
+        index=[0, 0, 1, 1, 2],
+    )
+    base = base.join_nested(nested, "nested")
+
+    # Query so that row 0 only has band "g", row 1 only has band "r" — missing values
+    # would previously produce NaN float columns instead of 0 int columns.
+    filtered = base.query("nested.flux > 1.5")
+    counts = count_nested(filtered, "nested", by="band", join=False)
+
+    for col in counts.columns:
+        assert counts[col].dtype == pd.ArrowDtype(pa.int32())
+
+    # Values should be 0, not NaN, for missing band/row combinations
+    assert 0 in counts.values or all(counts.notna().all())
+
+
+def test_count_nested_no_by_arrow_int32_dtype():
+    """Test that count_nested without 'by' returns arrow int32 column."""
+    import pyarrow as pa
+
+    base = NestedFrame(data={"a": [1, 2, 3]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"flux": [1.0, 2.0, 3.0, 4.0]},
+        index=[0, 0, 1, 2],
+    )
+    base = base.join_nested(nested, "nested")
+
+    counts = count_nested(base, "nested", join=False)
+    assert counts["n_nested"].dtype == pd.ArrowDtype(pa.int32())
