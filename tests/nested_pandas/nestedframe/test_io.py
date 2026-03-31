@@ -545,3 +545,24 @@ def test_issue_428(size):
         nf = read_parquet(file_path, columns=["nested.t"])
         assert nf.columns == ["nested"]
         assert nf.nested.nest.columns == ["t"]
+
+
+def test_ignore_pandas_metadata_default():
+    """Test that ignore_pandas_metadata=True (default) ignores pandas metadata index.
+    Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/460
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "tmp.parquet")
+
+        # Write a parquet file with a custom index stored in pandas metadata
+        df = pd.DataFrame({"a": [1, 2, 3], "custom_idx": [10, 20, 30]})
+        df = df.set_index("custom_idx")
+        df.to_parquet(file_path)
+
+        # Default (ignore_pandas_metadata=True): index should NOT be restored from metadata
+        nf = read_parquet(file_path)
+        assert nf.index.name != "custom_idx", "Index should not be set from pandas metadata by default"
+
+        # Explicit False: index IS restored from pandas metadata, matching pd.read_parquet behavior
+        nf_with_meta = read_parquet(file_path, ignore_pandas_metadata=False)
+        assert nf_with_meta.index.name == "custom_idx"
