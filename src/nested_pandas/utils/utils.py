@@ -67,9 +67,10 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
             columns=f"{nested}.{by}",
             row_container="args",
         )
+        counts = counts.astype(pd.ArrowDtype(pa.int32()))
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
         counts = counts.reindex(sorted(counts.columns), axis=1)
-        counts = counts.fillna(0).astype(pd.ArrowDtype(pa.int32()))
+        counts = counts.fillna(0)
     if join:
         return df.join(counts)
     # else just return the counts NestedFrame
