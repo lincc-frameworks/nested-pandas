@@ -545,3 +545,24 @@ def test_issue_428(size):
         nf = read_parquet(file_path, columns=["nested.t"])
         assert nf.columns == ["nested"]
         assert nf.nested.nest.columns == ["t"]
+
+
+def test_use_pandas_metadata():
+    """Test use_pandas_metadata parameter in read_parquet.
+    Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/460
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "tmp.parquet")
+
+        # Write a parquet file with a custom index stored in pandas metadata
+        df = pd.DataFrame({"a": [1, 2, 3], "custom_idx": [10, 20, 30]})
+        df = df.set_index("custom_idx")
+        df.to_parquet(file_path)
+
+        # Default (use_pandas_metadata=True): index IS restored from metadata
+        nf = read_parquet(file_path)
+        assert nf.index.name == "custom_idx"
+
+        # Explicit False: index is NOT restored from pandas metadata
+        nf_no_meta = read_parquet(file_path, use_pandas_metadata=False)
+        assert nf_no_meta.index.name != "custom_idx"

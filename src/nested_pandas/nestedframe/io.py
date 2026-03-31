@@ -36,6 +36,7 @@ def read_parquet(
     reject_nesting: list[str] | str | None = None,
     autocast_list: bool = False,
     is_dir: bool | None = None,
+    use_pandas_metadata: bool = True,
     **kwargs,
 ) -> NestedFrame:
     """Load a parquet object from a file path into a NestedFrame.
@@ -81,6 +82,11 @@ def read_parquet(
         `upath.is_dir()` to identify the type of pointer. This argument is ignored
         for HTTP, as inferring the type for HTTP is particularly expensive because
         it requires downloading the contents of the pointer in its entirety.
+    use_pandas_metadata: bool, default=True
+        If True (default), apply the pandas metadata stored in the Parquet
+        file's schema when constructing the NestedFrame (e.g. restoring the
+        index and column dtypes). This matches the default behavior of
+        pd.read_parquet. Set to False to ignore the metadata.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
@@ -195,7 +201,12 @@ def read_parquet(
         for col, struct in structs.items():
             table = table.append_column(col, struct)
 
-    return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
+    return from_pyarrow(
+        table,
+        reject_nesting=reject_nesting,
+        autocast_list=autocast_list,
+        use_pandas_metadata=use_pandas_metadata,
+    )
 
 
 def _read_parquet_into_table(
@@ -427,6 +438,7 @@ def from_pyarrow(
     table: pa.Table,
     reject_nesting: list[str] | str | None = None,
     autocast_list: bool = False,
+    use_pandas_metadata: bool = True,
 ) -> NestedFrame:
     """
     Load a pyarrow Table object into a NestedFrame.
@@ -443,6 +455,11 @@ def from_pyarrow(
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
     autocast_list: bool, default=False
         If True, automatically cast list columns to nested columns with NestedDType.
+    use_pandas_metadata: bool, default=True
+        If True (default), apply the pandas metadata stored in the Parquet
+        file's schema when constructing the NestedFrame (e.g. restoring the
+        index and column dtypes). This matches the default behavior of
+        pd.read_parquet. Set to False to ignore the metadata.
 
     Returns
     -------
@@ -458,7 +475,14 @@ def from_pyarrow(
     # Convert to NestedFrame
     # not zero-copy, but reduce memory pressure via the self_destruct kwarg
     # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
-    df = NestedFrame(table.to_pandas(types_mapper=pd.ArrowDtype, split_blocks=True, self_destruct=True))
+    df = NestedFrame(
+        table.to_pandas(
+            types_mapper=pd.ArrowDtype,
+            split_blocks=True,
+            self_destruct=True,
+            ignore_metadata=not use_pandas_metadata,
+        )
+    )
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
 
