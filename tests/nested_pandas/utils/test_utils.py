@@ -118,11 +118,8 @@ def test_count_nested_arrow_int32_dtype():
     filtered = base.query("nested.flux > 1.5")
     counts = count_nested(filtered, "nested", by="band", join=False)
 
-    expected_dtype = pd.ArrowDtype(pa.int32())
     for col in counts.columns:
-        assert counts[col].dtype == expected_dtype, (
-            f"Column {col} has dtype {counts[col].dtype}, expected {expected_dtype}"
-        )
+        assert counts[col].dtype == pd.ArrowDtype(pa.int32())
 
     # Values should be 0, not NaN, for missing band/row combinations
     assert 0 in counts.values or all(counts.notna().all())
@@ -140,5 +137,4 @@ def test_count_nested_no_by_arrow_int32_dtype():
     base = base.join_nested(nested, "nested")
 
     counts = count_nested(base, "nested", join=False)
-    expected_dtype = pd.ArrowDtype(pa.int32())
-    assert counts["n_nested"].dtype == expected_dtype
+    assert counts["n_nested"].dtype == pd.ArrowDtype(pa.int32())
