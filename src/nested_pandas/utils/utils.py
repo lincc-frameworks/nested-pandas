@@ -1,4 +1,5 @@
 import numpy as np
+import pyarrow as pa
 import pandas as pd
 
 from nested_pandas import NestedFrame
@@ -59,6 +60,7 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
 
     if by is None:
         counts = pd.Series(df[nested].nest.list_lengths, name=f"n_{nested}", index=df.index)
+        counts = counts.astype(pd.ArrowDtype(pa.int32()))
     else:
         counts = df.map_rows(
             lambda x: dict(zip(*np.unique(x, return_counts=True), strict=False)),
@@ -67,6 +69,7 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
         )
         counts = counts.rename(columns={colname: f"n_{nested}_{colname}" for colname in counts.columns})
         counts = counts.reindex(sorted(counts.columns), axis=1)
+        counts = counts.fillna(0).astype(pd.ArrowDtype(pa.int32()))
     if join:
         return df.join(counts)
     # else just return the counts NestedFrame
