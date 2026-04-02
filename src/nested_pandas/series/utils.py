@@ -411,6 +411,25 @@ def chunk_lengths(array: pa.ChunkedArray) -> list[int]:
     return [len(chunk) for chunk in array.iterchunks()]
 
 
+def chunk_sizes_are_fragmented(sizes: list[int], min_chunk_size: int) -> bool:
+    """Return True if the given chunk sizes represent a fragmented layout.
+
+    Mirrors the logic of ``NestedExtensionArray.is_fragmented`` but operates
+    directly on a list of chunk sizes, avoiding the need to construct an array.
+    """
+    tail_start = len(sizes)
+    tail_rows = 0
+    for i in range(len(sizes) - 1, -1, -1):
+        if sizes[i] >= min_chunk_size:
+            break
+        tail_start = i
+        tail_rows += sizes[i]
+    for size in sizes[:tail_start]:
+        if size < min_chunk_size:
+            return True
+    return tail_rows >= min_chunk_size
+
+
 def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.ChunkedArray:
     """Rechunk array to the same chunks a given chunked array.
 
@@ -442,6 +461,66 @@ def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.Chun
         chunk = array[idx_start:idx_end].combine_chunks()
         chunks.append(chunk)
     return pa.chunked_array(chunks)
+
+
+_MAX_FLAT_SIZE = 2**31 - 2
+"""Maximum flat (inner) row count per chunk.
+
+``pa.ListArray`` uses int32 offsets, so a single chunk cannot reference more
+flat values than int32 can hold.  This constant is the upper bound used by
+``compute_chunk_boundaries`` to split chunks before overflow.
+"""
+
+
+def compute_chunk_boundaries(list_lengths: np.ndarray, chunk_size: int) -> list[int]:
+    """Compute chunk boundary indices from list lengths.
+
+    Returns offsets in Arrow style: ``[0, end0, end1, ..., n]``, so that
+    chunk ``i`` spans rows ``boundaries[i] : boundaries[i+1]``.  Each chunk
+    satisfies:
+
+    - at most ``chunk_size`` outer rows
+    - cumulative flat (inner) row count does not exceed ``_MAX_FLAT_SIZE``
+      (2**31 - 2), the maximum safe value for ``pa.ListArray`` int32 offsets
+
+    Parameters
+    ----------
+    list_lengths : np.ndarray
+        Array of list lengths (number of inner elements per outer row).
+    chunk_size : int
+        Target number of outer rows per chunk.
+
+    Returns
+    -------
+    list[int]
+        Offsets array ``[0, end0, end1, ..., n]`` with ``len(boundaries) - 1``
+        chunks.  Returns ``[0]`` (no chunks) when ``list_lengths`` is empty.
+    """
+    n = len(list_lengths)
+    if n == 0:
+        return [0]
+
+    # O(n) one-time cumulative sum; use int64 to avoid overflow during computation
+    cumflat_ext = np.empty(n + 1, dtype=np.int64)
+    cumflat_ext[0] = 0
+    cumflat_ext[1:] = np.cumsum(list_lengths.astype(np.int64))
+
+    boundaries = [0]
+    start = 0
+    while start < n:
+        row_end = min(start + chunk_size, n)
+        flat_limit = cumflat_ext[start] + _MAX_FLAT_SIZE
+
+        # Binary search: find the last end s.t. per-chunk flat count <= _MAX_FLAT_SIZE.
+        # searchsorted 'right' gives first idx where cumflat_ext[idx] > flat_limit,
+        # so the last valid exclusive end is idx - 1.
+        idx = int(np.searchsorted(cumflat_ext, flat_limit, side="right"))
+        flat_end = min(idx - 1, row_end)
+        end = max(flat_end, start + 1)  # always advance at least one row
+
+        boundaries.append(end)
+        start = end
+    return boundaries
 
 
 def normalize_list_array(

@@ -558,7 +558,7 @@ def test_view_sorted_series_as_list_array_chunked_input():
         name="a",
     )
 
-    actual = packer.view_sorted_series_as_list_array(series, offset, unique_index)
+    actual = packer.view_sorted_series_as_list_array(series, offset=offset, unique_index=unique_index)
     assert_series_equal(actual, desired)
 
 
@@ -589,7 +589,7 @@ def test_view_sorted_series_as_list_array_chunked_input():
 def test_calculate_sorted_index_offsets(index, offsets):
     """Test calculate_sorted_index_offsets()."""
     actual = packer.calculate_sorted_index_offsets(index)
-    assert actual.dtype == np.int32
+    assert actual.dtype == np.int64
     assert_array_equal(actual, offsets)
 
 
