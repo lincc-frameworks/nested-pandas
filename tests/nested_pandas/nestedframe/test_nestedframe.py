@@ -1058,13 +1058,15 @@ def test_get_subcolumns():
     nf = generate_data(5, 10, seed=1)
     nf["nested2"] = nf["nested"]
 
-    assert nf.get_subcolumns("nested") == ["nested.t", "nested.flux", "nested.band"]
+    assert nf.get_subcolumns("nested") == ["nested.t", "nested.flux", "nested.flux_error", "nested.band"]
     assert nf.get_subcolumns(["nested", "nested2"]) == [
         "nested.t",
         "nested.flux",
+        "nested.flux_error",
         "nested.band",
         "nested2.t",
         "nested2.flux",
+        "nested2.flux_error",
         "nested2.band",
     ]
     assert nf.get_subcolumns() == nf.get_subcolumns(nf.nested_columns)
@@ -2430,7 +2432,7 @@ def test_nestlists_nonunique_index():
     nf = generate_data(5, 10)
     nf_lists = nf["a", "b"].join(nf["nested"].nest.to_lists())
     nf_lists.index = [0, 0, 1, 1, 2]
-    nf_repacked = nf_lists.nest_lists(["t", "flux", "band"], "nested")
+    nf_repacked = nf_lists.nest_lists(["t", "flux", "flux_error", "band"], "nested")
 
     nf.index = [0, 0, 1, 1, 2]
     assert nf_repacked.equals(nf)
