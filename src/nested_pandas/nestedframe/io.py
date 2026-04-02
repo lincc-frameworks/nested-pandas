@@ -522,6 +522,6 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
 def _cast_list_cols_to_nested(df):
     """cast list columns to nested dtype"""
     for col, dtype in df.dtypes.items():
-        if pa.types.is_list(dtype.pyarrow_dtype):
+        if is_pa_type_a_list(dtype.pyarrow_dtype):
             df[col] = pack_lists(df[[col]])
     return df

@@ -14,7 +14,7 @@ from pandas.api.extensions import register_series_accessor
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack_flat, pack_sorted_df_into_struct
-from nested_pandas.series.utils import nested_types_mapper
+from nested_pandas.series.utils import downcast_large_list_array, nested_types_mapper
 
 __all__ = ["NestSeriesAccessor"]
 
@@ -41,13 +41,17 @@ class NestSeriesAccessor(Mapping):
         if not isinstance(dtype, NestedDtype):
             raise AttributeError(f"Can only use .nest accessor with a Series of NestedDtype, got {dtype}")
 
-    def to_lists(self, columns: list[str] | str | None = None) -> pd.DataFrame:
+    def to_lists(self, columns: list[str] | str | None = None, large_list: bool = True) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns
 
         Parameters
         ----------
         columns : list[str] or str or None, optional
             Names of the column(s) to include. Default is None, which means all columns.
+        large_list : bool, optional
+            If True (default), use ``large_list`` (int64 offsets). Required
+            when the total number of nested elements across all rows exceeds
+            ~2.1 billion (int32 max).
 
         Returns
         -------
@@ -76,7 +80,12 @@ class NestSeriesAccessor(Mapping):
         if len(columns) == 0:
             raise ValueError("Cannot convert a struct with no fields to lists")
 
-        list_df = self._series.array.pa_table.select(columns).to_pandas(types_mapper=nested_types_mapper)
+        list_table = self._series.array.pa_table.select(columns)
+        if not large_list:
+            list_table = pa.table(
+                {col: downcast_large_list_array(list_table.column(col)) for col in list_table.column_names}
+            )
+        list_df = list_table.to_pandas(types_mapper=nested_types_mapper)
         list_df.index = self._series.index
 
         return list_df
@@ -128,7 +137,7 @@ class NestSeriesAccessor(Mapping):
         for chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, chunk)
             for column in columns:
-                list_array = cast(pa.ListArray, struct_array.field(column))
+                list_array = cast(pa.LargeListArray, struct_array.field(column))
                 flat_array = list_array.flatten()
                 flat_chunks[column].append(flat_array)
 
@@ -676,7 +685,7 @@ class NestSeriesAccessor(Mapping):
         flat_chunks = []
         for nested_chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, nested_chunk)
-            list_array = cast(pa.ListArray, struct_array.field(field))
+            list_array = cast(pa.LargeListArray, struct_array.field(field))
             flat_array = list_array.flatten()
             flat_chunks.append(flat_array)
 
@@ -723,7 +732,7 @@ class NestSeriesAccessor(Mapping):
         2    [31.34241782  3.90547832]
         3    [69.23226157 16.98304196]
         4    [87.63891523 87.81425034]
-        Name: flux, dtype: list<item: double>[pyarrow]
+        Name: flux, dtype: large_list<item: double>[pyarrow]
         """
         list_chunked_array = self._series.array.pa_table[field]
         return pd.Series(
@@ -757,7 +766,7 @@ class NestSeriesAccessor(Mapping):
         flat_chunks = []
         for nested_chunk in self._series.array.struct_array.iterchunks():
             struct_array = cast(pa.StructArray, nested_chunk)
-            list_array = cast(pa.ListArray, struct_array.field(key))
+            list_array = cast(pa.LargeListArray, struct_array.field(key))
             flat_array = list_array.flatten()
             flat_chunks.append(flat_array)
 
