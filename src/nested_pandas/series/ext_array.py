@@ -177,10 +177,11 @@ def to_pyarrow_dtype(
     return None
 
 
-def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array) -> pa.ChunkedArray:
+def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array | pa.Scalar) -> pa.ChunkedArray:
     """Replace the elements of the array with the value where the mask is True"""
-    # TODO: performance optimization
-    # https://github.com/lincc-frameworks/nested-pandas/issues/52
+    # Fast path for scalars using native broadcasting
+    if isinstance(value, pa.Scalar):
+        return pa.compute.if_else(mask, value, array)
 
     # If mask is [False, True, False, True], mask_cumsum will be [0, 1, 1, 2]
     # So we put value items to the right positions in broadcast_value, while duplicate some other items for
@@ -365,10 +366,9 @@ class NestedExtensionArray(ExtensionArray):
             # Copy will happen later in replace_with_mask() anyway
             value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
-            # Our replace_with_mask implementation doesn't work with scalars
-            value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
+            value = scalar
 
-        if argsort is not None:
+        if argsort is not None and not isinstance(value, pa.Scalar):
             value = value.take(argsort)
 
         # We cannot use pa.compute.replace_with_mask(), it is not implemented for struct arrays:
