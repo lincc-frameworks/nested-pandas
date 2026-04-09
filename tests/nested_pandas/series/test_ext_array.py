@@ -866,7 +866,7 @@ def test_to_pyarrow_scalar():
             {"a": [1, 2, 3], "b": [-4.0, -5.0, -6.0]},
             {"a": [1, 2, 1], "b": [-3.0, -4.0, -5.0]},
         ],
-        type=pa.large_list(
+        type=pa.list_(
             pa.struct([pa.field("a", pa.large_list(pa.int64())), pa.field("b", pa.large_list(pa.float64()))])
         ),
     )
@@ -875,9 +875,7 @@ def test_to_pyarrow_scalar():
             [{"a": 1, "b": -4.0}, {"a": 2, "b": -5.0}, {"a": 3, "b": -6.0}],
             [{"a": 1, "b": -3.0}, {"a": 2, "b": -4.0}, {"a": 1, "b": -5.0}],
         ],
-        type=pa.large_list(
-            pa.large_list(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.float64())]))
-        ),
+        type=pa.list_(pa.large_list(pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.float64())]))),
     )
     # pyarrow returns a single bool for ==
     assert ext_array.to_pyarrow_scalar(list_struct=False) == desired_struct_list
@@ -898,8 +896,8 @@ def test_to_pyarrow_scalar_large_list_false():
     scalar = ext_array.to_pyarrow_scalar(large_list=False)
     assert pa.types.is_list(scalar.type)
 
-    # large_list=True (default) keeps large_list
-    scalar_large = ext_array.to_pyarrow_scalar()
+    # large_list=True keeps large_list
+    scalar_large = ext_array.to_pyarrow_scalar(large_list=True)
     assert pa.types.is_large_list(scalar_large.type)
 
 
@@ -2143,12 +2141,12 @@ def test_to_arrow_ext_array_large_list_false():
     )
     ext_array = NestedExtensionArray(struct_array)
 
-    # Default list_struct=False: outer type is struct, inner fields should be list_ (int32)
+    # Default large_list=False: outer type is struct, inner fields should be list_ (int32)
     arrow_ext_array = ext_array.to_arrow_ext_array(large_list=False)
     assert pa.types.is_list(arrow_ext_array.dtype.pyarrow_dtype.field("a").type)
 
-    # large_list=True (default) keeps large_list in inner fields
-    arrow_ext_array_large = ext_array.to_arrow_ext_array()
+    # large_list=True keeps large_list in inner fields
+    arrow_ext_array_large = ext_array.to_arrow_ext_array(large_list=True)
     assert pa.types.is_large_list(arrow_ext_array_large.dtype.pyarrow_dtype.field("a").type)
 
 

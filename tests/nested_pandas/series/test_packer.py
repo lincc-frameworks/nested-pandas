@@ -285,7 +285,7 @@ def test_pack_lists():
     offsets_reused(series)
 
     for field_name in packed_df.columns:
-        assert_series_equal(series.nest.to_lists()[field_name], packed_df[field_name])
+        assert_series_equal(series.nest.to_lists(large_list=True)[field_name], packed_df[field_name])
 
 
 def test_pack_lists_with_chunked_arrays():

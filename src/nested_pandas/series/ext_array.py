@@ -64,7 +64,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries  # noqa
 from nested_pandas.series.utils import (
     chunk_lengths,
-    downcast_large_list_type,
+    downcast_large_list_array,
     is_pa_type_a_list,
     normalize_list_array,
     normalize_struct_list_type,
@@ -926,7 +926,7 @@ class NestedExtensionArray(ExtensionArray):
         """Create a NestedExtensionArray from pandas' ArrowExtensionArray"""
         return cls(array._pa_array)
 
-    def to_arrow_ext_array(self, list_struct: bool = False, large_list: bool = True) -> ArrowExtensionArray:
+    def to_arrow_ext_array(self, list_struct: bool = False, large_list: bool = False) -> ArrowExtensionArray:
         """Convert the extension array to pandas' ArrowExtensionArray
 
         Parameters
@@ -935,17 +935,17 @@ class NestedExtensionArray(ExtensionArray):
             If False (default), return struct-list array, otherwise return
             list-struct array.
         large_list : bool, optional
-            If True (default), keep ``large_list`` (int64 offsets). Required
-            when the total number of nested elements across all rows exceeds
-            ~2.1 billion (int32 max).
+            If False (default), use regular ``list_`` (int32 offsets). Set to True to
+            use ``large_list`` (int64 offsets), which is required when the total number
+            of nested elements across all rows exceeds ~2.1 billion (int32 max).
         """
         arr = self.list_array if list_struct else self.struct_array
         if not large_list:
-            arr = arr.cast(downcast_large_list_type(arr.type))
+            arr = downcast_large_list_array(arr)
         return ArrowExtensionArray(arr)
 
     def to_pyarrow_scalar(
-        self, list_struct: bool = False, large_list: bool = True
+        self, list_struct: bool = False, large_list: bool = False
     ) -> pa.LargeListScalar | pa.ListScalar:
         """Convert to a pyarrow scalar of a list type
 
@@ -955,9 +955,9 @@ class NestedExtensionArray(ExtensionArray):
             If False (default), return list-struct-list scalar,
             otherwise list-list-struct scalar.
         large_list : bool, optional
-            If True (default), use ``large_list`` (int64 offsets). Required
-            when the total number of nested elements across all rows exceeds
-            ~2.1 billion (int32 max).
+            If False (default), use regular ``list_`` (int32 offsets). Set to True to
+            use ``large_list`` (int64 offsets), which is required when the total number
+            of nested elements across all rows exceeds ~2.1 billion (int32 max).
 
         Returns
         -------

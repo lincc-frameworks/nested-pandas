@@ -62,12 +62,12 @@ def test_to_lists():
         data={
             "a": pd.Series(
                 data=[np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])],
-                dtype=pd.ArrowDtype(pa.large_list(pa.float64())),
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
                 index=[0, 1],
             ),
             "b": pd.Series(
                 data=[np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])],
-                dtype=pd.ArrowDtype(pa.large_list(pa.float64())),
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
                 index=[0, 1],
             ),
         },
@@ -95,12 +95,12 @@ def test_to_lists_for_chunked_array():
         data={
             "a": pd.Series(
                 data=[np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])] * 3,
-                dtype=pd.ArrowDtype(pa.large_list(pa.float64())),
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
                 index=[0, 1, 2, 3, 4, 5],
             ),
             "b": pd.Series(
                 data=[np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])] * 3,
-                dtype=pd.ArrowDtype(pa.large_list(pa.float64())),
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
                 index=[0, 1, 2, 3, 4, 5],
             ),
         },
@@ -125,7 +125,7 @@ def test_to_lists_with_columns():
         data={
             "a": pd.Series(
                 data=[np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])],
-                dtype=pd.ArrowDtype(pa.large_list(pa.float64())),
+                dtype=pd.ArrowDtype(pa.list_(pa.float64())),
                 index=[0, 1],
             ),
         },
@@ -151,6 +151,11 @@ def test_to_lists_large_list_false():
     # Values should be unchanged
     np.testing.assert_array_equal(lists["a"].iloc[0], [1.0, 2.0, 3.0])
     np.testing.assert_array_equal(lists["b"].iloc[1], [-3.0, -4.0, -5.0])
+
+    # large_list=True returns large_list (int64 offsets)
+    lists_large = series.nest.to_lists(large_list=True)
+    assert lists_large["a"].dtype == pd.ArrowDtype(pa.large_list(pa.float64()))
+    assert lists_large["b"].dtype == pd.ArrowDtype(pa.large_list(pa.float64()))
 
 
 def test_to_lists_fails_for_empty_input():
@@ -615,7 +620,7 @@ def test_get_list_series():
         lists,
         pd.Series(
             data=[np.array([1, 2, 3]), np.array([4, 5, 6])],
-            dtype=pd.ArrowDtype(pa.large_list(pa.int64())),
+            dtype=pd.ArrowDtype(pa.list_(pa.int64())),
             index=[5, 7],
             name="a",
         ),
@@ -641,7 +646,7 @@ def test_get_list_series_multiple_chunks():
         lists,
         pd.Series(
             data=[np.array([1, 2, 3]), np.array([4, 5, 6])] * 3,
-            dtype=pd.ArrowDtype(pa.large_list(pa.int64())),
+            dtype=pd.ArrowDtype(pa.list_(pa.int64())),
             index=[5, 7, 9, 11, 13, 15],
             name="a",
         ),
@@ -841,7 +846,7 @@ def test___setitem___with_series_with_index():
         series.nest.to_lists()["a"],
         pd.Series(
             data=[np.array([6, 5, 4]), np.array([3, 2, 1])],
-            dtype=pd.ArrowDtype(pa.large_list(pa.float64())),
+            dtype=pd.ArrowDtype(pa.list_(pa.float64())),
             index=[0, 1],
             name="a",
         ),

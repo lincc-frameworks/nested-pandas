@@ -68,6 +68,99 @@ def is_pa_type_is_list_struct(pa_type: pa.DataType) -> bool:
     )
 
 
+def zero_align_large_list_offsets(array: pa.LargeListArray) -> pa.LargeListArray:
+    """Realign a LargeListArray so its offsets start at zero.
+
+    If the first offset is already zero the original array is returned unchanged.
+
+    Parameters
+    ----------
+    array : pa.LargeListArray
+        Input list array whose offsets may start at a non-zero value.
+
+    Returns
+    -------
+    pa.LargeListArray
+        List array with offsets starting at zero and values sliced accordingly.
+    """
+    offsets = array.offsets
+    first = offsets[0].as_py()
+    if first == 0:
+        return array
+    new_offsets = pa.compute.subtract(offsets, offsets[0])
+    return pa.LargeListArray.from_arrays(
+        values=array.values[first : offsets[-1].as_py()],
+        offsets=new_offsets,
+    )
+
+
+def zero_align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
+    """Realign all LargeList fields in a StructArray so their offsets start at zero.
+
+    Parameters
+    ----------
+    array : pa.StructArray
+        Input struct array whose fields are LargeListArrays.
+
+    Returns
+    -------
+    pa.StructArray
+        Struct array with every field's offsets starting at zero.
+
+    Raises
+    ------
+    ValueError
+        If list lengths do not match across struct fields.
+    """
+    value_lengths = None
+    list_arrays = []
+    for field in array.type:
+        inner_array = array.field(field.name)
+        list_array = cast(pa.LargeListArray, inner_array)
+
+        if value_lengths is None:
+            value_lengths = list_array.value_lengths()
+        elif not value_lengths.equals(list_array.value_lengths()):
+            raise ValueError(
+                f"List lengths do not match for struct fields {array.type.field(0).name} and {field.name}",
+            )
+
+        list_arrays.append(zero_align_large_list_offsets(list_array))
+    return pa.StructArray.from_arrays(
+        arrays=list_arrays,
+        fields=struct_fields(array.type),
+    )
+
+
+def zero_align_offsets(array: pa.LargeListArray | pa.StructArray) -> pa.LargeListArray | pa.StructArray:
+    """Realign offsets to start at zero for a LargeList-Struct or Struct-LargeList array.
+
+    Dispatches to :func:`zero_align_large_list_offsets` for ``LargeListArray``
+    (list-of-struct layout) and to :func:`zero_align_struct_list_offsets` for
+    ``StructArray`` (struct-of-lists layout).
+
+    Parameters
+    ----------
+    array : pa.LargeListArray or pa.StructArray
+        Input array.
+
+    Returns
+    -------
+    pa.LargeListArray or pa.StructArray
+        Array with offsets starting at zero.
+
+    Raises
+    ------
+    TypeError
+        If the array is neither a LargeListArray nor a StructArray.
+    """
+    if pa.types.is_large_list(array.type):
+        return zero_align_large_list_offsets(cast(pa.LargeListArray, array))
+    if pa.types.is_struct(array.type):
+        return zero_align_struct_list_offsets(cast(pa.StructArray, array))
+    raise TypeError(f"Expected a LargeListArray or StructArray, got {array.type}")
+
+
 def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
     """Checks if all struct-list offsets are the same, and reallocates if needed
 
@@ -107,31 +200,7 @@ def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
         # Return the original array if all offsets match
         return array
 
-    new_offsets = pa.compute.subtract(first_offsets, first_offsets[0])
-    value_lengths = None
-    list_arrays = []
-    for field in array.type:
-        inner_array = array.field(field.name)
-        list_array = cast(pa.LargeListArray, inner_array)
-
-        if value_lengths is None:
-            value_lengths = list_array.value_lengths()
-        elif not value_lengths.equals(list_array.value_lengths()):
-            raise ValueError(
-                f"List lengths do not match for struct fields {array.type.field(0).name} and {field.name}",
-            )
-
-        list_arrays.append(
-            pa.LargeListArray.from_arrays(
-                values=list_array.values[list_array.offsets[0].as_py() : list_array.offsets[-1].as_py()],
-                offsets=new_offsets,
-            )
-        )
-    new_array = pa.StructArray.from_arrays(
-        arrays=list_arrays,
-        fields=struct_fields(array.type),
-    )
-    return new_array
+    return zero_align_struct_list_offsets(array)
 
 
 def align_chunked_struct_list_offsets(array: pa.Array | pa.ChunkedArray) -> pa.ChunkedArray:
@@ -542,9 +611,12 @@ def downcast_large_list_type(t: pa.LargeListType | pa.StructType) -> pa.ListType
 
 
 def downcast_large_list_array(
-    array: pa.Array,
-) -> pa.ListArray:
-    """Cast a ``LargeListArray`` (or ChunkedArray thereof) to a regular ``ListArray``.
+    array: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    """Cast ``large_list`` fields to regular ``list_`` in an array or chunked array.
+
+    Handles both ``LargeListArray`` (direct downcast) and ``StructArray`` whose
+    fields are ``large_list`` (each field is downcast to ``list_``).
 
     This is a compatibility helper for consumers that do not support ``large_list``
     (e.g. Parquet files written without Arrow schema metadata, older PyArrow
@@ -552,15 +624,29 @@ def downcast_large_list_array(
 
     Parameters
     ----------
-    array : pa.LargeListArray or pa.ChunkedArray
-        Input large-list array (or chunked array with large-list type).
+    array : pa.LargeListArray, pa.StructArray, or pa.ChunkedArray thereof
+        Input array with ``large_list`` type or struct-of-``large_list`` type.
 
     Returns
     -------
-    pa.ListArray or pa.ChunkedArray
+    pa.Array or pa.ChunkedArray
         The downcast array using int32 offsets.
+
+    Raises
+    ------
+    ValueError
+        If the array contains more than ``2**31 - 1`` total values and cannot
+        be represented with int32 offsets. Pass ``large_list=True`` to the
+        calling function to keep int64 offsets.
     """
-    return array.cast(downcast_large_list_type(array.type))
+    try:
+        return array.cast(downcast_large_list_type(array.type))
+    except pa.ArrowInvalid as e:
+        raise ValueError(
+            "Cannot downcast large_list to list_: the array contains more than "
+            f"{2**31 - 1} values, which exceeds the int32 offset range. "
+            "Pass large_list=True to keep int64 offsets."
+        ) from e
 
 
 def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.StructArray | pa.ChunkedArray:

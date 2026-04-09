@@ -41,7 +41,7 @@ class NestSeriesAccessor(Mapping):
         if not isinstance(dtype, NestedDtype):
             raise AttributeError(f"Can only use .nest accessor with a Series of NestedDtype, got {dtype}")
 
-    def to_lists(self, columns: list[str] | str | None = None, large_list: bool = True) -> pd.DataFrame:
+    def to_lists(self, columns: list[str] | str | None = None, large_list: bool = False) -> pd.DataFrame:
         """Convert nested series into dataframe of list-array columns
 
         Parameters
@@ -49,9 +49,9 @@ class NestSeriesAccessor(Mapping):
         columns : list[str] or str or None, optional
             Names of the column(s) to include. Default is None, which means all columns.
         large_list : bool, optional
-            If True (default), use ``large_list`` (int64 offsets). Required
-            when the total number of nested elements across all rows exceeds
-            ~2.1 billion (int32 max).
+            If False (default), use regular ``list_`` (int32 offsets). Set to True to
+            use ``large_list`` (int64 offsets), which is required when the total number
+            of nested elements across all rows exceeds ~2.1 billion (int32 max).
 
         Returns
         -------
