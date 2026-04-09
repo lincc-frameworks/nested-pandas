@@ -85,6 +85,28 @@ def test_html_repr_empty_list():
     assert "+-1 rows" not in html and "None" in html
 
 
+def test_html_repr_small_rows():
+    """Make sure the html representation handles small nested sub-frames correctly"""
+    # 0 rows: displayed as None (same as Null)
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[1, 2, 3], []]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+0 rows" not in html
+    assert "None" in html  # empty sub-frame shown as None
+
+    # 1 row: no "+0 rows" footer
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[42], [1, 2, 3]]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+0 rows" not in html
+
+    # 2 rows: show both rows, no "+1 rows" footer
+    base = NestedFrame(data={"a": [1], "b": [2], "c": [[10, 20]]}, index=[0])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+1 rows" not in html
+
+
 def test_all_columns():
     """Test the all_columns function"""
 

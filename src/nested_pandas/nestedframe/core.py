@@ -122,26 +122,31 @@ class NestedFrame(pd.DataFrame):
 
         # Display nested columns as small html dataframes with a single row
         def repack_row(chunk, header=True):
-            # If the chunk is None, just return None
+            # If the chunk is None or empty, return None (displayed same as Null)
             if chunk is None or len(chunk) == 0:
                 return None
-            # Grab length, then truncate to one row for display
             n_rows = len(chunk)
-            chunk = chunk.head(1).round(8)  # only show first row
-            chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
 
-            # Add a row that shows the number of additional rows not shown
-            len_row = pd.DataFrame(
-                {
-                    col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
-                    for i, col in enumerate(chunk.columns)
-                }
-            )
-            chunk = pd.concat([chunk, len_row], ignore_index=True)
+            if n_rows <= 2:
+                # For 1 or 2 rows, show all rows without a footer
+                chunk = chunk.round(8)
+                max_rows_html = n_rows
+            else:
+                # For 3+ rows, show first row and a "+N rows" footer
+                chunk = chunk.head(1).round(8)
+                chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
+                len_row = pd.DataFrame(
+                    {
+                        col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
+                        for i, col in enumerate(chunk.columns)
+                    }
+                )
+                chunk = pd.concat([chunk, len_row], ignore_index=True)
+                max_rows_html = 2
 
             # Estimate width and resize
             html_res = chunk.to_html(
-                max_rows=2,
+                max_rows=max_rows_html,
                 max_cols=5,
                 show_dimensions=False,
                 index=False,
