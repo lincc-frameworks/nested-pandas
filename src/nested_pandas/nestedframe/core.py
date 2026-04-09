@@ -2317,7 +2317,7 @@ class NestedFrame(pd.DataFrame):
         # Otherwise, return the results as a new NestedFrame
         return results_nf
 
-    def to_pandas(self, list_struct=False) -> pd.DataFrame:
+    def to_pandas(self, list_struct=False, large_list=False) -> pd.DataFrame:
         """Convert to an ordinal pandas DataFrame, with no NestedDtype series.
 
         NestedDtype is cast to pd.ArrowDtype
@@ -2328,6 +2328,11 @@ class NestedFrame(pd.DataFrame):
             If True, cast nested columns to pandas struct-list arrow extension
             array columns. If False (default), cast nested columns to
             list-struct array columns.
+        large_list : bool
+            If False (default), use regular ``list_`` (int32 offsets). Set to
+            True to use ``large_list`` (int64 offsets), which is required when
+            the total number of nested elements across all rows exceeds
+            ``2**31 - 1``.
 
         Returns
         -------
@@ -2348,10 +2353,10 @@ class NestedFrame(pd.DataFrame):
         """
         df = pd.DataFrame(self)
         for col in self.nested_columns:
-            df[col] = df[col].array.to_arrow_ext_array(list_struct=list_struct)
+            df[col] = df[col].array.to_arrow_ext_array(list_struct=list_struct, large_list=large_list)
         return df
 
-    def to_parquet(self, path, **kwargs) -> None:
+    def to_parquet(self, path, large_list=False, **kwargs) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
         as a single parquet file where each nested dataset is packed into its
         own column or as an individual parquet file for each layer.
@@ -2363,6 +2368,11 @@ class NestedFrame(pd.DataFrame):
         ----------
         path : str
             The path to the parquet file
+        large_list : bool
+            If False (default), use regular ``list_`` (int32 offsets). Set to
+            True to use ``large_list`` (int64 offsets), which is required when
+            the total number of nested elements across all rows exceeds
+            ``2**31 - 1``.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to
             `pyarrow.parquet.write_table
@@ -2378,7 +2388,7 @@ class NestedFrame(pd.DataFrame):
         >>> nf = generate_data(5,5, seed=1)
         >>> nf.to_parquet("nestedframe.parquet")
         """
-        df = self.to_pandas(list_struct=False)
+        df = self.to_pandas(list_struct=False, large_list=large_list)
 
         # Write through pyarrow
         # This is potentially not zero-copy
