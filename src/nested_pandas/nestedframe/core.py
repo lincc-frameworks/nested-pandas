@@ -823,6 +823,95 @@ class NestedFrame(pd.DataFrame):
             errors=errors,
         )
 
+    def split(
+        self,
+        nested_col: str,
+        by: str,
+        values=None,
+        drop_by_col: bool = False,
+        drop_nested: bool = False,
+    ) -> NestedFrame:
+        """Split a nested column into multiple nested columns by a categorical sub-column.
+
+        Parameters
+        ----------
+        nested_col : str
+            The name of the nested column to split.
+        by : str
+            The name of the sub-column within nested_col to split on.
+        values : list or str or None, optional
+            The specific values to split on. If None, all unique values are used.
+            If a string is provided, it is iterated as a list of characters.
+        drop_by_col : bool, default False
+            If True, the sub-column specified by `by` is dropped from each new
+            nested column.
+        drop_nested : bool, default False
+            If True, the original nested column is dropped from the result.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with one new nested column per unique value in
+            `by`, named ``{nested_col}_{value}``.
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 5, seed=1)
+        >>> nf.split("nested", by="band")[["a", "b", "nested_r"]] # doctest: +SKIP
+
+                  a         b                                                  nested_r
+        0  0.417022  0.184677    [{t: 8.38389, flux: 31.551563, band: 'r'}; …] (2 rows)
+        1  0.720324  0.372520   [{t: 19.365232, flux: 90.85955, band: 'r'}; …] (2 rows)
+        2  0.000114  0.691121  [{t: 11.173797, flux: 28.044399, band: 'r'}; …] (3 rows)
+        3  0.302333  0.793535               [{t: 2.807739, flux: 78.927933, band: 'r'}]
+        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …] (2 rows)
+        """
+
+        if nested_col not in self.nested_columns:
+            raise ValueError(
+                f"'{nested_col}' is not a nested column. Available nested columns: {self.nested_columns}"
+            )
+
+        if by not in self[nested_col].nest.columns:
+            raise ValueError(
+                f"'{by}' is not a sub-column of '{nested_col}'. "
+                f"Available sub-columns: {list(self[nested_col].nest.columns)}"
+            )
+
+        has_values = values is not None
+        split_values = self[f"{nested_col}.{by}"].unique() if not has_values else list(values)
+
+        if len(self) == 0:
+            result = self.copy()
+            if has_values:
+                for val in split_values:
+                    result[f"{nested_col}_{val}"] = None
+            if drop_nested:
+                result = result.drop(labels=[nested_col], axis=1)
+            return result
+
+        is_str = pd.api.types.is_string_dtype(self[f"{nested_col}.{by}"])
+
+        result = self.copy()
+
+        for val in split_values:
+            val_repr = f"'{val}'" if is_str else val
+            queried = self.query(f"{nested_col}.{by}=={val_repr}")
+            if queried is None or len(queried) == 0:
+                if has_values:
+                    result[f"{nested_col}_{val}"] = None
+                continue
+            filtered = queried[nested_col]
+            if drop_by_col:
+                filtered = filtered.nest.drop(by)
+            result[f"{nested_col}_{val}"] = filtered
+
+        if drop_nested:
+            result = result.drop(labels=[nested_col], axis=1)
+
+        return result
+
     def min(self, exclude_nest: bool = False, numeric_only: bool = False, **kwargs):
         """
 
