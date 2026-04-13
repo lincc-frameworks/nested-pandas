@@ -1,0 +1,71 @@
+# This workflow tests against the pandas development version
+# to detect compatibility issues with upcoming pandas releases early.
+#
+# See: https://pandas.pydata.org/docs/getting_started/install.html#installing-the-development-version-of-pandas
+#
+# This job is allowed to fail since pandas dev may introduce breaking changes.
+# Failures here are informational and do not block merges.
+
+name: Test against pandas development version
+
+on:
+  pull_request:
+  schedule:
+    - cron: 45 6 * * *
+  workflow_dispatch:
+
+jobs:
+  test-pandas-dev:
+    runs-on: ubuntu-latest
+    
+    # Required permissions to allow the bot to post a comment on the PR
+    permissions:
+      contents: read
+      issues: read
+      checks: write
+      pull-requests: write
+
+    strategy:
+      matrix:
+        python-version: ['3.11']
+
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        uv pip install --system -e .[dev]
+        if [ -f requirements.txt ]; then
+          uv pip install --system -r requirements.txt
+        fi
+
+    - name: Uninstall stable pandas and install nightly pandas
+      run: |
+        uv pip uninstall --system pandas
+        uv pip install --system -i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple pandas
+
+        # Just a quick check (helpful to search in logs)
+        python -c "import pandas as pd; print('Installed pandas version:', pd.__version__)"
+
+    - name: Run unit tests with pytest
+      continue-on-error: true
+      run: |
+        # Runs pytest and exports the report in xml format
+        python -m pytest --junitxml=pytest-results.xml
+
+    - name: Publish Test Results as PR Comment
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      if: always()
+      with:
+        files: pytest-results.xml
+        check_name: "Pandas Nightly Test Results (Python ${{ matrix.python-version }})"
+        fail_on: "nothing"

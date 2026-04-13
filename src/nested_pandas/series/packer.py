@@ -71,7 +71,7 @@ def pack_flat(
     The dtype of the column is `nested_pandas.NestedDtype` with
     the corresponding pyarrow type. The index of the output series is
     the unique index of the input dataframe. The Series has `.nest` accessor,
-    see `nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    see :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
 
     Parameters
     ----------
@@ -89,16 +89,32 @@ def pack_flat(
 
     See Also
     --------
-    nested_pandas.series.accessor.NestedSeriesAccessor : .nest accessor for the output series.
+    nested_pandas.series.accessor.NestSeriesAccessor : .nest accessor for the output series.
     nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
-
     if on is not None:
         df = df.set_index(on)
     # pandas knows when index is pre-sorted, so it would do nothing if it is already sorted
     sorted_flat = df.sort_index(kind="stable")
-    return pack_sorted_df_into_struct(sorted_flat, name=name)
+    try:
+        return pack_sorted_df_into_struct(sorted_flat, name=name)
+    except ValueError:
+        # Check if the error is due to NaN values and raise a more informative message
+        if any(sorted_flat.index.get_level_values(i).hasnans for i in range(sorted_flat.index.nlevels)):
+            if on is None:
+                raise ValueError(
+                    "The index contains NaN values. "
+                    "NaN values are not supported because they cannot be used for grouping rows. "
+                    "Please remove or fill NaN values before packing."
+                ) from None
+            cols = [on] if isinstance(on, str) else list(on)
+            raise ValueError(
+                f"Column(s) {cols} contain NaN values. "
+                "NaN values are not supported because they cannot be used for grouping rows. "
+                "Please remove or fill NaN values before packing."
+            ) from None
+        raise
 
 
 def pack_seq(
@@ -174,7 +190,7 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     The dtype of the column is `nested_pandas.NestedDtype` with the corresponding
     pyarrow type. The index of the output series is the unique index of the
     input dataframe. The Series has `.nest` accessor, see
-    `nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
 
     For every row, all the nested array (aka pyarrow list) lengths must be
     the same.

@@ -1,6 +1,7 @@
 import pandas as pd
 import pyarrow as pa
 import pytest
+
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe import NestedFrame
 from nested_pandas.series.dtype import NestedDtype

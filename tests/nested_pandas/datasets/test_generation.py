@@ -1,4 +1,5 @@
 import pytest
+
 from nested_pandas.datasets import generate_data
 
 

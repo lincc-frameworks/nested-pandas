@@ -10,6 +10,9 @@ import pyarrow as pa
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
+from pandas.testing import assert_frame_equal
+from upath import UPath
+
 from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
@@ -18,8 +21,6 @@ from nested_pandas.nestedframe.io import (
     _transform_read_parquet_data_arg,
     from_pyarrow,
 )
-from pandas.testing import assert_frame_equal
-from upath import UPath
 
 
 def test_read_parquet():
@@ -105,33 +106,21 @@ def test_file_object_read_parquet():
 
 
 @pytest.mark.parametrize(
-    "columns",
+    "columns, expected_columns",
     [
-        ["a", "flux"],
-        ["flux", "nested", "lincc"],
-        ["nested.flux", "nested.band"],
-        ["flux", "nested.flux"],
-        ["nested.band", "lincc.band"],
+        (["a", "flux"], ["a", "flux"]),
+        (["flux", "nested", "lincc"], ["flux", "nested", "lincc"]),
+        (["nested.flux", "nested.band"], ["nested"]),
+        (["flux", "nested.flux"], ["flux", "nested"]),
+        (["nested.band", "lincc.band"], ["nested", "lincc"]),
     ],
 )
-def test_read_parquet_column_selection(columns):
+def test_read_parquet_column_selection(columns, expected_columns):
     """Test reading a parquet file with column selection"""
     # Load in the example file
     nf = read_parquet("tests/test_data/nested.parquet", columns=columns)
 
-    # Output expectations
-    if columns == ["a", "flux"]:
-        expected_columns = ["a", "flux"]
-    elif columns == ["flux", "nested", "lincc"]:
-        expected_columns = ["flux", "nested", "lincc"]
-    elif columns == ["nested.flux", "nested.band"]:
-        expected_columns = ["nested"]
-    elif columns == ["flux", "nested.flux"]:
-        expected_columns = ["flux", "nested"]
-    elif columns == ["nested.band", "lincc.band"]:
-        expected_columns = ["nested", "lincc"]
-
-    # Check the columns
+    # Check the column expectations
     assert nf.columns.tolist() == expected_columns
 
     # Check nested columns
@@ -556,3 +545,24 @@ def test_issue_428(size):
         nf = read_parquet(file_path, columns=["nested.t"])
         assert nf.columns == ["nested"]
         assert nf.nested.nest.columns == ["t"]
+
+
+def test_use_pandas_metadata():
+    """Test use_pandas_metadata parameter in read_parquet.
+    Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/460
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "tmp.parquet")
+
+        # Write a parquet file with a custom index stored in pandas metadata
+        df = pd.DataFrame({"a": [1, 2, 3], "custom_idx": [10, 20, 30]})
+        df = df.set_index("custom_idx")
+        df.to_parquet(file_path)
+
+        # Default (use_pandas_metadata=True): index IS restored from metadata
+        nf = read_parquet(file_path)
+        assert nf.index.name == "custom_idx"
+
+        # Explicit False: index is NOT restored from pandas metadata
+        nf_no_meta = read_parquet(file_path, use_pandas_metadata=False)
+        assert nf_no_meta.index.name != "custom_idx"

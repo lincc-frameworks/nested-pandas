@@ -12,3 +12,4 @@ astroquery
 astropy
 matplotlib
 light-curve
+numba

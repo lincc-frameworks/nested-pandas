@@ -96,9 +96,7 @@ class NestedSeries(pd.Series):
         return super().__setitem__(key, value)
 
     @nested_only
-    @deprecated(
-        version="0.6.0", reason="`to_flat` will be removed in version 0.7.0, " "use `explode` instead."
-    )
+    @deprecated(version="0.6.0", reason="`to_flat` will be removed in version 0.7.0, use `explode` instead.")
     def to_flat(self, fields: list[str] | None = None) -> pd.DataFrame:
         """Convert nested series into dataframe of flat arrays.
 

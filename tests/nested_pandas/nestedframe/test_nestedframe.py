@@ -4,11 +4,13 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numba import njit
+from pandas.testing import assert_frame_equal, assert_index_equal
+
 from nested_pandas import NestedDtype, NestedFrame
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.core import _SeriesFromNest
 from nested_pandas.series.packer import pack_lists
-from pandas.testing import assert_frame_equal, assert_index_equal
 
 
 def test_nestedframe_construction():
@@ -81,6 +83,28 @@ def test_html_repr_empty_list():
     assert base["nested"].iloc[1].empty
     html = base._repr_html_()
     assert "+-1 rows" not in html and "None" in html
+
+
+def test_html_repr_small_rows():
+    """Make sure the html representation handles small nested sub-frames correctly"""
+    # 0 rows: displayed as None (same as Null)
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[1, 2, 3], []]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+0 rows" not in html
+    assert "None" in html  # empty sub-frame shown as None
+
+    # 1 row: no "+0 rows" footer
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[42], [1, 2, 3]]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+0 rows" not in html
+
+    # 2 rows: show both rows, no "+1 rows" footer
+    base = NestedFrame(data={"a": [1], "b": [2], "c": [[10, 20]]}, index=[0])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+1 rows" not in html
 
 
 def test_all_columns():
@@ -1429,6 +1453,162 @@ def test_map_rows_arg_errors():
     ndf.map_rows(func, ["a", "nested.flux"], add=True, row_container="args")
 
 
+def test_map_rows_njit():
+    """
+    Test that map_rows can handle a njit function
+    Note: Numba-jitted helper functions appear as uncovered in coverage reports
+          because codecov cannot trace into compiled machine code.
+    """
+    base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6]}, index=[0, 1, 2])
+    nested = pd.DataFrame(
+        data={"c": [0, 2, 4, 1, 4, 3, 1, 4, 1], "d": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    nested2 = pd.DataFrame(
+        data={"e": [0, 2, 4, 1, 4, 3, 1, 4, 1], "f": [5, 4, 7, 5, 3, 1, 9, 3, 4]},
+        index=[0, 0, 0, 1, 1, 1, 2, 2, 2],
+    )
+    base = base.join_nested(nested, "nested").join_nested(nested2, "nested2")
+
+    # testing 1 nested argument
+    @njit
+    def nested1(c):
+        """testing function that takes a nested column argument"""
+        return np.max(c)
+
+    expected_max_c = [4, 4, 4]
+
+    result1 = base.map_rows(
+        nested1,
+        columns=["nested.c"],
+        row_container="args",
+        output_names="max_c",
+        njit=True,
+    )
+    assert isinstance(result1, NestedFrame)
+    assert list(result1.columns) == ["max_c"]
+    for i in range(len(result1)):
+        assert result1["max_c"].values[i] == expected_max_c[i]
+
+    # testing 1 base argument
+    @njit
+    def base1(a):
+        """testing function that takes a base column argument"""
+        return 2 * a
+
+    expected_a_double = [2, 4, 6]
+
+    result2 = base.map_rows(
+        base1,
+        columns=["a"],
+        row_container="args",
+        output_names="a_double",
+        njit=True,
+    )
+    assert isinstance(result2, NestedFrame)
+    assert list(result2.columns) == ["a_double"]
+    for i in range(len(result2)):
+        assert result2["a_double"].values[i] == expected_a_double[i]
+
+    # testing 2 nested arguments
+    @njit
+    def two_nested_sum(c, e):
+        return np.sum(c) + np.sum(e)
+
+    expected_sum_c_e = [12, 16, 12]
+
+    result3 = base.map_rows(
+        two_nested_sum,
+        columns=["nested.c", "nested2.e"],
+        row_container="args",
+        output_names="sum_c_e",
+        njit=True,
+    )
+    assert isinstance(result3, NestedFrame)
+    assert list(result3.columns) == ["sum_c_e"]
+    for i in range(len(result3)):
+        assert result3["sum_c_e"].values[i] == expected_sum_c_e[i]
+
+    # testing 2 base arguments
+    @njit
+    def two_base_sum(a, b):
+        return a + b
+
+    expected_sum_a_b = [3, 6, 9]
+
+    result4 = base.map_rows(
+        two_base_sum,
+        columns=["a", "b"],
+        row_container="args",
+        output_names="sum_a_b",
+        njit=True,
+    )
+    assert isinstance(result4, NestedFrame)
+    assert list(result4.columns) == ["sum_a_b"]
+    for i in range(len(result4)):
+        assert result4["sum_a_b"].values[i] == expected_sum_a_b[i]
+
+    # testing 1 base + 1 nested
+    @njit
+    def base_nested_sum(a, c):
+        return a + np.sum(c)
+
+    expected_sum_a_c = [7, 10, 9]
+
+    result5 = base.map_rows(
+        base_nested_sum,
+        columns=["a", "nested.c"],
+        row_container="args",
+        output_names="sum_a_c",
+        njit=True,
+    )
+    assert isinstance(result5, NestedFrame)
+    assert list(result5.columns) == ["sum_a_c"]
+    for i in range(len(result5)):
+        assert result5["sum_a_c"].values[i] == expected_sum_a_c[i]
+
+    # testing 1 nested + 1 base
+    @njit
+    def nested_base_sum(c, a):
+        return np.sum(c) + a
+
+    result6 = base.map_rows(
+        nested_base_sum,
+        columns=["nested.c", "a"],
+        row_container="args",
+        output_names="sum_c_a",
+        njit=True,
+    )
+    assert isinstance(result6, NestedFrame)
+    assert list(result6.columns) == ["sum_c_a"]
+    for i in range(len(result6)):
+        assert result6["sum_c_a"].values[i] == expected_sum_a_c[i]
+
+    # testing error rasing
+    def two_nested_sum_py(c, e):
+        return np.sum(c) + np.sum(e)
+
+    # using python custom function with njit=True should raise an error
+    with pytest.raises(ValueError):
+        base.map_rows(
+            two_nested_sum_py,
+            columns=["nested.c", "nested2.e"],
+            row_container="args",
+            output_names="sum_c_e",
+            njit=True,
+        )
+
+    # row_container="dict" is not compatible with njit, should raise an error
+    with pytest.raises(ValueError):
+        base.map_rows(
+            two_nested_sum_py,
+            columns=["nested.c", "nested2.e"],
+            row_container="dict",
+            output_names="sum_c_e",
+            njit=True,
+        )
+
+
 def test_scientific_notation():
     """
     Test that NestedFrame.query handles constants that are written in scientific notation.
@@ -1515,6 +1695,109 @@ def test_drop():
     dropped_multcols = base.drop(columns=["nested.c", "nested2.f"])
     assert "c" not in dropped_multcols.nested.nest.columns
     assert "f" not in dropped_multcols.nested2.nest.columns
+
+
+def test_split():
+    """Test that split correctly splits a nested column by a categorical sub-column"""
+    nf = generate_data(5, 5, seed=1)
+
+    # Test basic split
+    result = nf.split("nested", by="band")
+    assert "nested" in result.columns
+    assert "nested_r" in result.columns
+    assert "nested_g" in result.columns
+    assert isinstance(result["nested_r"].dtype, NestedDtype)
+    assert isinstance(result["nested_g"].dtype, NestedDtype)
+
+    # Test filtering correctness
+    assert (result["nested_r"].nest["band"] == "r").all()
+    assert (result["nested_g"].nest["band"] == "g").all()
+
+    # Test values=None
+    unique_bands = nf["nested.band"].unique()
+    for band in unique_bands:
+        assert f"nested_{band}" in result.columns
+
+    # values= as list subset
+    result_subset = nf.split("nested", by="band", values=["g"])
+    assert "nested_g" in result_subset.columns
+    assert "nested_r" not in result_subset.columns
+
+    # values= as string: iterated as characters
+    result_str = nf.split("nested", by="band", values="rg")
+    assert "nested_r" in result_str.columns
+    assert "nested_g" in result_str.columns
+
+    # values= as empty list
+    result_empty_list = nf.split("nested", by="band", values=[])
+    assert "nested_r" not in result_empty_list.columns
+    assert "nested_g" not in result_empty_list.columns
+    assert "nested" in result_empty_list.columns
+
+    # values= as empty string
+    result_empty_str = nf.split("nested", by="band", values="")
+    assert "nested_r" not in result_empty_str.columns
+    assert "nested_g" not in result_empty_str.columns
+
+    # Test values= with values not present in the data, equivalent to values="z5" or values=["z", "5"]
+    result_missing = nf.split("nested", by="band", values=["z", 5])
+    assert "nested_z" in result_missing.columns
+    assert "nested_5" in result_missing.columns
+    assert result_missing["nested_z"].isna().all()
+    assert result_missing["nested_5"].isna().all()
+
+    # drop_by_col=True
+    result_drop_by = nf.split("nested", by="band", drop_by_col=True)
+    assert "band" not in result_drop_by["nested_r"].nest.columns
+    assert "band" not in result_drop_by["nested_g"].nest.columns
+    assert "t" in result_drop_by["nested_r"].nest.columns
+    assert "flux" in result_drop_by["nested_r"].nest.columns
+
+    # drop_nested=True
+    result_drop_nested = nf.split("nested", by="band", drop_nested=True)
+    assert "nested" not in result_drop_nested.columns
+    assert "nested_r" in result_drop_nested.columns
+    assert "nested_g" in result_drop_nested.columns
+
+    # both drop options together
+    result_drop_both = nf.split("nested", by="band", drop_by_col=True, drop_nested=True)
+    assert "nested" not in result_drop_both.columns
+    assert "band" not in result_drop_both["nested_r"].nest.columns
+
+    # original frame is not modified
+    assert "nested_r" not in nf.columns
+    assert "nested_g" not in nf.columns
+
+
+def test_split_errors():
+    """Test that split raises ValueError for invalid inputs"""
+    nf = generate_data(5, 5, seed=1)
+
+    with pytest.raises(ValueError, match="not a nested column"):
+        nf.split("doesnotexist", by="band")
+
+    with pytest.raises(ValueError, match="not a sub-column"):
+        nf.split("nested", by="doesnotexist")
+
+
+def test_split_empty_frame():
+    """Test that split handles an empty NestedFrame correctly"""
+    nf = generate_data(5, 5, seed=1).iloc[:0]
+    result = nf.split("nested", by="band")
+    assert isinstance(result, NestedFrame)
+    assert len(result) == 0
+
+    # values provided columns must appear as all-NA
+    result_explicit = nf.split("nested", by="band", values=["r", "g"])
+    assert "nested_r" in result_explicit.columns
+    assert "nested_g" in result_explicit.columns
+    assert result_explicit["nested_r"].isna().all()
+    assert result_explicit["nested_g"].isna().all()
+
+    # drop_nested=True must still be honoured on empty frame
+    result_drop = nf.split("nested", by="band", values=["r"], drop_nested=True)
+    assert "nested" not in result_drop.columns
+    assert "nested_r" in result_drop.columns
 
 
 def test_min():
