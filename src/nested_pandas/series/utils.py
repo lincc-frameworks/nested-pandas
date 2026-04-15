@@ -132,35 +132,6 @@ def zero_align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
     )
 
 
-def zero_align_offsets(array: pa.LargeListArray | pa.StructArray) -> pa.LargeListArray | pa.StructArray:
-    """Realign offsets to start at zero for a LargeList-Struct or Struct-LargeList array.
-
-    Dispatches to :func:`zero_align_large_list_offsets` for ``LargeListArray``
-    (list-of-struct layout) and to :func:`zero_align_struct_list_offsets` for
-    ``StructArray`` (struct-of-lists layout).
-
-    Parameters
-    ----------
-    array : pa.LargeListArray or pa.StructArray
-        Input array.
-
-    Returns
-    -------
-    pa.LargeListArray or pa.StructArray
-        Array with offsets starting at zero.
-
-    Raises
-    ------
-    TypeError
-        If the array is neither a LargeListArray nor a StructArray.
-    """
-    if pa.types.is_large_list(array.type):
-        return zero_align_large_list_offsets(cast(pa.LargeListArray, array))
-    if pa.types.is_struct(array.type):
-        return zero_align_struct_list_offsets(cast(pa.StructArray, array))
-    raise TypeError(f"Expected a LargeListArray or StructArray, got {array.type}")
-
-
 def align_struct_list_offsets(array: pa.StructArray) -> pa.StructArray:
     """Checks if all struct-list offsets are the same, and reallocates if needed
 

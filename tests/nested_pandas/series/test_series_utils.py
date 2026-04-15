@@ -6,6 +6,7 @@ from nested_pandas import NestedDtype
 from nested_pandas.series.utils import (
     align_chunked_struct_list_offsets,
     align_struct_list_offsets,
+    downcast_large_list_array,
     nested_types_mapper,
     normalize_list_array,
     normalize_struct_list_array,
@@ -313,3 +314,38 @@ def test_normalize_struct_list_array():
 
     with pytest.raises(ValueError):
         normalize_struct_list_array(pa.array([[1, 2], [3, 4]]))
+
+
+def test_downcast_large_list_array_already_list():
+    """downcast_large_list_array is a no-op when the input already uses list_ (int32 offsets).
+
+    This covers the ``return cast(pa.ListType | pa.StructType, t)`` fallthrough in
+    ``downcast_large_list_type``.  It is useful when code that normally produces
+    ``large_list`` arrays receives data that was already stored with regular ``list_``
+    offsets (e.g. loaded from an older Parquet file written without Arrow metadata).
+    """
+    list_array = pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))
+    result = downcast_large_list_array(list_array)
+    assert pa.types.is_list(result.type)
+    assert result.equals(list_array)
+
+
+def test_downcast_large_list_array_mixed_struct():
+    """downcast_large_list_array handles structs where only some fields are large_list.
+
+    This covers the ``fields.append(field)`` pass-through branch in
+    ``downcast_large_list_type``.  A struct may arrive with mixed offset types
+    when it originates from a source that already wrote certain columns as regular
+    ``list_`` — the downcast should convert ``large_list`` fields and leave the
+    already-regular ``list_`` fields unchanged.
+    """
+    large_list_col = pa.array([[10, 20], [30]], type=pa.large_list(pa.int64()))
+    regular_list_col = pa.array([["a"], ["b", "c"]], type=pa.list_(pa.string()))
+    struct_array = pa.StructArray.from_arrays([large_list_col, regular_list_col], names=["x", "y"])
+
+    result = downcast_large_list_array(struct_array)
+
+    assert pa.types.is_list(result.type.field("x").type), "large_list field should be downcast to list_"
+    assert pa.types.is_list(result.type.field("y").type), "already-list_ field should remain list_"
+    assert result.field("x").equals(large_list_col.cast(pa.list_(pa.int64())))
+    assert result.field("y").equals(regular_list_col)
