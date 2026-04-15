@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 
 from nested_pandas.series.utils import (
+    is_pa_type_a_list,
     normalize_list_array,
     transpose_struct_list_chunked,
     validate_list_struct_type,
@@ -29,7 +30,7 @@ class ListStructStorage:
     def __init__(
         self, array: pa.ListArray | pa.FixedSizeListArray | pa.LargeListArray | pa.ChunkedArray
     ) -> None:
-        if isinstance(array, pa.ListArray):
+        if isinstance(array, pa.Array) and is_pa_type_a_list(array.type):
             array = pa.chunked_array([array])
         if not isinstance(array, pa.ChunkedArray):
             raise ValueError("array must be of type pa.ChunkedArray")
@@ -81,7 +82,7 @@ class ListStructStorage:
         return self._data.nbytes
 
     @property
-    def type(self) -> pa.ListType:
+    def type(self) -> pa.LargeListType:
         """Pyarrow type of the underlying array."""
         return self._data.type
 
