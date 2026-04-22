@@ -1547,6 +1547,16 @@ class NestedFrame(pd.DataFrame):
         3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
         4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …...
 
+        Most of the Series and NestedSeries attibutes and methods are available
+        through the query interface. For example, to query based on the length
+        of the nested frames, you can do:
+
+        >>> nf = nf.query("nested.list_lengths > 2")
+        >>> nf
+                  a         b                                             nested
+        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
+        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …...
 
         See Also
         --------
