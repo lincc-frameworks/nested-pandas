@@ -56,9 +56,18 @@ class NestedSeries(pd.Series):
 
     @property
     @nested_only
+    @deprecated(
+        version="0.7.0",
+        reason="`list_lengths` is deprecated and will be removed in version 0.8.0, use `len()` instead.",
+    )
     def list_lengths(self):
         """Returns the lengths of the list-packed nested series."""
-        return self.nest.list_lengths
+        return self.len()
+
+    @nested_only
+    def len(self):
+        """Returns the lengths of the list-packed nested series."""
+        return self.nest.len()
 
     def __getitem__(self, key):
         """Equip getitem with ability to handle nested data."""

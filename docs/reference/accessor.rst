@@ -15,6 +15,7 @@ Functions
 .. autosummary::
     :toctree: api/
 
+    NestSeriesAccessor.len
     NestSeriesAccessor.to_lists
     NestSeriesAccessor.to_flat
     NestSeriesAccessor.to_flatten_inner
