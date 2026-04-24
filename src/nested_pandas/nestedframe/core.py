@@ -1289,8 +1289,7 @@ class NestedFrame(pd.DataFrame):
         for nested_col in nested_columns:
             # Check if counts (lengths) in nested columns mismatch
             if len(flat_frames) > 0 and np.any(
-                w_ordinal_idx[nested_col].nest.list_lengths
-                != w_ordinal_idx[nested_columns[0]].nest.list_lengths
+                w_ordinal_idx[nested_col].nest.len() != w_ordinal_idx[nested_columns[0]].nest.len()
             ):
                 raise ValueError(
                     f"One or few rows of {nested_col} have different element counts from {nested_columns[0]}"
@@ -1551,7 +1550,7 @@ class NestedFrame(pd.DataFrame):
         through the query interface. For example, to query based on the length
         of the nested frames, you can do:
 
-        >>> nf = nf.query("nested.list_lengths > 2")
+        >>> nf = nf.query("nested.len() > 2")
         >>> nf
                   a         b                                             nested
         0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...

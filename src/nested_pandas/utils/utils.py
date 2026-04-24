@@ -59,7 +59,7 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     """
 
     if by is None:
-        counts = pd.Series(df[nested].nest.list_lengths, name=f"n_{nested}", index=df.index)
+        counts = pd.Series(df[nested].nest.len(), name=f"n_{nested}", index=df.index)
         counts = counts.astype(pd.ArrowDtype(pa.int32()))
     else:
         counts = df.map_rows(
