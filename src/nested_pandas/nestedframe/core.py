@@ -421,8 +421,10 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
-        on : str, default: None
-            A column in the list
+        on : str or list of str, default: None
+            Column(s) in the calling frame to join on instead of the index.
+            The original index is always preserved. The column(s) are used
+            only as join keys and are dropped from the nested structure.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -437,6 +439,7 @@ class NestedFrame(pd.DataFrame):
         --------
 
         >>> import nested_pandas as npd
+
         >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
         ...            index=[0,1,2])
         >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
@@ -447,6 +450,17 @@ class NestedFrame(pd.DataFrame):
         0  1  4  [{c: 1}; …] (3 rows)
         1  2  5  [{c: 4}; …] (3 rows)
         2  3  6  [{c: 7}; …] (3 rows)
+
+        >>> # We can also align on columns. The index is preserved.
+        >>> nf = npd.NestedFrame({"a": [1,2,2,3], "b": [4,4,5,6]}).set_index(["a", "b"])
+        >>> nf2 = npd.NestedFrame({"a": [1,2,2,2], "b": [4,4,4,5], "c": [1,2,3,4]})
+        >>> nf.join_nested(nf2, "nested", on=["a", "b"]) # doctest: +NORMALIZE_WHITESPACE
+                            nested
+        a b
+        1 4              [{c: 1}]
+        2 4  [{c: 2}; …] (2 rows)
+          5              [{c: 4}]
+        3 6                  None
         """
         return self.join_nested(obj, name, how=how, on=on, dtype=dtype)
 
@@ -487,8 +501,10 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
-        on : str, default: None
-            A column in the list
+        on : str or list of str, default: None
+            Column(s) in the calling frame to join on instead of the index.
+            The original index is always preserved. The column(s) are used
+            only as join keys and are dropped from the nested structure.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -503,6 +519,7 @@ class NestedFrame(pd.DataFrame):
         --------
 
         >>> import nested_pandas as npd
+
         >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
         ...            index=[0,1,2])
         >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
@@ -513,9 +530,18 @@ class NestedFrame(pd.DataFrame):
         0  1  4  [{c: 1}; …] (3 rows)
         1  2  5  [{c: 4}; …] (3 rows)
         2  3  6  [{c: 7}; …] (3 rows)
+
+        >>> # We can also align on columns. The index is preserved.
+        >>> nf = npd.NestedFrame({"a": [1,2,2,3], "b": [4,4,5,6]}).set_index(["a", "b"])
+        >>> nf2 = npd.NestedFrame({"a": [1,2,2,2], "b": [4,4,4,5], "c": [1,2,3,4]})
+        >>> nf.join_nested(nf2, "nested", on=["a", "b"]) # doctest: +NORMALIZE_WHITESPACE
+                            nested
+        a b
+        1 4              [{c: 1}]
+        2 4  [{c: 2}; …] (2 rows)
+          5              [{c: 4}]
+        3 6                  None
         """
-        if on is not None and not isinstance(on, str):
-            raise ValueError("Currently we only support a single column for 'on'")
         # Add sources to objects
         packed = pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()

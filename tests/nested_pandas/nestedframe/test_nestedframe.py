@@ -491,11 +491,6 @@ def test_join_nested_with_flat_df_and_mismatched_index():
     assert_frame_equal(left_res, default_res)
 
     # Test still adding the nested frame in a "left" fashion but on the "new_index" column
-
-    # We currently don't support a list of columns for the 'on' argument
-    with pytest.raises(ValueError):
-        left_res_on = base.join_nested(nested, "nested", how="left", on=["new_index"])
-    # Instead we should pass a single column name, "new_index" which exists in both frames.
     left_res_on = base.join_nested(nested, "nested", how="left", on="new_index")
     assert "nested" in left_res_on.columns
     # Check that the index of the base layer is still being used
@@ -518,6 +513,10 @@ def test_join_nested_with_flat_df_and_mismatched_index():
             # Use an iloc
             assert left_res_on.iloc[i]["nested"] is None
             assert join_idx not in left_res_on["nested"].explode().index
+
+    # Single-element list is equivalent to passing the column name as a string
+    left_res_on_list = base.join_nested(nested, "nested", how="left", on=["new_index"])
+    assert_frame_equal(left_res_on_list, left_res_on)
 
     # Test adding the nested frame in a "right" fashion, where the index of the "right"
     # frame (our nested layer) is preserved
@@ -648,6 +647,65 @@ def test_join_nested_with_flat_df_and_mismatched_index():
     # Since we have confirmed that the "nex_index" column was the intersection that we expected
     # we know that none of the joined values should be none
     assert not inner_res_on.isnull().values.any()
+
+
+def test_join_nested_with_multi_column_on():
+    """Test that join_nested can use a list of columns as a join key"""
+
+    base = NestedFrame(data={"a": [1, 1, 2, 2, 3, 3], "b": [4, 5, 4, 5, 4, 5], "d": [1, 2, 3, 4, 5, 6]})
+
+    nested = pd.DataFrame(
+        data={
+            "a": [1, 1, 2, 2, 3, 3, 3],
+            "b": [4, 4, 4, 5, 5, 5, 6],
+            "c": [1, 2, 3, 4, 5, 6, 7],
+        }
+    )
+
+    # left (default): all base rows kept
+    left = base.join_nested(nested, "lc", on=["a", "b"])
+    assert len(left) == 6
+    # the original index is preserved
+    assert list(left.index) == list(base.index)
+    # the "on" columns are removed from the nested structure
+    assert "a" in left.columns
+    assert "b" in left.columns
+    assert "a" not in left["lc"].nest.columns
+    assert "b" not in left["lc"].nest.columns
+    # the data was joined correctly for each (a,b) pair
+    assert list(left.iloc[0]["lc"]["c"]) == [1, 2]  # matches for (1,4)
+    assert left.iloc[1]["lc"] is None  # no matches for (1,5)
+    assert list(left.iloc[2]["lc"]["c"]) == [3]  # matches for (2,4)
+    assert list(left.iloc[3]["lc"]["c"]) == [4]  # matches for (2,5)
+    assert left.iloc[4]["lc"] is None  # no matches for (3,4)
+    assert list(left.iloc[5]["lc"]["c"]) == [5, 6]  # matches for (3,5)
+
+    # inner: similar to left, but has only base rows with a nested match
+    inner = base.join_nested(nested, "lc", on=["a", "b"], how="inner")
+    assert list(inner.index) == [0, 2, 3, 5]
+    pd.testing.assert_frame_equal(left[~left["lc"].isna()], inner)
+
+    # right: all nested rows are kept
+    right = base.join_nested(nested, "lc", on=["a", "b"], how="right")
+    assert len(right) == 5
+    # (a,b) pair (3,6) is in nested but in not base
+    unmatched = right[(right["a"] == 3) & (right["b"] == 6)]
+    assert len(unmatched) == 1
+    assert list(unmatched.iloc[0]["lc"]["c"]) == [7]
+    # unmatched base rows get NaN base cols
+    assert pd.isna(unmatched.iloc[0]["d"])
+
+    # outer: union of both
+    outer = base.join_nested(nested, "lc", on=["a", "b"], how="outer")
+    assert len(outer) == 7
+    # unmatched base rows get None nested
+    unmatched_base = outer[(outer["a"] == 1) & (outer["b"] == 5)]
+    assert unmatched_base.iloc[0]["lc"] is None
+    unmatched_base2 = outer[(outer["a"] == 3) & (outer["b"] == 4)]
+    assert unmatched_base2.iloc[0]["lc"] is None
+    # unmatched nested rows get NaN base cols
+    unmatched_nested = outer[(outer["a"] == 3) & (outer["b"] == 6)]
+    assert pd.isna(unmatched_nested.iloc[0]["d"])
 
 
 def test_join_nested_with_series():
