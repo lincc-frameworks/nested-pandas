@@ -157,7 +157,15 @@ class NestSeriesAccessor(Mapping):
         return pd.DataFrame(flat_series)
 
     @property
+    @deprecated(
+        version="0.7.0",
+        reason="`list_lengths` is deprecated and will be removed in version 0.8.0, use `len()` instead.",
+    )
     def list_lengths(self) -> list[int]:
+        """Lengths of the list arrays"""
+        return self.len()
+
+    def len(self) -> list[int]:
         """Lengths of the list arrays"""
         return self._series.array.list_lengths
 

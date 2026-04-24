@@ -341,7 +341,23 @@ def test_list_lengths():
         ]
     )
     assert series.shape == (3,)
-    assert_array_equal(series.nest.list_lengths, [3, 0, 2])
+    with pytest.deprecated_call(match="`list_lengths` is deprecated and will be removed in version 0.8.0"):
+        result = series.nest.list_lengths
+
+    assert_array_equal(result, [3, 0, 2])
+
+
+def test_len():
+    """Test that the .nest.len() method works."""
+    series = pack_seq(
+        [
+            pd.DataFrame({"a": [1, 2, 3], "b": [1.0, 5.0, 6.0], "c": ["a", "b", "c"]}),
+            None,
+            pd.DataFrame({"a": [1, 2], "b": [None, 0.0], "c": ["a", "b"]}),
+        ]
+    )
+    assert series.shape == (3,)
+    assert_array_equal(series.nest.len(), [3, 0, 2])
 
 
 def test_flat_length():
