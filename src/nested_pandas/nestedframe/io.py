@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import cast
 
@@ -352,8 +353,15 @@ def _columns_to_load(
     if columns is None or filters is None:
         return columns
 
-    # There is no simple way to interspect PyArrow expression objects, so we just load all the columns
+    # There is no simple way to introspect PyArrow expression objects, so we just load all the columns
     if isinstance(filters, pc.Expression):
+        warnings.warn(
+            "All columns will be loaded when 'filters' is a PyArrow Expression and 'columns' is set. "
+            "Use list-of-tuples filters to avoid this: [(col, op, value), ...]. "
+            "See pyarrow.parquet.read_table docs for the format.",
+            UserWarning,
+            stacklevel=2,
+        )
         return None
 
     if not isinstance(filters, list):

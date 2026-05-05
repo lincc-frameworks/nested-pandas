@@ -600,7 +600,8 @@ def test__columns_to_load():
     assert _columns_to_load([], None) == []
 
     # PyArrow Expression filter → return None (can't inspect columns needed)
-    assert _columns_to_load(cols, pc.field("z") < 0.5) is None
+    with pytest.warns(UserWarning, match="list-of-tuples"):
+        assert _columns_to_load(cols, pc.field("z") < 0.5) is None
 
     # filters is not a list/Expression/None → ValueError
     with pytest.raises(ValueError, match="filters must be"):
