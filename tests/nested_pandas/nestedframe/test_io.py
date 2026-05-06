@@ -5,8 +5,10 @@ from pathlib import Path
 
 import fsspec.implementations.http
 import fsspec.implementations.local
+import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
@@ -17,6 +19,7 @@ from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
     FSSPEC_BLOCK_SIZE,
+    _columns_to_load,
     _get_storage_options,
     _transform_read_parquet_data_arg,
     from_pyarrow,
@@ -566,3 +569,74 @@ def test_use_pandas_metadata():
         # Explicit False: index is NOT restored from pandas metadata
         nf_no_meta = read_parquet(file_path, use_pandas_metadata=False)
         assert nf_no_meta.index.name != "custom_idx"
+
+
+def test_issue_492():
+    """Loading with filters issue: https://github.com/lincc-frameworks/nested-pandas/issues/492"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, "tmp.parquet")
+
+        size = 500_000
+        generate_data(size, 1).assign(z=np.random.random(size)).to_parquet(file_path)
+
+        nf1 = read_parquet(file_path, columns=["a"], filters=[("z", "<", 0.5)])
+        assert nf1.shape[1] == 1
+
+        nf2 = read_parquet(file_path, columns=["a"], filters=[[("z", "<", 0.75), ("z", ">", 0.25)]])
+        assert nf2.shape[1] == 1
+
+
+def test__columns_to_load():
+    """Test _columns_to_load for all paths and raises."""
+    cols = ["a", "b"]
+
+    # columns=None always returns None regardless of filters
+    assert _columns_to_load(None, None) is None
+    assert _columns_to_load(None, [("z", "<", 0.5)]) is None
+    assert _columns_to_load(None, pc.field("z") < 0.5) is None
+
+    # filters=None returns columns unchanged
+    assert _columns_to_load(cols, None) == cols
+    assert _columns_to_load([], None) == []
+
+    # PyArrow Expression filter → return None (can't inspect columns needed)
+    with pytest.warns(UserWarning, match="list-of-tuples"):
+        assert _columns_to_load(cols, pc.field("z") < 0.5) is None
+
+    # filters is not a list/Expression/None → ValueError
+    with pytest.raises(ValueError, match="filters must be"):
+        _columns_to_load(cols, "z < 0.5")
+    with pytest.raises(ValueError, match="filters must be"):
+        _columns_to_load(cols, 42)
+
+    # Empty list → IndexError caught → ValueError
+    with pytest.raises(ValueError, match="filters format must be"):
+        _columns_to_load(cols, [])
+
+    # list[tuple] (flat) format
+    result = _columns_to_load(["a"], [("z", "<", 0.5)])
+    assert result == ["a", "z"]
+
+    # list[tuple] with multiple filter tuples (flat)
+    result = _columns_to_load(["a"], [("z", "<", 0.5), ("w", ">", 0.1)])
+    assert result == ["a", "w", "z"]
+
+    # list[list[tuple]] (nested/DNF) format
+    result = _columns_to_load(["a"], [[("z", "<", 0.5)]])
+    assert result == ["a", "z"]
+
+    # list[list[tuple]] with multiple conjunctions
+    result = _columns_to_load(["a"], [[("z", "<", 0.75), ("z", ">", 0.25)], [("w", "=", 1)]])
+    assert result == ["a", "w", "z"]
+
+    # filter columns already in columns → no duplicates, sorted
+    result = _columns_to_load(["a", "z"], [("z", "<", 0.5)])
+    assert result == ["a", "z"]
+
+    # inner element is not a list → ValueError
+    with pytest.raises(ValueError, match="filters format must be"):
+        _columns_to_load(cols, [("z", "<", 0.5), "not_a_tuple"])
+
+    # tuple in nested list that can't be unpacked into (col, op, val) → ValueError
+    with pytest.raises(ValueError, match="filters format must be"):
+        _columns_to_load(cols, [[("z", "<", 0.5, "extra")]])
