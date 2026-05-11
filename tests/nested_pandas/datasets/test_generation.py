@@ -10,6 +10,7 @@ def test_generate_data(n_layers):
 
     if isinstance(n_layers, int):
         assert len(nf.nested.nest.to_flat()) == 100
+        assert set(nf.nested.nest.to_flat().columns) == {"t", "flux", "flux_error", "band"}
 
     elif isinstance(n_layers, dict):
         assert "nested_a" in nf.columns
@@ -17,6 +18,8 @@ def test_generate_data(n_layers):
 
         assert len(nf.nested_a.nest.to_flat()) == 100
         assert len(nf.nested_b.nest.to_flat()) == 200
+        assert set(nf.nested_a.nest.to_flat().columns) == {"t", "flux", "flux_error", "band"}
+        assert set(nf.nested_b.nest.to_flat().columns) == {"t", "flux", "flux_error", "band"}
 
 
 def test_generate_data_bad_input():
