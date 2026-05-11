@@ -526,6 +526,24 @@ def from_pyarrow(
     -------
     NestedFrame
 
+    Examples
+    --------
+    >>> import nested_pandas as npd
+    >>> import pyarrow as pa
+    >>> table = pa.table({
+    ...     "obj_id": [1, 2, 3],
+    ...     "nested": pa.array([
+    ...         [{"flux": 0.5, "time": 1}],
+    ...         [{"flux": 1.2, "time": 2}, {"flux": 0.8, "time": 3}],
+    ...         [{"flux": 2.0, "time": 4}],
+    ...     ])
+    ... })
+    >>> npd.from_pyarrow(table)
+       obj_id                              nested
+    0       1              [{flux: 0.5, time: 1}]
+    1       2  [{flux: 1.2, time: 2}; …] (2 rows)
+    2       3              [{flux: 2.0, time: 4}]
+
     """
 
     if reject_nesting is None:

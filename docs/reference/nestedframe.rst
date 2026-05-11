@@ -64,3 +64,4 @@ I/O
     NestedFrame.to_parquet
     NestedFrame.to_pandas
     read_parquet
+    from_pyarrow
