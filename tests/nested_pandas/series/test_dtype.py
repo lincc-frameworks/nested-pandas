@@ -168,7 +168,7 @@ def test_name_multiple_nested():
     assert (
         nnf["outer"].dtype.name
         == "nested<a: [double], b: [double], inner: [nested<t: [double], flux: [double], "
-        "flux_error: [int64], band: [string]>]>"
+        "flux_error: [double], band: [string]>]>"
     )
 
 

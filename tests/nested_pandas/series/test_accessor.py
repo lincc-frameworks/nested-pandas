@@ -1179,7 +1179,7 @@ def test_issue266():
             "b": pa.float64(),
             "t": pa.float64(),
             "flux": pa.float64(),
-            "flux_error": pa.int64(),
+            "flux_error": pa.float64(),
             "band": pa.string(),
         }
     )
