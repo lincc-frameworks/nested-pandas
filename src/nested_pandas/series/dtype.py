@@ -14,7 +14,9 @@ from pandas.core.arrays import ExtensionArray
 from pandas.core.dtypes.base import ExtensionDtype
 
 from nested_pandas.series.utils import (
+    is_pa_type_a_list,
     is_pa_type_is_list_struct,
+    normalize_struct_list_type,
     transpose_list_struct_type,
     transpose_struct_list_type,
 )
@@ -193,7 +195,7 @@ class NestedDtype(ExtensionDtype):
 
         # Allow from_columns-style mapping inputs
         if isinstance(pyarrow_dtype, Mapping):
-            pyarrow_dtype = pa.struct({col: pa.list_(pa_type) for col, pa_type in pyarrow_dtype.items()})
+            pyarrow_dtype = pa.struct({col: pa.large_list(pa_type) for col, pa_type in pyarrow_dtype.items()})
             pyarrow_dtype = cast(pa.StructType, pyarrow_dtype)
 
         self.pyarrow_dtype, self.list_struct_pa_dtype = self._validate_dtype(pyarrow_dtype)
@@ -239,7 +241,7 @@ class NestedDtype(ExtensionDtype):
         nested<a: [double], b: [int64]>
         >>> assert (
         ...     dtype.pyarrow_dtype
-        ...     == pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.int64())})
+        ...     == pa.struct({"a": pa.large_list(pa.float64()), "b": pa.large_list(pa.int64())})
         ... )
         """
         return cls.from_columns(fields)
@@ -266,15 +268,15 @@ class NestedDtype(ExtensionDtype):
         nested<a: [double], b: [int64]>
         >>> assert (
         ...     dtype.pyarrow_dtype
-        ...     == pa.struct({"a": pa.list_(pa.float64()), "b": pa.list_(pa.int64())})
+        ...     == pa.struct({"a": pa.large_list(pa.float64()), "b": pa.large_list(pa.int64())})
         ... )
         """
-        pyarrow_dtype = pa.struct({column: pa.list_(pa_type) for column, pa_type in columns.items()})
+        pyarrow_dtype = pa.struct({column: pa.large_list(pa_type) for column, pa_type in columns.items()})
         pyarrow_dtype = cast(pa.StructType, pyarrow_dtype)
         return cls(pyarrow_dtype=pyarrow_dtype)
 
     @staticmethod
-    def _validate_dtype(pyarrow_dtype: pa.DataType) -> tuple[pa.StructType, pa.ListType]:
+    def _validate_dtype(pyarrow_dtype: pa.DataType) -> tuple[pa.StructType, pa.LargeListType]:
         """Check that the given pyarrow type is castable to the nested type.
 
         Parameters
@@ -286,20 +288,27 @@ class NestedDtype(ExtensionDtype):
         -------
         pa.StructType
             Struct-list pyarrow type representing the nested type.
-        pa.ListType
+        pa.LargeListType
             List-struct pyarrow type representing the nested type.
         """
         if not isinstance(pyarrow_dtype, pa.DataType):
             raise TypeError(f"Expected a 'pyarrow.DataType' object, got {type(pyarrow_dtype)}")
         if pa.types.is_struct(pyarrow_dtype):
             struct_type = cast(pa.StructType, pyarrow_dtype)
+            # Normalize list fields to large_list for backward compatibility
+            # (callers may pass pa.list_ fields)
+            struct_type = normalize_struct_list_type(struct_type)
             return struct_type, transpose_struct_list_type(struct_type)
-        # Currently, LongList and others are not supported
-        if pa.types.is_list(pyarrow_dtype):
-            list_type = cast(pa.ListType, pyarrow_dtype)
+        # Support pa.large_list (and pa.list_ for backward compatibility)
+        if is_pa_type_a_list(pyarrow_dtype):
+            if not pa.types.is_large_list(pyarrow_dtype):
+                # Normalize regular list or fixed-size list to large_list
+                pyarrow_dtype = pa.large_list(pyarrow_dtype.value_type)
+            list_type = cast(pa.LargeListType, pyarrow_dtype)
             return transpose_list_struct_type(list_type), list_type
         raise ValueError(
-            f"NestedDtype can only be constructed with pa.StructType or pa.ListType only, got {pyarrow_dtype}"
+            "NestedDtype can only be constructed with pa.StructType, pa.LargeListType, "
+            f"or pa.ListType, got {pyarrow_dtype}"
         )
 
     @property

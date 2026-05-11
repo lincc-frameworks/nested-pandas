@@ -45,6 +45,7 @@ dev = [
     "requests",
     "s3fs",
     "types-Deprecated", # Needed for mypy type checking of Deprecated package
+    "numba>=0.64.0",
 ]
 
 [build-system]

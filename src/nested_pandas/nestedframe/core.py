@@ -122,26 +122,31 @@ class NestedFrame(pd.DataFrame):
 
         # Display nested columns as small html dataframes with a single row
         def repack_row(chunk, header=True):
-            # If the chunk is None, just return None
+            # If the chunk is None or empty, return None (displayed same as Null)
             if chunk is None or len(chunk) == 0:
                 return None
-            # Grab length, then truncate to one row for display
             n_rows = len(chunk)
-            chunk = chunk.head(1).round(8)  # only show first row
-            chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
 
-            # Add a row that shows the number of additional rows not shown
-            len_row = pd.DataFrame(
-                {
-                    col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
-                    for i, col in enumerate(chunk.columns)
-                }
-            )
-            chunk = pd.concat([chunk, len_row], ignore_index=True)
+            if n_rows <= 2:
+                # For 1 or 2 rows, show all rows without a footer
+                chunk = chunk.round(8)
+                max_rows_html = n_rows
+            else:
+                # For 3+ rows, show first row and a "+N rows" footer
+                chunk = chunk.head(1).round(8)
+                chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
+                len_row = pd.DataFrame(
+                    {
+                        col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
+                        for i, col in enumerate(chunk.columns)
+                    }
+                )
+                chunk = pd.concat([chunk, len_row], ignore_index=True)
+                max_rows_html = 2
 
             # Estimate width and resize
             html_res = chunk.to_html(
-                max_rows=2,
+                max_rows=max_rows_html,
                 max_cols=5,
                 show_dimensions=False,
                 index=False,
@@ -266,7 +271,7 @@ class NestedFrame(pd.DataFrame):
         if unknown_cols:
             raise KeyError(f"{unknown_cols} not in index")
         non_nested_keys = [k for k in item if k in self.columns]
-        result = super().__getitem__(non_nested_keys)
+        result = super().__getitem__(non_nested_keys).copy()
         components = [self._parse_hierarchical_components(k) for k in item]
         nested_components = [c for c in components if self._is_known_hierarchical_column(c)]
         nested_columns = defaultdict(list)
@@ -418,8 +423,10 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
-        on : str, default: None
-            A column in the list
+        on : str or list of str, default: None
+            Column(s) in the calling frame to join on instead of the index.
+            The original index is always preserved. The column(s) are used
+            only as join keys and are dropped from the nested structure.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -434,6 +441,7 @@ class NestedFrame(pd.DataFrame):
         --------
 
         >>> import nested_pandas as npd
+
         >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
         ...            index=[0,1,2])
         >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
@@ -444,6 +452,17 @@ class NestedFrame(pd.DataFrame):
         0  1  4  [{c: 1}; …] (3 rows)
         1  2  5  [{c: 4}; …] (3 rows)
         2  3  6  [{c: 7}; …] (3 rows)
+
+        >>> # We can also align on columns. The index is preserved.
+        >>> nf = npd.NestedFrame({"a": [1,2,2,3], "b": [4,4,5,6]}).set_index(["a", "b"])
+        >>> nf2 = npd.NestedFrame({"a": [1,2,2,2], "b": [4,4,4,5], "c": [1,2,3,4]})
+        >>> nf.join_nested(nf2, "nested", on=["a", "b"]) # doctest: +NORMALIZE_WHITESPACE
+                            nested
+        a b
+        1 4              [{c: 1}]
+        2 4  [{c: 2}; …] (2 rows)
+          5              [{c: 4}]
+        3 6                  None
         """
         return self.join_nested(obj, name, how=how, on=on, dtype=dtype)
 
@@ -484,8 +503,10 @@ class NestedFrame(pd.DataFrame):
               index, and sort it lexicographically.
             - inner: form intersection of calling frame's index with other
               frame's index, preserving the order of the calling index.
-        on : str, default: None
-            A column in the list
+        on : str or list of str, default: None
+            Column(s) in the calling frame to join on instead of the index.
+            The original index is always preserved. The column(s) are used
+            only as join keys and are dropped from the nested structure.
         dtype : dtype or None
             NestedDtype to use for the nested column; pd.ArrowDtype or
             pa.DataType can also be used to specify the nested dtype. If None,
@@ -500,6 +521,7 @@ class NestedFrame(pd.DataFrame):
         --------
 
         >>> import nested_pandas as npd
+
         >>> nf = npd.NestedFrame({"a": [1, 2, 3], "b": [4, 5, 6]},
         ...            index=[0,1,2])
         >>> nf2 = npd.NestedFrame({"c":[1,2,3,4,5,6,7,8,9]},
@@ -510,9 +532,18 @@ class NestedFrame(pd.DataFrame):
         0  1  4  [{c: 1}; …] (3 rows)
         1  2  5  [{c: 4}; …] (3 rows)
         2  3  6  [{c: 7}; …] (3 rows)
+
+        >>> # We can also align on columns. The index is preserved.
+        >>> nf = npd.NestedFrame({"a": [1,2,2,3], "b": [4,4,5,6]}).set_index(["a", "b"])
+        >>> nf2 = npd.NestedFrame({"a": [1,2,2,2], "b": [4,4,4,5], "c": [1,2,3,4]})
+        >>> nf.join_nested(nf2, "nested", on=["a", "b"]) # doctest: +NORMALIZE_WHITESPACE
+                            nested
+        a b
+        1 4              [{c: 1}]
+        2 4  [{c: 2}; …] (2 rows)
+          5              [{c: 4}]
+        3 6                  None
         """
-        if on is not None and not isinstance(on, str):
-            raise ValueError("Currently we only support a single column for 'on'")
         # Add sources to objects
         packed = pack(obj, name=name, on=on, dtype=dtype)
         new_df = self.copy()
@@ -825,6 +856,95 @@ class NestedFrame(pd.DataFrame):
             inplace=inplace,
             errors=errors,
         )
+
+    def split(
+        self,
+        nested_col: str,
+        by: str,
+        values=None,
+        drop_by_col: bool = False,
+        drop_nested: bool = False,
+    ) -> NestedFrame:
+        """Split a nested column into multiple nested columns by a categorical sub-column.
+
+        Parameters
+        ----------
+        nested_col : str
+            The name of the nested column to split.
+        by : str
+            The name of the sub-column within nested_col to split on.
+        values : list or str or None, optional
+            The specific values to split on. If None, all unique values are used.
+            If a string is provided, it is iterated as a list of characters.
+        drop_by_col : bool, default False
+            If True, the sub-column specified by `by` is dropped from each new
+            nested column.
+        drop_nested : bool, default False
+            If True, the original nested column is dropped from the result.
+
+        Returns
+        -------
+        NestedFrame
+            A new NestedFrame with one new nested column per unique value in
+            `by`, named ``{nested_col}_{value}``.
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets.generation import generate_data
+        >>> nf = generate_data(5, 5, seed=1)
+        >>> nf.split("nested", by="band")[["a", "b", "nested_r"]] # doctest: +SKIP
+
+                  a         b                                                  nested_r
+        0  0.417022  0.184677    [{t: 8.38389, flux: 31.551563, band: 'r'}; …] (2 rows)
+        1  0.720324  0.372520   [{t: 19.365232, flux: 90.85955, band: 'r'}; …] (2 rows)
+        2  0.000114  0.691121  [{t: 11.173797, flux: 28.044399, band: 'r'}; …] (3 rows)
+        3  0.302333  0.793535               [{t: 2.807739, flux: 78.927933, band: 'r'}]
+        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …] (2 rows)
+        """
+
+        if nested_col not in self.nested_columns:
+            raise ValueError(
+                f"'{nested_col}' is not a nested column. Available nested columns: {self.nested_columns}"
+            )
+
+        if by not in self[nested_col].nest.columns:
+            raise ValueError(
+                f"'{by}' is not a sub-column of '{nested_col}'. "
+                f"Available sub-columns: {list(self[nested_col].nest.columns)}"
+            )
+
+        has_values = values is not None
+        split_values = self[f"{nested_col}.{by}"].unique() if not has_values else list(values)
+
+        if len(self) == 0:
+            result = self.copy()
+            if has_values:
+                for val in split_values:
+                    result[f"{nested_col}_{val}"] = None
+            if drop_nested:
+                result = result.drop(labels=[nested_col], axis=1)
+            return result
+
+        is_str = pd.api.types.is_string_dtype(self[f"{nested_col}.{by}"])
+
+        result = self.copy()
+
+        for val in split_values:
+            val_repr = f"'{val}'" if is_str else val
+            queried = self.query(f"{nested_col}.{by}=={val_repr}")
+            if queried is None or len(queried) == 0:
+                if has_values:
+                    result[f"{nested_col}_{val}"] = None
+                continue
+            filtered = queried[nested_col]
+            if drop_by_col:
+                filtered = filtered.nest.drop(by)
+            result[f"{nested_col}_{val}"] = filtered
+
+        if drop_nested:
+            result = result.drop(labels=[nested_col], axis=1)
+
+        return result
 
     def min(self, exclude_nest: bool = False, numeric_only: bool = False, **kwargs):
         """
@@ -1200,8 +1320,7 @@ class NestedFrame(pd.DataFrame):
         for nested_col in nested_columns:
             # Check if counts (lengths) in nested columns mismatch
             if len(flat_frames) > 0 and np.any(
-                w_ordinal_idx[nested_col].nest.list_lengths
-                != w_ordinal_idx[nested_columns[0]].nest.list_lengths
+                w_ordinal_idx[nested_col].nest.len() != w_ordinal_idx[nested_columns[0]].nest.len()
             ):
                 raise ValueError(
                     f"One or few rows of {nested_col} have different element counts from {nested_columns[0]}"
@@ -1458,6 +1577,16 @@ class NestedFrame(pd.DataFrame):
         3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, flux_error: 1....
         4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, flux_error: 1...
 
+        Most of the Series and NestedSeries attibutes and methods are available
+        through the query interface. For example, to query based on the length
+        of the nested frames, you can do:
+
+        >>> nf = nf.query("nested.len() > 2")
+        >>> nf
+                  a         b                                             nested
+        0  0.417022  0.184677  [{t: 13.40935, flux: 98.886109, band: 'g'}; …]...
+        3  0.302333  0.793535  [{t: 17.562349, flux: 1.828828, band: 'g'}; …]...
+        4  0.146756  1.077633  [{t: 17.527783, flux: 13.002857, band: 'r'}; …...
 
         See Also
         --------
@@ -2009,6 +2138,72 @@ class NestedFrame(pd.DataFrame):
         # Otherwise, return the results as a new NestedFrame
         return results_nf
 
+    def _apply_njit_map_rows(self, requested_columns, func):
+        """
+        Apply njit map_rows to njit custom function with requested_columns.
+        Currently only supports 1 or 2 arguments custom function.
+        """
+        try:
+            import numba  # noqa
+        except ImportError as err:
+            raise ImportError(
+                "njit=True requires numba, please install with pip install numba"
+                "or conda install conda-forge::numba"
+            ) from err
+
+        from . import njit_funcs
+
+        if len(requested_columns) == 1:
+            layer, col_name = requested_columns[0]
+            if layer == "base":
+                base_col = np.asarray(self[col_name])
+                results = njit_funcs._map_rows_njit1_base(func, base_col)
+            else:
+                nested_array = self[layer]
+
+                offsets = np.asarray(nested_array.array.list_offsets)
+                nested_col = np.asarray(nested_array[col_name])
+
+                results = njit_funcs._map_rows_njit1_nested(func, offsets, nested_col)
+
+        else:
+            # 2 requested columns for 2-arg custom function
+            layer1, col1_name = requested_columns[0]
+            layer2, col2_name = requested_columns[1]
+
+            if layer1 == "base" and layer2 == "base":
+                base_col1 = np.asarray(self[col1_name])
+                base_col2 = np.asarray(self[col2_name])
+
+                results = njit_funcs._map_rows_njit2_base_base(func, base_col1, base_col2)
+            elif layer1 == "base":
+                base_col1 = np.asarray(self[col1_name])
+
+                nested_array2 = self[layer2]
+                offsets = np.asarray(nested_array2.array.list_offsets)
+                col2 = np.asarray(nested_array2[col2_name])
+
+                results = njit_funcs._map_rows_njit2_base_nest(func, base_col1, offsets, col2)
+            elif layer2 == "base":
+                nested_array1 = self[layer1]
+                offsets = np.asarray(nested_array1.array.list_offsets)
+                col1 = np.asarray(nested_array1[col1_name])
+
+                base_col2 = np.asarray(self[col2_name])
+
+                results = njit_funcs._map_rows_njit2_nest_base(func, offsets, col1, base_col2)
+            else:
+                nested_array1 = self[layer1]
+                nested_array2 = self[layer2]
+                offsets1 = np.asarray(nested_array1.array.list_offsets)
+                offsets2 = np.asarray(nested_array2.array.list_offsets)
+                col1 = np.asarray(nested_array1[col1_name])
+                col2 = np.asarray(nested_array2[col2_name])
+
+                results = njit_funcs._map_rows_njit2_nest_nest(func, offsets1, offsets2, col1, col2)
+
+        return results.tolist()
+
     def map_rows(
         self,
         func: Callable[..., Any],
@@ -2018,6 +2213,7 @@ class NestedFrame(pd.DataFrame):
         output_names: None | str | list[str] = None,
         infer_nesting: bool = True,
         append_columns: bool = False,
+        njit: bool = False,
         **kwargs,
     ) -> NestedFrame:  # type: ignore[override]
         """
@@ -2064,6 +2260,12 @@ class NestedFrame(pd.DataFrame):
             hierarchical column name (e.g. "nested.x"). If their base nested column exists in the
             original NestedFrame, the new output sub-columns will be added into the frame of the
             existing nested column. See an example below.
+        njit : bool, default False
+            If Ture, the function will try to use numba's njit to speed up the execution.
+            This will only work if the custom function is compatible with njit and the requested columns
+            are at most two.
+
+            Note that using njit will disable support for `row_container="dict"`.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to the function.
 
@@ -2247,6 +2449,12 @@ class NestedFrame(pd.DataFrame):
         results = []
 
         if row_container == "dict":
+            if njit:
+                raise ValueError(
+                    "njit execution is not supported for `row_container='dict'`, "
+                    "use `row_container='args'` instead."
+                )
+
             arg_dict = {}
             for layer, col in requested_columns:
                 if layer == "base":
@@ -2262,15 +2470,25 @@ class NestedFrame(pd.DataFrame):
             ]
 
         elif row_container == "args":
-            # Build iterators for each column
-            iterators = []
-            for layer, col in requested_columns:
-                if layer == "base":
-                    iterators.append(self[col])
-                else:
-                    iterators.append(self[layer].array.iter_field_lists(col))
+            if njit:
+                try:
+                    results = self._apply_njit_map_rows(requested_columns, func)
+                # except Exception as err:
+                except Exception as err:
+                    raise ValueError(
+                        "njit execution for map_rowsis only supported for "
+                        "numba.jit decorated functions with at most 2 arguments"
+                    ) from err
+            else:
+                # Default python execution
+                iterators = []
+                for layer, col in requested_columns:
+                    if layer == "base":
+                        iterators.append(self[col])
+                    else:
+                        iterators.append(self[layer].array.iter_field_lists(col))
 
-            results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
+                results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
 
         # If the func returns a single array per row wrap results in a `NestedSeries`.
         # Otherwise, Pandas will try to expand array elements into separate columns.
@@ -2326,7 +2544,7 @@ class NestedFrame(pd.DataFrame):
         # Otherwise, return the results as a new NestedFrame
         return results_nf
 
-    def to_pandas(self, list_struct=False) -> pd.DataFrame:
+    def to_pandas(self, list_struct=False, large_list=False) -> pd.DataFrame:
         """Convert to an ordinal pandas DataFrame, with no NestedDtype series.
 
         NestedDtype is cast to pd.ArrowDtype
@@ -2337,6 +2555,11 @@ class NestedFrame(pd.DataFrame):
             If True, cast nested columns to pandas struct-list arrow extension
             array columns. If False (default), cast nested columns to
             list-struct array columns.
+        large_list : bool
+            If False (default), use regular ``list_`` (int32 offsets). Set to
+            True to use ``large_list`` (int64 offsets), which is required when
+            the total number of nested elements across all rows exceeds
+            ``2**31 - 1``.
 
         Returns
         -------
@@ -2357,10 +2580,10 @@ class NestedFrame(pd.DataFrame):
         """
         df = pd.DataFrame(self)
         for col in self.nested_columns:
-            df[col] = df[col].array.to_arrow_ext_array(list_struct=list_struct)
+            df[col] = df[col].array.to_arrow_ext_array(list_struct=list_struct, large_list=large_list)
         return df
 
-    def to_parquet(self, path, **kwargs) -> None:
+    def to_parquet(self, path, large_list=False, **kwargs) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
         as a single parquet file where each nested dataset is packed into its
         own column or as an individual parquet file for each layer.
@@ -2372,6 +2595,11 @@ class NestedFrame(pd.DataFrame):
         ----------
         path : str
             The path to the parquet file
+        large_list : bool
+            If False (default), use regular ``list_`` (int32 offsets). Set to
+            True to use ``large_list`` (int64 offsets), which is required when
+            the total number of nested elements across all rows exceeds
+            ``2**31 - 1``.
         kwargs : keyword arguments, optional
             Keyword arguments to pass to
             `pyarrow.parquet.write_table
@@ -2385,9 +2613,9 @@ class NestedFrame(pd.DataFrame):
         --------
         >>> from nested_pandas.datasets.generation import generate_data
         >>> nf = generate_data(5,5, seed=1)
-        >>> nf.to_parquet("nestedframe.parquet")
+        >>> nf.to_parquet("nestedframe.parquet")  # doctest: +SKIP
         """
-        df = self.to_pandas(list_struct=False)
+        df = self.to_pandas(list_struct=False, large_list=large_list)
 
         # Write through pyarrow
         # This is potentially not zero-copy

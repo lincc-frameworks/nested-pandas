@@ -71,7 +71,7 @@ def pack_flat(
     The dtype of the column is `nested_pandas.NestedDtype` with
     the corresponding pyarrow type. The index of the output series is
     the unique index of the input dataframe. The Series has `.nest` accessor,
-    see `nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    see :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
 
     Parameters
     ----------
@@ -89,7 +89,7 @@ def pack_flat(
 
     See Also
     --------
-    nested_pandas.series.accessor.NestedSeriesAccessor : .nest accessor for the output series.
+    nested_pandas.series.accessor.NestSeriesAccessor : .nest accessor for the output series.
     nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
@@ -190,7 +190,7 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
     The dtype of the column is `nested_pandas.NestedDtype` with the corresponding
     pyarrow type. The index of the output series is the unique index of the
     input dataframe. The Series has `.nest` accessor, see
-    `nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
 
     For every row, all the nested array (aka pyarrow list) lengths must be
     the same.
@@ -320,7 +320,7 @@ def view_sorted_series_as_list_array(
     flat_array = pa.array(series, from_pandas=True)
     if isinstance(flat_array, pa.ChunkedArray):
         flat_array = flat_array.combine_chunks()
-    list_array = pa.ListArray.from_arrays(
+    list_array = pa.LargeListArray.from_arrays(
         offset,
         flat_array,
     )
@@ -356,7 +356,7 @@ def calculate_sorted_index_offsets(index: pd.Index) -> np.ndarray:
     offset_but_last = np.nonzero(~index.duplicated(keep="first"))[0]
     offset = np.append(offset_but_last, len(index))
 
-    # Arrow uses int32 for offsets
-    offset = offset.astype(np.int32)
+    # LargeListArray uses int64 for offsets
+    offset = offset.astype(np.int64)
 
     return offset
