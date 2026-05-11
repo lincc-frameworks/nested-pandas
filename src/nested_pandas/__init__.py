@@ -1,6 +1,6 @@
 from ._version import __version__
 from .nestedframe import NestedFrame
-from .nestedframe.io import read_parquet, from_pyarrow
+from .nestedframe.io import from_pyarrow, read_parquet
 
 # Import for registering
 from .series.accessor import NestSeriesAccessor  # noqa: F401
