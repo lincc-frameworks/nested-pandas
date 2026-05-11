@@ -134,6 +134,31 @@ def test_to_lists_with_columns():
     assert_frame_equal(lists, desired)
 
 
+def test_to_lists_large_list_false():
+    """Test that to_lists(large_list=False) returns list (int32) dtype columns."""
+    struct_array = pa.StructArray.from_arrays(
+        arrays=[
+            pa.array([np.array([1.0, 2.0, 3.0]), -np.array([1.0, 2.0, 1.0])]),
+            pa.array([np.array([4.0, 5.0, 6.0]), -np.array([3.0, 4.0, 5.0])]),
+        ],
+        names=["a", "b"],
+    )
+    series = pd.Series(struct_array, dtype=NestedDtype(struct_array.type), index=[0, 1])
+
+    lists = series.nest.to_lists(large_list=False)
+
+    assert lists["a"].dtype == pd.ArrowDtype(pa.list_(pa.float64()))
+    assert lists["b"].dtype == pd.ArrowDtype(pa.list_(pa.float64()))
+    # Values should be unchanged
+    np.testing.assert_array_equal(lists["a"].iloc[0], [1.0, 2.0, 3.0])
+    np.testing.assert_array_equal(lists["b"].iloc[1], [-3.0, -4.0, -5.0])
+
+    # large_list=True returns large_list (int64 offsets)
+    lists_large = series.nest.to_lists(large_list=True)
+    assert lists_large["a"].dtype == pd.ArrowDtype(pa.large_list(pa.float64()))
+    assert lists_large["b"].dtype == pd.ArrowDtype(pa.large_list(pa.float64()))
+
+
 def test_to_lists_fails_for_empty_input():
     """Test that the .nest.to_lists([]) fails when no columns are provided."""
     struct_array = pa.StructArray.from_arrays(
@@ -316,7 +341,23 @@ def test_list_lengths():
         ]
     )
     assert series.shape == (3,)
-    assert_array_equal(series.nest.list_lengths, [3, 0, 2])
+    with pytest.deprecated_call(match="`list_lengths` is deprecated and will be removed in version 0.8.0"):
+        result = series.nest.list_lengths
+
+    assert_array_equal(result, [3, 0, 2])
+
+
+def test_len():
+    """Test that the .nest.len() method works."""
+    series = pack_seq(
+        [
+            pd.DataFrame({"a": [1, 2, 3], "b": [1.0, 5.0, 6.0], "c": ["a", "b", "c"]}),
+            None,
+            pd.DataFrame({"a": [1, 2], "b": [None, 0.0], "c": ["a", "b"]}),
+        ]
+    )
+    assert series.shape == (3,)
+    assert_array_equal(series.nest.len(), [3, 0, 2])
 
 
 def test_flat_length():

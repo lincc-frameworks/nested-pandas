@@ -85,6 +85,28 @@ def test_html_repr_empty_list():
     assert "+-1 rows" not in html and "None" in html
 
 
+def test_html_repr_small_rows():
+    """Make sure the html representation handles small nested sub-frames correctly"""
+    # 0 rows: displayed as None (same as Null)
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[1, 2, 3], []]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+0 rows" not in html
+    assert "None" in html  # empty sub-frame shown as None
+
+    # 1 row: no "+0 rows" footer
+    base = NestedFrame(data={"a": [1, 2], "b": [2, 4], "c": [[42], [1, 2, 3]]}, index=[0, 1])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+0 rows" not in html
+
+    # 2 rows: show both rows, no "+1 rows" footer
+    base = NestedFrame(data={"a": [1], "b": [2], "c": [[10, 20]]}, index=[0])
+    base = base.nest_lists(columns=["c"], name="nested")
+    html = base._repr_html_()
+    assert "+1 rows" not in html
+
+
 def test_all_columns():
     """Test the all_columns function"""
 
@@ -469,11 +491,6 @@ def test_join_nested_with_flat_df_and_mismatched_index():
     assert_frame_equal(left_res, default_res)
 
     # Test still adding the nested frame in a "left" fashion but on the "new_index" column
-
-    # We currently don't support a list of columns for the 'on' argument
-    with pytest.raises(ValueError):
-        left_res_on = base.join_nested(nested, "nested", how="left", on=["new_index"])
-    # Instead we should pass a single column name, "new_index" which exists in both frames.
     left_res_on = base.join_nested(nested, "nested", how="left", on="new_index")
     assert "nested" in left_res_on.columns
     # Check that the index of the base layer is still being used
@@ -496,6 +513,10 @@ def test_join_nested_with_flat_df_and_mismatched_index():
             # Use an iloc
             assert left_res_on.iloc[i]["nested"] is None
             assert join_idx not in left_res_on["nested"].explode().index
+
+    # Single-element list is equivalent to passing the column name as a string
+    left_res_on_list = base.join_nested(nested, "nested", how="left", on=["new_index"])
+    assert_frame_equal(left_res_on_list, left_res_on)
 
     # Test adding the nested frame in a "right" fashion, where the index of the "right"
     # frame (our nested layer) is preserved
@@ -626,6 +647,65 @@ def test_join_nested_with_flat_df_and_mismatched_index():
     # Since we have confirmed that the "nex_index" column was the intersection that we expected
     # we know that none of the joined values should be none
     assert not inner_res_on.isnull().values.any()
+
+
+def test_join_nested_with_multi_column_on():
+    """Test that join_nested can use a list of columns as a join key"""
+
+    base = NestedFrame(data={"a": [1, 1, 2, 2, 3, 3], "b": [4, 5, 4, 5, 4, 5], "d": [1, 2, 3, 4, 5, 6]})
+
+    nested = pd.DataFrame(
+        data={
+            "a": [1, 1, 2, 2, 3, 3, 3],
+            "b": [4, 4, 4, 5, 5, 5, 6],
+            "c": [1, 2, 3, 4, 5, 6, 7],
+        }
+    )
+
+    # left (default): all base rows kept
+    left = base.join_nested(nested, "lc", on=["a", "b"])
+    assert len(left) == 6
+    # the original index is preserved
+    assert list(left.index) == list(base.index)
+    # the "on" columns are removed from the nested structure
+    assert "a" in left.columns
+    assert "b" in left.columns
+    assert "a" not in left["lc"].nest.columns
+    assert "b" not in left["lc"].nest.columns
+    # the data was joined correctly for each (a,b) pair
+    assert list(left.iloc[0]["lc"]["c"]) == [1, 2]  # matches for (1,4)
+    assert left.iloc[1]["lc"] is None  # no matches for (1,5)
+    assert list(left.iloc[2]["lc"]["c"]) == [3]  # matches for (2,4)
+    assert list(left.iloc[3]["lc"]["c"]) == [4]  # matches for (2,5)
+    assert left.iloc[4]["lc"] is None  # no matches for (3,4)
+    assert list(left.iloc[5]["lc"]["c"]) == [5, 6]  # matches for (3,5)
+
+    # inner: similar to left, but has only base rows with a nested match
+    inner = base.join_nested(nested, "lc", on=["a", "b"], how="inner")
+    assert list(inner.index) == [0, 2, 3, 5]
+    pd.testing.assert_frame_equal(left[~left["lc"].isna()], inner)
+
+    # right: all nested rows are kept
+    right = base.join_nested(nested, "lc", on=["a", "b"], how="right")
+    assert len(right) == 5
+    # (a,b) pair (3,6) is in nested but in not base
+    unmatched = right[(right["a"] == 3) & (right["b"] == 6)]
+    assert len(unmatched) == 1
+    assert list(unmatched.iloc[0]["lc"]["c"]) == [7]
+    # unmatched base rows get NaN base cols
+    assert pd.isna(unmatched.iloc[0]["d"])
+
+    # outer: union of both
+    outer = base.join_nested(nested, "lc", on=["a", "b"], how="outer")
+    assert len(outer) == 7
+    # unmatched base rows get None nested
+    unmatched_base = outer[(outer["a"] == 1) & (outer["b"] == 5)]
+    assert unmatched_base.iloc[0]["lc"] is None
+    unmatched_base2 = outer[(outer["a"] == 3) & (outer["b"] == 4)]
+    assert unmatched_base2.iloc[0]["lc"] is None
+    # unmatched nested rows get NaN base cols
+    unmatched_nested = outer[(outer["a"] == 3) & (outer["b"] == 6)]
+    assert pd.isna(unmatched_nested.iloc[0]["d"])
 
 
 def test_join_nested_with_series():
@@ -1675,6 +1755,109 @@ def test_drop():
     assert "f" not in dropped_multcols.nested2.nest.columns
 
 
+def test_split():
+    """Test that split correctly splits a nested column by a categorical sub-column"""
+    nf = generate_data(5, 5, seed=1)
+
+    # Test basic split
+    result = nf.split("nested", by="band")
+    assert "nested" in result.columns
+    assert "nested_r" in result.columns
+    assert "nested_g" in result.columns
+    assert isinstance(result["nested_r"].dtype, NestedDtype)
+    assert isinstance(result["nested_g"].dtype, NestedDtype)
+
+    # Test filtering correctness
+    assert (result["nested_r"].nest["band"] == "r").all()
+    assert (result["nested_g"].nest["band"] == "g").all()
+
+    # Test values=None
+    unique_bands = nf["nested.band"].unique()
+    for band in unique_bands:
+        assert f"nested_{band}" in result.columns
+
+    # values= as list subset
+    result_subset = nf.split("nested", by="band", values=["g"])
+    assert "nested_g" in result_subset.columns
+    assert "nested_r" not in result_subset.columns
+
+    # values= as string: iterated as characters
+    result_str = nf.split("nested", by="band", values="rg")
+    assert "nested_r" in result_str.columns
+    assert "nested_g" in result_str.columns
+
+    # values= as empty list
+    result_empty_list = nf.split("nested", by="band", values=[])
+    assert "nested_r" not in result_empty_list.columns
+    assert "nested_g" not in result_empty_list.columns
+    assert "nested" in result_empty_list.columns
+
+    # values= as empty string
+    result_empty_str = nf.split("nested", by="band", values="")
+    assert "nested_r" not in result_empty_str.columns
+    assert "nested_g" not in result_empty_str.columns
+
+    # Test values= with values not present in the data, equivalent to values="z5" or values=["z", "5"]
+    result_missing = nf.split("nested", by="band", values=["z", 5])
+    assert "nested_z" in result_missing.columns
+    assert "nested_5" in result_missing.columns
+    assert result_missing["nested_z"].isna().all()
+    assert result_missing["nested_5"].isna().all()
+
+    # drop_by_col=True
+    result_drop_by = nf.split("nested", by="band", drop_by_col=True)
+    assert "band" not in result_drop_by["nested_r"].nest.columns
+    assert "band" not in result_drop_by["nested_g"].nest.columns
+    assert "t" in result_drop_by["nested_r"].nest.columns
+    assert "flux" in result_drop_by["nested_r"].nest.columns
+
+    # drop_nested=True
+    result_drop_nested = nf.split("nested", by="band", drop_nested=True)
+    assert "nested" not in result_drop_nested.columns
+    assert "nested_r" in result_drop_nested.columns
+    assert "nested_g" in result_drop_nested.columns
+
+    # both drop options together
+    result_drop_both = nf.split("nested", by="band", drop_by_col=True, drop_nested=True)
+    assert "nested" not in result_drop_both.columns
+    assert "band" not in result_drop_both["nested_r"].nest.columns
+
+    # original frame is not modified
+    assert "nested_r" not in nf.columns
+    assert "nested_g" not in nf.columns
+
+
+def test_split_errors():
+    """Test that split raises ValueError for invalid inputs"""
+    nf = generate_data(5, 5, seed=1)
+
+    with pytest.raises(ValueError, match="not a nested column"):
+        nf.split("doesnotexist", by="band")
+
+    with pytest.raises(ValueError, match="not a sub-column"):
+        nf.split("nested", by="doesnotexist")
+
+
+def test_split_empty_frame():
+    """Test that split handles an empty NestedFrame correctly"""
+    nf = generate_data(5, 5, seed=1).iloc[:0]
+    result = nf.split("nested", by="band")
+    assert isinstance(result, NestedFrame)
+    assert len(result) == 0
+
+    # values provided columns must appear as all-NA
+    result_explicit = nf.split("nested", by="band", values=["r", "g"])
+    assert "nested_r" in result_explicit.columns
+    assert "nested_g" in result_explicit.columns
+    assert result_explicit["nested_r"].isna().all()
+    assert result_explicit["nested_g"].isna().all()
+
+    # drop_nested=True must still be honoured on empty frame
+    result_drop = nf.split("nested", by="band", values=["r"], drop_nested=True)
+    assert "nested" not in result_drop.columns
+    assert "nested_r" in result_drop.columns
+
+
 def test_min():
     """Test min function return correct result with and without the nested columns"""
     base = NestedFrame(data={"a": [1, 2, 3], "b": [2, 4, 6], "c": ["x", "y", "z"]}, index=[0, 1, 2])
@@ -2056,9 +2239,10 @@ def test_explode_non_unique_index():
         lambda x: {"unaligned_nested.unaligned_t": x[:2]}, columns="nested.t", row_container="args"
     ).reset_index(drop=True)
     # Add a list column which has the same lengths
-    nf["aligned_list_t"] = nf["nested"].nest.to_lists("t")["t"]
+    # large_list=False: pandas < 3 does not support DataFrame.explode on large_list columns
+    nf["aligned_list_t"] = nf["nested"].nest.to_lists("t", large_list=False)["t"]
     # Add a list column which has different lengths
-    nf["unaligned_list_t"] = nf["nested"].nest.to_lists("t")["t"].list[:2]
+    nf["unaligned_list_t"] = nf["nested"].nest.to_lists("t", large_list=False)["t"].list[:2]
     # Make index non-unique
     nf.index = np.tile(np.arange(10), 10)
     nf.index.name = "my_index"

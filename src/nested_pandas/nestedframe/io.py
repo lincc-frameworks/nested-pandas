@@ -1,11 +1,14 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
+from typing import cast
 
 import fsspec.parquet
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.fs
 import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
@@ -36,6 +39,7 @@ def read_parquet(
     reject_nesting: list[str] | str | None = None,
     autocast_list: bool = False,
     is_dir: bool | None = None,
+    use_pandas_metadata: bool = True,
     **kwargs,
 ) -> NestedFrame:
     """Load a parquet object from a file path into a NestedFrame.
@@ -81,6 +85,11 @@ def read_parquet(
         `upath.is_dir()` to identify the type of pointer. This argument is ignored
         for HTTP, as inferring the type for HTTP is particularly expensive because
         it requires downloading the contents of the pointer in its entirety.
+    use_pandas_metadata: bool, default=True
+        If True (default), apply the pandas metadata stored in the Parquet
+        file's schema when constructing the NestedFrame (e.g. restoring the
+        index and column dtypes). This matches the default behavior of
+        pd.read_parquet. Set to False to ignore the metadata.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`
 
@@ -195,7 +204,12 @@ def read_parquet(
         for col, struct in structs.items():
             table = table.append_column(col, struct)
 
-    return from_pyarrow(table, reject_nesting=reject_nesting, autocast_list=autocast_list)
+    return from_pyarrow(
+        table,
+        reject_nesting=reject_nesting,
+        autocast_list=autocast_list,
+        use_pandas_metadata=use_pandas_metadata,
+    )
 
 
 def _read_parquet_into_table(
@@ -233,7 +247,7 @@ def _read_parquet_into_table(
 
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
-            columns=columns,
+            columns=_columns_to_load(columns, kwargs.get("filters")),
             storage_options=storage_options,
             fs=filesystem,
             engine="pyarrow",
@@ -325,6 +339,64 @@ def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | N
         return upath.is_dir()
 
 
+def _columns_to_load(
+    columns: list[str] | None,
+    filters: pc.Expression | list[tuple[str, str, object]] | list[list[tuple[str, str, object]]] | None,
+) -> list[str] | None:
+    """Get a list of the columns to pass to fsspec.parquet.open_parquet_file
+
+    It should be more than just "columns", because it may also include columns needed for filters.
+
+    It returns either a list of columns to load, or None if original columns is None, or if filters are
+    given as a PyArrow Expression object.
+    """
+    if columns is None or filters is None:
+        return columns
+
+    # There is no simple way to introspect PyArrow expression objects, so we just load all the columns
+    if isinstance(filters, pc.Expression):
+        warnings.warn(
+            "All columns will be loaded when 'filters' is a PyArrow Expression and 'columns' is set. "
+            "Use list-of-tuples filters to avoid this: [(col, op, value), ...]. "
+            "See pyarrow.parquet.read_table docs for the format.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return None
+
+    if not isinstance(filters, list):
+        raise ValueError(
+            "filters must be an PyArrow Expression, list of tuples, or list of lists of tuples, or None; "
+            f"got '{type(filters)}'"
+        )
+
+    # Convert list[tuple] to list[list[tuple]] if needed
+    try:
+        element = filters[0][0]
+    except IndexError as e:
+        raise ValueError(
+            "filters format must be [(col, op, value), ...], or [[(col, op, value), ...], ...]"
+        ) from e
+    is_nested_list = isinstance(element, tuple)
+    if not is_nested_list:
+        filters = [cast(list[tuple[str, str, object]], filters)]
+
+    columns_from_filters: list[str] = []
+    for filter_ in filters:
+        if not isinstance(filter_, list):
+            raise ValueError(
+                "filters format must be [(col, op, value), ...], or [[(col, op, value), ...], ...]"
+            )
+        try:
+            columns_from_filters.extend(col for col, _, _ in filter_)
+        except ValueError as e:
+            raise ValueError(
+                "filters format must be [(col, op, value), ...], or [[(col, op, value), ...], ...]"
+            ) from e
+
+    return sorted(set(columns_from_filters + columns))
+
+
 def _read_remote_parquet_directory(
     dir_upath: UPath, filesystem, storage_options, columns: list[str] | None, **kwargs
 ) -> pa.Table:
@@ -338,7 +410,7 @@ def _read_remote_parquet_directory(
         else:
             with fsspec.parquet.open_parquet_file(
                 upath.path,
-                columns=columns,
+                columns=_columns_to_load(columns, kwargs.get("filters")),
                 storage_options=storage_options,
                 fs=filesystem,
                 engine="pyarrow",
@@ -427,6 +499,7 @@ def from_pyarrow(
     table: pa.Table,
     reject_nesting: list[str] | str | None = None,
     autocast_list: bool = False,
+    use_pandas_metadata: bool = True,
 ) -> NestedFrame:
     """
     Load a pyarrow Table object into a NestedFrame.
@@ -443,6 +516,11 @@ def from_pyarrow(
         Columns specified here will be read using the corresponding pandas.ArrowDtype.
     autocast_list: bool, default=False
         If True, automatically cast list columns to nested columns with NestedDType.
+    use_pandas_metadata: bool, default=True
+        If True (default), apply the pandas metadata stored in the Parquet
+        file's schema when constructing the NestedFrame (e.g. restoring the
+        index and column dtypes). This matches the default behavior of
+        pd.read_parquet. Set to False to ignore the metadata.
 
     Returns
     -------
@@ -476,7 +554,14 @@ def from_pyarrow(
     # Convert to NestedFrame
     # not zero-copy, but reduce memory pressure via the self_destruct kwarg
     # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
-    df = NestedFrame(table.to_pandas(types_mapper=pd.ArrowDtype, split_blocks=True, self_destruct=True))
+    df = NestedFrame(
+        table.to_pandas(
+            types_mapper=pd.ArrowDtype,
+            split_blocks=True,
+            self_destruct=True,
+            ignore_metadata=not use_pandas_metadata,
+        )
+    )
     # Attempt to cast struct columns to NestedDTypes
     df = _cast_struct_cols_to_nested(df, reject_nesting)
 
@@ -516,6 +601,6 @@ def _cast_struct_cols_to_nested(df, reject_nesting):
 def _cast_list_cols_to_nested(df):
     """cast list columns to nested dtype"""
     for col, dtype in df.dtypes.items():
-        if pa.types.is_list(dtype.pyarrow_dtype):
+        if is_pa_type_a_list(dtype.pyarrow_dtype):
             df[col] = pack_lists(df[[col]])
     return df

@@ -38,7 +38,7 @@ def test_nestedonly_decorator():
             getattr(series, prop)
 
     # Check nested only methods for decorator functionality
-    for func in ["to_flat", "to_lists"]:
+    for func in ["len", "to_flat", "to_lists"]:
         with pytest.raises(TypeError, match=f"'{func}' can only be used with a NestedDtype"):
             getattr(series, func)()
 
@@ -82,7 +82,24 @@ def test_nestedseries_list_lengths():
         dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
     )
 
-    assert list(series.list_lengths) == [2, 2]
+    with pytest.deprecated_call(match="`list_lengths` is deprecated and will be removed in version 0.8.0"):
+        result = series.list_lengths
+
+    assert list(result) == [2, 2]
+
+
+def test_nestedseries_len():
+    """Test len() method of NestedSeries."""
+    series = NestedSeries(
+        data=[
+            (np.array([1, 2]), np.array([0, 1])),
+            (np.array([3, 4]), np.array([0, 1])),
+        ],
+        index=[0, 1],
+        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
+    )
+
+    assert list(series.len()) == [2, 2]
 
 
 def test_nestedseries_getitem_single_column():

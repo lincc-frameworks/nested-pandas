@@ -15,5 +15,6 @@ Functions
 .. autosummary::
     :toctree: api/
 
+    NestedSeries.len
     NestedSeries.to_lists
     NestedSeries.explode
