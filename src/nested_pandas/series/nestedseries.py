@@ -57,7 +57,7 @@ class NestedSeries(pd.Series):
     @property
     @nested_only
     @deprecated(
-        version="0.7.0",
+        version="0.6.10",
         reason="`list_lengths` is deprecated and will be removed in version 0.8.0, use `len()` instead.",
     )
     def list_lengths(self):
