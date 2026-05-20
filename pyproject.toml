@@ -101,6 +101,8 @@ select = [
     "D419",
     # Numpy v2.0 compatibility
     "NPY201",
+    # flake8-print
+    "T201",
 ]
 ignore = [
     "UP006", # Allow non standard library generics in type hints
