@@ -125,6 +125,27 @@ def test_count_nested_arrow_int32_dtype():
     assert 0 in counts.values or all(counts.notna().all())
 
 
+def test_count_nested_by_with_nulls():
+    """Test that count_nested(by=...) ignores null by-values instead of crashing.
+    Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/494
+    """
+    base = NestedFrame(data={"a": [1, 2]}, index=[0, 1])
+    nested = pd.DataFrame(
+        data={
+            "flux": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "band": [None, "g", "r", "g", "r", "g"],
+        },
+        index=[0, 0, 0, 1, 1, 1],
+    )
+    base = base.join_nested(nested, "nested")
+
+    counts = count_nested(base, "nested", by="band", join=False)
+
+    # The null band in row 0 is not counted; remaining bands are tallied normally
+    assert_array_equal(counts["n_nested_g"].values, [1, 2])
+    assert_array_equal(counts["n_nested_r"].values, [1, 1])
+
+
 def test_count_nested_no_by_arrow_int32_dtype():
     """Test that count_nested without 'by' returns arrow int32 column."""
     import pyarrow as pa

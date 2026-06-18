@@ -63,7 +63,7 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
         counts = counts.astype(pd.ArrowDtype(pa.int32()))
     else:
         counts = df.map_rows(
-            lambda x: dict(zip(*np.unique(x, return_counts=True), strict=False)),
+            lambda x: dict(zip(*np.unique(x[~pd.isna(x)], return_counts=True), strict=False)),
             columns=f"{nested}.{by}",
             row_container="args",
         )
