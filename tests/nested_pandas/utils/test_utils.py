@@ -126,7 +126,10 @@ def test_count_nested_arrow_int32_dtype():
 
 
 def test_count_nested_by_with_nulls():
-    """Test that count_nested(by=...) ignores null by-values instead of crashing.
+    """Test count_nested(by=...) when the by-column contains nulls.
+
+    By default a null by-value raises so the user is told about it; with
+    dropna=True the nulls are ignored instead of crashing.
     Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/494
     """
     base = NestedFrame(data={"a": [1, 2]}, index=[0, 1])
@@ -139,9 +142,12 @@ def test_count_nested_by_with_nulls():
     )
     base = base.join_nested(nested, "nested")
 
-    counts = count_nested(base, "nested", by="band", join=False)
+    # By default, a null by-value is reported rather than silently dropped.
+    with pytest.raises(ValueError, match="null values"):
+        count_nested(base, "nested", by="band", join=False)
 
-    # The null band in row 0 is not counted; remaining bands are tallied normally
+    # With dropna=True the null band in row 0 is ignored; remaining bands tally normally.
+    counts = count_nested(base, "nested", by="band", join=False, dropna=True)
     assert_array_equal(counts["n_nested_g"].values, [1, 2])
     assert_array_equal(counts["n_nested_r"].values, [1, 1])
 
