@@ -5,7 +5,7 @@ import pyarrow as pa
 from nested_pandas import NestedFrame
 
 
-def count_nested(df, nested, by=None, join=True) -> NestedFrame:
+def count_nested(df, nested, by=None, join=True, dropna=False) -> NestedFrame:
     """Counts the number of rows of a nested dataframe.
 
     Parameters
@@ -21,10 +21,21 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
     join: bool, optional
         Join the output count columns to df and return df, otherwise
         just return a NestedFrame containing only the count columns.
+    dropna: bool, optional
+        Only used together with `by`. When False (the default), a null
+        value in the `by` column raises a ValueError, since counting by a
+        column that contains nulls is usually a mistake. Set to True to
+        ignore null by-values instead, leaving them out of every group.
 
     Returns
     -------
     NestedFrame
+
+    Raises
+    ------
+    ValueError
+        If `by` is given, `dropna` is False, and the `by` column contains
+        null values.
 
     Examples
     --------
@@ -62,8 +73,20 @@ def count_nested(df, nested, by=None, join=True) -> NestedFrame:
         counts = pd.Series(df[nested].nest.len(), name=f"n_{nested}", index=df.index)
         counts = counts.astype(pd.ArrowDtype(pa.int32()))
     else:
+
+        def _count_by(x):
+            mask = pd.isna(x)
+            if mask.any():
+                if not dropna:
+                    raise ValueError(
+                        f"count_nested by '{by}' encountered null values; pass dropna=True to "
+                        "ignore them, otherwise drop or fill the nulls before counting."
+                    )
+                x = x[~mask]
+            return dict(zip(*np.unique(x, return_counts=True), strict=False))
+
         counts = df.map_rows(
-            lambda x: dict(zip(*np.unique(x, return_counts=True), strict=False)),
+            _count_by,
             columns=f"{nested}.{by}",
             row_container="args",
         )
