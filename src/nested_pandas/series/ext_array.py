@@ -44,6 +44,7 @@ from numpy.typing import ArrayLike, DTypeLike
 from pandas import Index
 from pandas._typing import InterpolateOptions
 from pandas.api.extensions import no_default
+from pandas.api.types import pandas_dtype
 from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
 from pandas.core.dtypes.common import is_float_dtype
 from pandas.core.indexers import (  # type: ignore[attr-defined]
@@ -451,6 +452,38 @@ class NestedExtensionArray(ExtensionArray):
     @property
     def _hasna(self) -> bool:
         return self.list_array.null_count > 0
+
+    def astype(self, dtype, copy: bool = True):
+        """Cast to a NumPy array or ExtensionArray with 'dtype'.
+
+        Added for compatibility with Pandas v3.0+, which relies
+        more directly on Pyarrow's `Array.cast()` method. Pyarrow is unable
+        to handle casts between list-of-structs and struct-of-lists, so we
+        handle those more directly here.
+
+        Parameters
+        ----------
+        dtype : dtype or str
+            Typecode or data-type to which the array is cast.
+        copy : bool, default True
+            Whether to copy the data, even if not necessary.
+
+        Returns
+        -------
+        np.ndarray or ExtensionArray
+        """
+        dtype = pandas_dtype(dtype)
+
+        if dtype == self.dtype:
+            return self.copy() if copy else self
+
+        if isinstance(dtype, pd.ArrowDtype):
+            pa_type = dtype.pyarrow_dtype
+            source = self.list_array if is_pa_type_a_list(pa_type) else self.struct_array
+            pa_array = source.cast(pa_type)
+            return ArrowExtensionArray(pa_array)
+
+        return super().astype(dtype, copy=copy)
 
     # We do not implement it yet, neither ArrowExtensionArray does for struct arrays
     def interpolate(
