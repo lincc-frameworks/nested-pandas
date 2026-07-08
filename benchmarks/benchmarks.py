@@ -141,8 +141,8 @@ class NestedFrameAddNested:
         self.run()
 
 
-class NestedFrameReduce:
-    """Benchmark the NestedFrame.reduce function"""
+class NestedFrameMapRows:
+    """Benchmark the NestedFrame.map_rows function"""
 
     n_base = 100
     n_nested = 1000
@@ -154,14 +154,14 @@ class NestedFrameReduce:
 
     def run(self):
         """Run the benchmark."""
-        self.nf.reduce(np.mean, "nested.flux")
+        self.nf.map_rows(np.mean, columns=["nested.flux"], row_container="args")
 
     def time_run(self):
-        """Benchmark the runtime of applying the reduce function"""
+        """Benchmark the runtime of applying the map_rows function"""
         self.run()
 
     def peakmem_run(self):
-        """Benchmark the memory usage of applying the reduce function"""
+        """Benchmark the memory usage of applying the map_rows function"""
         self.run()
 
 

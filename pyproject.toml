@@ -22,7 +22,6 @@ dependencies = [
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
     "pandas>=3,<4",
     "pyarrow>=16",  # remove struct_field_names() and struct_fields() when upgraded to 18+
-    "Deprecated>=1.2.0",
     "wrapt>=1.14.0",
     "fsspec>=2025.7.0,!=2025.12,!=2026.1",  # Avoiding https://github.com/fsspec/filesystem_spec/issues/1973
     "universal_pathlib>=0.3.1",
@@ -44,7 +43,6 @@ dev = [
     "aiohttp",
     "requests",
     "s3fs",
-    "types-Deprecated", # Needed for mypy type checking of Deprecated package
     "numba>=0.64.0",
 ]
 

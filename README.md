@@ -59,7 +59,7 @@ Allowing powerful and straightforward operations, like:
 ```
 
 <p align="left">
-    <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/reduce.png" alt="using reduce" width="150"/>
+    <img src="https://github.com/lincc-frameworks/nested-pandas/raw/refs/heads/main/docs/intro_images/reduce.png" alt="using map_rows" width="150"/>
 </p>
 
 Nested-Pandas is motivated by time-domain astronomy use cases, where we see

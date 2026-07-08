@@ -1,7 +1,6 @@
 from functools import wraps
 
 import pandas as pd
-from deprecated import deprecated
 
 from nested_pandas.series.dtype import NestedDtype
 
@@ -33,17 +32,6 @@ class NestedSeries(pd.Series):
 
     @property
     @nested_only
-    @deprecated(
-        version="0.6.0",
-        reason="The `fields` property is deprecated and will be removed in version 0.7.0,"
-        "use `columns` instead.",
-    )
-    def fields(self):
-        """Returns the fields of the nested series as a list."""
-        return self.columns
-
-    @property
-    @nested_only
     def columns(self):
         """Returns the names of the nested columns of the nested series as a list."""
         return self.nest.columns
@@ -53,16 +41,6 @@ class NestedSeries(pd.Series):
     def flat_length(self):
         """Returns the length of the flattened nested series."""
         return self.nest.flat_length
-
-    @property
-    @nested_only
-    @deprecated(
-        version="0.6.10",
-        reason="`list_lengths` is deprecated and will be removed in version 0.8.0, use `len()` instead.",
-    )
-    def list_lengths(self):
-        """Returns the lengths of the list-packed nested series."""
-        return self.len()
 
     @nested_only
     def len(self):
@@ -103,43 +81,6 @@ class NestedSeries(pd.Series):
             return
 
         return super().__setitem__(key, value)
-
-    @nested_only
-    @deprecated(version="0.6.0", reason="`to_flat` will be removed in version 0.7.0, use `explode` instead.")
-    def to_flat(self, fields: list[str] | None = None) -> pd.DataFrame:
-        """Convert nested series into dataframe of flat arrays.
-
-        Parameters
-        ----------
-        fields : list[str] or None, optional
-            Names of the fields to include. Default is None, which means all fields.
-
-        Returns
-        -------
-        pd.DataFrame
-            Dataframe of flat arrays.
-
-        Examples
-        --------
-
-        >>> from nested_pandas.datasets.generation import generate_data
-        >>> nf = generate_data(5, 2, seed=1)
-
-        >>> nf["nested"].to_flat()
-                   t       flux  flux_error band
-        0    8.38389  80.074457         1.0    r
-        0   13.40935  89.460666         1.0    g
-        1   13.70439  96.826158         1.0    g
-        1   8.346096   8.504421         1.0    g
-        2   4.089045  31.342418         1.0    g
-        2  11.173797   3.905478         1.0    g
-        3  17.562349  69.232262         1.0    r
-        3   2.807739  16.983042         1.0    r
-        4   0.547752  87.638915         1.0    g
-        4    3.96203   87.81425         1.0    r
-
-        """
-        return self.explode(columns=fields)
 
     @nested_only
     def explode(self, columns: list[str] | str | None = None) -> pd.DataFrame:
