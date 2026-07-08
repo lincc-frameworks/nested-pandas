@@ -451,7 +451,10 @@ def test_set_filled_column():
         [0, 100],
     ).nest.set_filled_column(
         "c",
-        ["abc", "xyz"],
+        # pack_seq will convert strings to pa.large_string(), but
+        # set_filled_column has freedom to set string() or large_string()
+        # based on user input.
+        pa.array(["abc", "xyz"], type=pa.large_string()),
     )
 
     desired = pack_seq(
@@ -1221,6 +1224,6 @@ def test_issue266():
             "t": pa.float64(),
             "flux": pa.float64(),
             "flux_error": pa.float64(),
-            "band": pa.string(),
+            "band": pa.large_string(),
         }
     )

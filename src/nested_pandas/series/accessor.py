@@ -521,7 +521,7 @@ class NestSeriesAccessor(Mapping):
         2    [{t: 4.089045, flux_error: 1.0, band: 'g'}; …]...
         3    [{t: 17.562349, flux_error: 1.0, band: 'r'}; …...
         4    [{t: 0.547752, flux_error: 1.0, band: 'g'}; …]...
-        Name: nested, dtype: nested<t: [double], flux_error: [double], band: [string]>
+        Name: nested, dtype: nested<t: [double], flux_error: [double], band: [large_string]>
         """
         return self.drop(field)
 
@@ -552,7 +552,7 @@ class NestSeriesAccessor(Mapping):
         2    [{t: 4.089045, flux_error: 1.0, band: 'g'}; …]...
         3    [{t: 17.562349, flux_error: 1.0, band: 'r'}; …...
         4    [{t: 0.547752, flux_error: 1.0, band: 'g'}; …]...
-        Name: nested, dtype: nested<t: [double], flux_error: [double], band: [string]>
+        Name: nested, dtype: nested<t: [double], flux_error: [double], band: [large_string]>
         """
         if isinstance(column, str):
             column = [column]
@@ -593,7 +593,7 @@ class NestSeriesAccessor(Mapping):
         2    [{t: 4.089045, flux: 83.462567, flux_error: 1....
         3    [{t: 2.807739, flux: 78.927933, flux_error: 1....
         4    [{t: 0.547752, flux: 75.014431, flux_error: 1....
-        dtype: nested<t: [double], flux: [double], flux_error: [double], band: [string]>
+        dtype: nested<t: [double], flux: [double], flux_error: [double], band: [large_string]>
         """
         return self.query(query)
 
@@ -625,7 +625,7 @@ class NestSeriesAccessor(Mapping):
         2    [{t: 4.089045, flux: 83.462567, flux_error: 1....
         3    [{t: 2.807739, flux: 78.927933, flux_error: 1....
         4    [{t: 0.547752, flux: 75.014431, flux_error: 1....
-        dtype: nested<t: [double], flux: [double], flux_error: [double], band: [string]>
+        dtype: nested<t: [double], flux: [double], flux_error: [double], band: [large_string]>
         """
         flat = self.to_flat().query(query)
 
@@ -929,8 +929,8 @@ class NestSeriesAccessor(Mapping):
         id
         0    [{a: 0.417022, b: 'b', t: 8.38389, flux: 80.07...
         1    [{a: 0.302333, b: 'b', t: 17.562349, flux: 69....
-        Name: outer, dtype: nested<a: [double], b: [string], t: [double],
-        flux: [double], flux_error: [double], band: [string]>
+        Name: outer, dtype: nested<a: [double], b: [large_string], t: [double],
+        flux: [double], flux_error: [double], band: [large_string]>
 
         >>> concated_nf_series.nest.to_flat()  # doctest: +NORMALIZE_WHITESPACE
                    a  b          t       flux  flux_error band

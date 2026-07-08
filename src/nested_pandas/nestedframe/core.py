@@ -96,6 +96,8 @@ class NestedFrame(pd.DataFrame):
     def nested_columns(self) -> list:
         """retrieves the base column names for all nested dataframes"""
         nested_mask = self.dtypes.apply(lambda dtype: isinstance(dtype, NestedDtype))
+        if len(nested_mask) == 0:
+            return []
         return self.columns[nested_mask].tolist()
 
     @property
@@ -124,7 +126,7 @@ class NestedFrame(pd.DataFrame):
         def repack_row(chunk, header=True):
             # If the chunk is None or empty, return None (displayed same as Null)
             if chunk is None or len(chunk) == 0:
-                return None
+                return "None"
             n_rows = len(chunk)
 
             if n_rows <= 2:
