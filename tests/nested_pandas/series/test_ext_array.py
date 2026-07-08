@@ -2280,7 +2280,7 @@ def test__pa_table():
 def test__from_sequence_of_strings():
     """We do not support from_sequence_of_strings() which would apply things like pd.read_csv()"""
     with pytest.raises(NotImplementedError):
-        NestedExtensionArray._from_sequence_of_strings(["1,2,3", "4,5,6"])
+        NestedExtensionArray._from_sequence_of_strings(["1,2,3", "4,5,6"], dtype=None)
 
 
 def test__from_factorized():

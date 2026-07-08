@@ -291,7 +291,7 @@ class NestedExtensionArray(ExtensionArray):
 
     # Tricky to implement but required by things like pd.read_csv
     @classmethod
-    def _from_sequence_of_strings(cls, strings, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined, misc] # noqa: F821
+    def _from_sequence_of_strings(cls, strings, dtype, *, copy: bool = False) -> Self:  # type: ignore[name-defined, misc] # noqa: F821
         # I don't know why mypy complains, the method IS in the base class
         return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)  # type: ignore[misc]
 
