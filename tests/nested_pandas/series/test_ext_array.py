@@ -230,6 +230,55 @@ def test_ext_array_dtype():
     assert ext_array.dtype == NestedDtype(struct_array.type)
 
 
+def test_astype_to_pandas_arrow_dtype_struct_list():
+    """Test default (struct-of-lists) pd.ArrowDtype from NestedDtype.to_pandas_arrow_dtype()."""
+    t = [[1.0, 2.0], [3.0, 4.0, 5.0]]
+    flux = [[10.0, 20.0], [30.0, 40.0, 50.0]]
+
+    struct_array = pa.StructArray.from_arrays(arrays=[pa.array(t), pa.array(flux)], names=["t", "flux"])
+    ext_array = NestedExtensionArray(struct_array)
+    series = pd.Series(ext_array)
+
+    arrow_dtype = series.dtype.to_pandas_arrow_dtype()
+    assert pa.types.is_struct(arrow_dtype.pyarrow_dtype)
+
+    struct_series = series.astype(arrow_dtype)
+    assert struct_series.dtype == arrow_dtype
+    assert struct_series.struct.field("flux").tolist() == flux
+
+    # Round-tripping back to NestedDtype should reproduce the original series.
+    roundtrip = struct_series.astype(NestedDtype.from_pandas_arrow_dtype(struct_series.dtype))
+    assert series.equals(roundtrip)
+
+
+def test_astype_to_pandas_arrow_dtype_list_struct():
+    """Test list-of-structs pd.ArrowDtype from NestedDtype.to_pandas_arrow_dtype(list_struct=True).
+
+    Companion to test_astype_to_pandas_arrow_dtype_struct_list(), exercising the other branch of
+    NestedExtensionArray.astype() (casting `self.list_array` rather than `self.struct_array`).
+    """
+    t = [[1.0, 2.0], [3.0, 4.0, 5.0]]
+    flux = [[10.0, 20.0], [30.0, 40.0, 50.0]]
+
+    struct_array = pa.StructArray.from_arrays(arrays=[pa.array(t), pa.array(flux)], names=["t", "flux"])
+    ext_array = NestedExtensionArray(struct_array)
+    series = pd.Series(ext_array)
+
+    arrow_dtype = series.dtype.to_pandas_arrow_dtype(list_struct=True)
+    assert pa.types.is_large_list(arrow_dtype.pyarrow_dtype)
+
+    list_struct_series = series.astype(arrow_dtype)
+    assert list_struct_series.dtype == arrow_dtype
+    assert list_struct_series.tolist() == [
+        [{"t": ti, "flux": fi} for ti, fi in zip(t[0], flux[0], strict=True)],
+        [{"t": ti, "flux": fi} for ti, fi in zip(t[1], flux[1], strict=True)],
+    ]
+
+    # Round-tripping back to NestedDtype should reproduce the original series.
+    roundtrip = list_struct_series.astype(NestedDtype.from_pandas_arrow_dtype(list_struct_series.dtype))
+    assert series.equals(roundtrip)
+
+
 def test_series_dtype():
     """Test that the dtype of the series is correct."""
     struct_array = pa.StructArray.from_arrays(
