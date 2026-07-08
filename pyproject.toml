@@ -20,7 +20,7 @@ requires-python = ">=3.11"
 dependencies = [
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
-    "pandas>=3.0.0",
+    "pandas>=3,<4",
     "pyarrow>=16",  # remove struct_field_names() and struct_fields() when upgraded to 18+
     "Deprecated>=1.2.0",
     "wrapt>=1.14.0",
