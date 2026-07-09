@@ -427,7 +427,6 @@ class NestSeriesAccessor(Mapping):
         flat_series = pd.Series(
             flat_chunked_array,
             dtype=self._series.dtype.column_dtype(key),
-            # index=self.get_flat_index(),
             index=self.flat_index,
             name=key,
             copy=False,

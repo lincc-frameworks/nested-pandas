@@ -608,7 +608,7 @@ def test_flat_index(df):
 
 
 def test_get_list_series():
-    """Test that the .nest.get_list_series() method works."""
+    """Test that list series selection works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),

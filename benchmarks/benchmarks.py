@@ -40,7 +40,7 @@ class AssignSingleDfToNestedSeries:
             [original_df] * self.n_objects,
             # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we
             # need to order by field name here for backwards compatibility.
-            dtype=NestedDtype.from_fields({"band": pa.string(), "flux": pa.float64(), "time": pa.float64()}),
+            dtype=NestedDtype.from_columns({"band": pa.string(), "flux": pa.float64(), "time": pa.float64()}),
         )
 
     def run(self):
@@ -68,7 +68,7 @@ class ReassignHalfOfNestedSeries:
         """Set up the benchmark environment."""
         # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to
         # order by field name here for backwards compatibility.
-        dtype = NestedDtype.from_fields({"band": pa.string(), "flux": pa.float64(), "time": pa.float64()})
+        dtype = NestedDtype.from_columns({"band": pa.string(), "flux": pa.float64(), "time": pa.float64()})
         original_df = pd.DataFrame(
             {
                 "time": np.linspace(0, 1, self.n_sources),
@@ -104,7 +104,7 @@ class ReassignHalfOfNestedSeries:
 
 
 class NestedFrameAddNested:
-    """Benchmark the NestedFrame.add_nested function"""
+    """Benchmark the NestedFrame.join_nested function"""
 
     n_base = 100
     layer_size = 1000
@@ -130,7 +130,7 @@ class NestedFrameAddNested:
 
     def run(self):
         """Run the benchmark."""
-        self.base_nf.add_nested(self.layer_nf, "nested")
+        self.base_nf.join_nested(self.layer_nf, "nested")
 
     def time_run(self):
         """Benchmark the runtime of adding a nested layer"""

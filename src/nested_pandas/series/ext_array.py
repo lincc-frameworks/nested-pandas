@@ -1141,7 +1141,7 @@ class NestedExtensionArray(ExtensionArray):
         except (ValueError, TypeError) as e:
             raise TypeError(
                 f"New values must be convertible to the existing element pyarrow type, {pa_type}. "
-                "If you want to replace field with values of a new type, use series.nest.with_flat_field() "
+                "If you want to replace field with values of a new type, use series.nest.set_flat_column() "
                 "or NestedExtensionArray.set_flat_field(..., keep_dtype=False) instead."
             ) from e
 
@@ -1189,7 +1189,7 @@ class NestedExtensionArray(ExtensionArray):
         except (ValueError, TypeError) as e:
             raise TypeError(
                 f"New values must be convertible to the existing list pyarrow type, {pa_type}. "
-                "If you want to replace field with values of a new type, use series.nest.with_list_field() "
+                "If you want to replace field with values of a new type, use series.nest.set_list_column() "
                 "or NestedExtensionArray.set_list_field(..., keep_dtype=False) instead."
             ) from e
 
