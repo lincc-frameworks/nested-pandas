@@ -1,15 +1,15 @@
 {
     "benchmarks.AssignSingleDfToNestedSeries.peakmem_run": {
-        "code": "class AssignSingleDfToNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        self.new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we\n            # need to order by field name here for backwards compatibility.\n            dtype=NestedDtype.from_fields({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()}),\n        )",
+        "code": "class AssignSingleDfToNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        self.new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we\n            # need to order by field name here for backwards compatibility.\n            dtype=NestedDtype.from_columns({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()}),\n        )",
         "name": "benchmarks.AssignSingleDfToNestedSeries.peakmem_run",
         "param_names": [],
         "params": [],
         "type": "peakmemory",
         "unit": "bytes",
-        "version": "6106a8befbead9252b00aef6a759a13bb8654dc82f15c86b5bb6da7262f4571c"
+        "version": "5707327e3b5c92c9a42875a1d1a30bac3b4da8a8bb68ea526d1f5d22e08d6a92"
     },
     "benchmarks.AssignSingleDfToNestedSeries.time_run": {
-        "code": "class AssignSingleDfToNestedSeries:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        self.new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we\n            # need to order by field name here for backwards compatibility.\n            dtype=NestedDtype.from_fields({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()}),\n        )",
+        "code": "class AssignSingleDfToNestedSeries:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        self.new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we\n            # need to order by field name here for backwards compatibility.\n            dtype=NestedDtype.from_columns({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()}),\n        )",
         "min_run_count": 2,
         "name": "benchmarks.AssignSingleDfToNestedSeries.time_run",
         "number": 0,
@@ -20,7 +20,7 @@
         "sample_time": 0.01,
         "type": "time",
         "unit": "seconds",
-        "version": "561679277ad2275813ce0c17ad97dbe31f41b12cdb6533009f12ae1f7b057caf",
+        "version": "24b973e9b3ccae6add447d22e71736ffce325cfe383759b9c93bda14efa08eb9",
         "warmup_time": -1
     },
     "benchmarks.CountNestedBy.peakmem_run": {
@@ -71,6 +71,30 @@
         "version": "51982ce9982d11255339dc387081a0db496f1856294c479e72d65e2a4f5fb506",
         "warmup_time": -1
     },
+    "benchmarks.NestedFrameMapRows.peakmem_run": {
+        "code": "class NestedFrameMapRows:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of applying the map_rows function\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "name": "benchmarks.NestedFrameMapRows.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "53dc07ce8579c9abe853519c6b1fbb25b6e5f0989839528d3e2b5b8c59fc1809"
+    },
+    "benchmarks.NestedFrameMapRows.time_run": {
+        "code": "class NestedFrameMapRows:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of applying the map_rows function\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
+        "min_run_count": 2,
+        "name": "benchmarks.NestedFrameMapRows.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "type": "time",
+        "unit": "seconds",
+        "version": "9ba631fd98c7d6f69d71d3d680c8e1497c6b281e31cab9d89d4e890c00b08587",
+        "warmup_time": -1
+    },
     "benchmarks.NestedFrameQuery.peakmem_run": {
         "code": "class NestedFrameQuery:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of applying the two queries\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
         "name": "benchmarks.NestedFrameQuery.peakmem_run",
@@ -93,30 +117,6 @@
         "type": "time",
         "unit": "seconds",
         "version": "e9944ed6698261a36de55f71c8228b4fcaa8a50b56657fd8132fc6488238f484",
-        "warmup_time": -1
-    },
-    "benchmarks.NestedFrameReduce.peakmem_run": {
-        "code": "class NestedFrameReduce:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of applying the reduce function\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
-        "name": "benchmarks.NestedFrameReduce.peakmem_run",
-        "param_names": [],
-        "params": [],
-        "type": "peakmemory",
-        "unit": "bytes",
-        "version": "0dc3aac5f09ea8525a745669cff6fca764fabb7cbe35db18f7d46f7377bfea12"
-    },
-    "benchmarks.NestedFrameReduce.time_run": {
-        "code": "class NestedFrameReduce:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of applying the reduce function\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment\"\"\"\n        self.nf = datasets.generate_data(self.n_base, self.n_nested)",
-        "min_run_count": 2,
-        "name": "benchmarks.NestedFrameReduce.time_run",
-        "number": 0,
-        "param_names": [],
-        "params": [],
-        "repeat": 0,
-        "rounds": 2,
-        "sample_time": 0.01,
-        "type": "time",
-        "unit": "seconds",
-        "version": "5259b45d6e432e2b3eb25050a9581ac63703fbbae1e1fd98cc2fe7b83a9e8b95",
         "warmup_time": -1
     },
     "benchmarks.ReadFewColumnsHTTPS.peakmem_run": {
@@ -168,16 +168,16 @@
         "warmup_time": -1
     },
     "benchmarks.ReassignHalfOfNestedSeries.peakmem_run": {
-        "code": "class ReassignHalfOfNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_fields({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
+        "code": "class ReassignHalfOfNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_columns({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
         "name": "benchmarks.ReassignHalfOfNestedSeries.peakmem_run",
         "param_names": [],
         "params": [],
         "type": "peakmemory",
         "unit": "bytes",
-        "version": "567fe640051453cd164d11ee74a8aff8c06e2b89a239133ddcc020d9fe426a55"
+        "version": "e28299c3989d9f21a202387aa7b69d6d92fa528b5eb7b72efdd9850efedfd97f"
     },
     "benchmarks.ReassignHalfOfNestedSeries.time_run": {
-        "code": "class ReassignHalfOfNestedSeries:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_fields({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
+        "code": "class ReassignHalfOfNestedSeries:\n    def time_run(self):\n        \"\"\"Benchmark the runtime of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_columns({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
         "min_run_count": 2,
         "name": "benchmarks.ReassignHalfOfNestedSeries.time_run",
         "number": 0,
@@ -188,7 +188,7 @@
         "sample_time": 0.01,
         "type": "time",
         "unit": "seconds",
-        "version": "9d18ab926df92e4580e7dcbb3760d4206342c672b1e879d7e5a0a3542904b9e4",
+        "version": "35e04a05e97ab7dd3acacf09ef027caf042b7c915b98a7b207cacfa5748f4928",
         "warmup_time": -1
     },
     "version": 2
