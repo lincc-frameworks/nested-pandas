@@ -331,22 +331,6 @@ def test_columns():
     assert_array_equal(series.nest.columns, ["a", "b"])
 
 
-def test_list_lengths():
-    """Test that the .nest.list_lengths attribute works."""
-    series = pack_seq(
-        [
-            pd.DataFrame({"a": [1, 2, 3], "b": [1.0, 5.0, 6.0], "c": ["a", "b", "c"]}),
-            None,
-            pd.DataFrame({"a": [1, 2], "b": [None, 0.0], "c": ["a", "b"]}),
-        ]
-    )
-    assert series.shape == (3,)
-    with pytest.deprecated_call(match="`list_lengths` is deprecated and will be removed in version 0.8.0"):
-        result = series.nest.list_lengths
-
-    assert_array_equal(result, [3, 0, 2])
-
-
 def test_len():
     """Test that the .nest.len() method works."""
     series = pack_seq(
@@ -624,7 +608,7 @@ def test_flat_index(df):
 
 
 def test_get_list_series():
-    """Test that the .nest.get_list_series() method works."""
+    """Test that list series selection works."""
     struct_array = pa.StructArray.from_arrays(
         arrays=[
             pa.array([np.array([1, 2, 3]), np.array([4, 5, 6])]),

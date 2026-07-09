@@ -33,12 +33,12 @@ def test_nestedonly_decorator():
     series = NestedSeries([1, 2, 3, 4, 5])
 
     # Check nested only properties for decorator functionality
-    for prop in ["columns", "flat_length", "list_lengths"]:
+    for prop in ["columns", "flat_length"]:
         with pytest.raises(TypeError, match=f"'{prop}' can only be used with a NestedDtype"):
             getattr(series, prop)
 
     # Check nested only methods for decorator functionality
-    for func in ["len", "to_flat", "to_lists"]:
+    for func in ["len", "explode", "to_lists"]:
         with pytest.raises(TypeError, match=f"'{func}' can only be used with a NestedDtype"):
             getattr(series, func)()
 
@@ -69,23 +69,6 @@ def test_nestedseries_flat_length():
     )
 
     assert series.flat_length == 4
-
-
-def test_nestedseries_list_lengths():
-    """Test list_lengths property of NestedSeries."""
-    series = NestedSeries(
-        data=[
-            (np.array([1, 2]), np.array([0, 1])),
-            (np.array([3, 4]), np.array([0, 1])),
-        ],
-        index=[0, 1],
-        dtype=NestedDtype(pa.struct([("a", pa.list_(pa.int64())), ("b", pa.list_(pa.int64()))])),
-    )
-
-    with pytest.deprecated_call(match="`list_lengths` is deprecated and will be removed in version 0.8.0"):
-        result = series.list_lengths
-
-    assert list(result) == [2, 2]
 
 
 def test_nestedseries_len():
