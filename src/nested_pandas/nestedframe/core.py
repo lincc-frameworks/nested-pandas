@@ -2245,8 +2245,7 @@ class NestedFrame(pd.DataFrame):
 
         else:
             raise ValueError(
-                f"Unknown row_container value '{row_container}'. "
-                "Must be one of 'dict' or 'args'."
+                f"Unknown row_container value '{row_container}'. Must be one of 'dict' or 'args'."
             )
 
         # If the func returns a single array per row wrap results in a `NestedSeries`.
