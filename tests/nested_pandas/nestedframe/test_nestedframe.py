@@ -1512,6 +1512,9 @@ def test_map_rows_arg_errors():
     # this should work
     ndf.map_rows(func, ["a", "nested.flux"], add=True, row_container="args")
 
+    with pytest.raises(ValueError, match="Unknown row_container"):
+        ndf.map_rows(func, ["a", "nested.flux"], add=True, row_container="UNKNOWN_VALUE")
+
 
 def test_map_rows_njit():
     """

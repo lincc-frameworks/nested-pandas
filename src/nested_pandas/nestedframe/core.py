@@ -2243,6 +2243,12 @@ class NestedFrame(pd.DataFrame):
 
                 results = [func(*cols, **kwargs) for cols in zip(*iterators, strict=True)]
 
+        else:
+            raise ValueError(
+                f"Unknown row_container value '{row_container}'. "
+                "Must be one of 'dict' or 'args'."
+            )
+
         # If the func returns a single array per row wrap results in a `NestedSeries`.
         # Otherwise, Pandas will try to expand array elements into separate columns.
         if results and isinstance(results[0], np.ndarray):
