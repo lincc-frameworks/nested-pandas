@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -15,6 +16,7 @@ from pandas.api.extensions import no_default
 from pandas.core.computation.eval import Expr, ensure_scope
 from pandas.core.dtypes.common import is_bool_dtype
 from pandas.core.dtypes.inference import is_list_like
+from upath import UPath
 
 from nested_pandas.nestedframe.expr import (
     _identify_aliases,
@@ -2297,7 +2299,7 @@ class NestedFrame(pd.DataFrame):
         # Otherwise, return the results as a new NestedFrame
         return results_nf
 
-    def to_pandas(self, list_struct=False, large_list=False) -> pd.DataFrame:
+    def to_pandas(self, list_struct: bool = False, large_list: bool = False) -> pd.DataFrame:
         """Convert to an ordinal pandas DataFrame, with no NestedDtype series.
 
         NestedDtype is cast to pd.ArrowDtype
@@ -2305,9 +2307,10 @@ class NestedFrame(pd.DataFrame):
         Parameters
         ----------
         list_struct: bool
-            If True, cast nested columns to pandas struct-list arrow extension
-            array columns. If False (default), cast nested columns to
-            list-struct array columns.
+            Layout for the nested columns. If False (default), cast each nested
+            column to a struct-of-lists (``struct<field: list<...>, ...>``)
+            arrow extension array. If True, cast it to a list-of-structs
+            (``list<struct<...>>``) arrow extension array.
         large_list : bool
             If False (default), use regular ``list_`` (int32 offsets). Set to
             True to use ``large_list`` (int64 offsets), which is required when
@@ -2336,7 +2339,52 @@ class NestedFrame(pd.DataFrame):
             df[col] = df[col].array.to_arrow_ext_array(list_struct=list_struct, large_list=large_list)
         return df
 
-    def to_parquet(self, path, large_list=False, **kwargs) -> None:
+    def to_pyarrow(self, *, list_struct: bool = False, large_list: bool = False) -> pa.Table:
+        """Convert the NestedFrame into a pyarrow Table.
+
+        This is the counterpart of :func:`nested_pandas.from_pyarrow`.
+
+        Parameters
+        ----------
+        list_struct: bool
+            Layout for the nested columns. If False (default), pack each nested
+            column as a struct-of-lists (``struct<field: list<...>, ...>``). If
+            True, pack it as a list-of-structs (``list<struct<...>>``).
+        large_list : bool
+            If False (default), use regular ``list_`` (int32 offsets). Set to
+            True to use ``large_list`` (int64 offsets), which is required when
+            the total number of nested elements across all rows exceeds
+            ``2**31 - 1``.
+
+        Returns
+        -------
+        pyarrow.Table
+
+        Examples
+        --------
+        >>> from nested_pandas.datasets import generate_data
+        >>> nf = generate_data(5, 5, seed=1)
+        >>> table = nf.to_pyarrow()
+        """
+        df = self.to_pandas(list_struct=list_struct, large_list=large_list)
+
+        # This is potentially not zero-copy
+        # Note: Without pandas metadata, index writing is not as robust set
+        # preserve_index=None for best behavior but index will generally
+        # need to be set manually on load
+        table = pa.Table.from_pandas(df, preserve_index=None)
+
+        # Drop pandas metadata so NestedDtypes are not re-derived on read.
+        # We intentionally do *not* rebuild the schema with ``table.cast`` here:
+        # casting a ``list<null>`` field (an all-null nested column) triggers an
+        # upstream pyarrow bug that corrupts the list offsets:
+        # https://github.com/apache/arrow/issues/43838
+        # Dropping the schema-level metadata directly achieves the same goal safely.
+        return table.replace_schema_metadata(None)
+
+    def to_parquet(
+        self, path: str | Path | UPath, *, list_struct: bool = False, large_list: bool = False, **kwargs
+    ) -> None:
         """Creates parquet file(s) with the data of a NestedFrame, either
         as a single parquet file where each nested dataset is packed into its
         own column or as an individual parquet file for each layer.
@@ -2348,6 +2396,10 @@ class NestedFrame(pd.DataFrame):
         ----------
         path : str
             The path to the parquet file
+        list_struct: bool
+            Layout for the nested columns. If False (default), pack each nested
+            column as a struct-of-lists (``struct<field: list<...>, ...>``). If
+            True, pack it as a list-of-structs (``list<struct<...>>``).
         large_list : bool
             If False (default), use regular ``list_`` (int32 offsets). Set to
             True to use ``large_list`` (int64 offsets), which is required when
@@ -2364,21 +2416,9 @@ class NestedFrame(pd.DataFrame):
 
         Examples
         --------
-        >>> from nested_pandas.datasets.generation import generate_data
+        >>> from nested_pandas.datasets import generate_data
         >>> nf = generate_data(5,5, seed=1)
         >>> nf.to_parquet("nestedframe.parquet")  # doctest: +SKIP
         """
-        df = self.to_pandas(list_struct=False, large_list=large_list)
-
-        # Write through pyarrow
-        # This is potentially not zero-copy
-        # Note: Without pandas metadata, index writing is not as robust set
-        # preserve_index=None for best behavior but index will generally
-        # need to be set manually on load
-        table = pa.Table.from_pandas(df, preserve_index=None)
-
-        # Drop pandas metadata to make sure nesteddtypes are not preserved
-        # Do this by rebuilding the schema
-        table = table.cast(pa.schema([field for field in table.schema]))
-
+        table = self.to_pyarrow(list_struct=list_struct, large_list=large_list)
         return pq.write_table(table, path, **kwargs)
