@@ -647,3 +647,70 @@ def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.S
     if norm_type == array.type:
         return array
     return array.cast(norm_type)
+
+
+def _is_list_type(pa_type: pa.DataType) -> bool:
+    return pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type)
+
+
+def _offsets_for_list_type(offsets: pa.Array, list_type: pa.DataType) -> pa.Array:
+    """Return list offsets with the integer width required by ``list_type``."""
+    target = pa.int64() if pa.types.is_large_list(list_type) else pa.int32()
+    return offsets if offsets.type == target else offsets.cast(target)
+
+
+def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa.Array | pa.ChunkedArray:
+    """Cast ``array`` to ``target_type`` without triggering pyarrow's null-cast bug.
+
+    pyarrow silently corrupts a ``null``-typed child array when it is cast to its
+    own type (https://github.com/apache/arrow/issues/43838). This happens even
+    inside a larger cast where only some fields change. To avoid it, we recurse
+    into struct and (large_)list children and never cast a child whose type
+    already matches the target: a ``null``-typed child is returned unchanged,
+    which is correct since casting a value to its own type is a no-op.
+
+    Non-nested casts, and casts that genuinely change a non-null leaf type, are
+    delegated to pyarrow, which handles them correctly.
+
+    Parameters
+    ----------
+    array : pa.Array or pa.ChunkedArray
+        Input array.
+    target_type : pa.DataType
+        Type to cast to.
+
+    Returns
+    -------
+    pa.Array or pa.ChunkedArray
+        The array cast to ``target_type``.
+    """
+    # Exact match at any nesting level: no-op. This both avoids the null-cast bug
+    # and skips redundant work.
+    if array.type == target_type:
+        return array
+
+    if isinstance(array, pa.ChunkedArray):
+        return pa.chunked_array(
+            [safe_cast(chunk, target_type) for chunk in array.iterchunks()],
+            type=target_type,
+        )
+
+    if pa.types.is_struct(array.type) and pa.types.is_struct(target_type):
+        source_names = set(struct_field_names(array.type))
+        target_fields = struct_fields(target_type)
+        # Only recurse when we can source every target field by name; otherwise
+        # the structures differ in a way this helper does not model, so defer to
+        # pyarrow (which does not involve a null-typed no-op cast here).
+        if all(field.name in source_names for field in target_fields):
+            children = [safe_cast(array.field(field.name), field.type) for field in target_fields]
+            mask = array.is_null() if array.null_count else None
+            return pa.StructArray.from_arrays(children, fields=target_fields, mask=mask)
+
+    elif _is_list_type(array.type) and _is_list_type(target_type):
+        values = safe_cast(array.values, target_type.value_type)
+        offsets = _offsets_for_list_type(array.offsets, target_type)
+        mask = array.is_null() if array.null_count else None
+        list_cls = pa.LargeListArray if pa.types.is_large_list(target_type) else pa.ListArray
+        return list_cls.from_arrays(offsets, values, mask=mask)
+
+    return array.cast(target_type)

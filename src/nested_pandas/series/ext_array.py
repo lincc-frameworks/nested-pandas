@@ -70,6 +70,7 @@ from nested_pandas.series.utils import (
     normalize_list_array,
     normalize_struct_list_type,
     rechunk,
+    safe_cast,
     struct_field_names,
     transpose_struct_list_type,
 )
@@ -661,9 +662,9 @@ class NestedExtensionArray(ExtensionArray):
         # list_array is the default "external" representation
         if type is None:
             return self.list_array
-        if pa.types.is_struct(type):
-            return self.struct_array.cast(type)
-        return self.list_array.cast(type)
+        # safe_cast avoids pyarrow's null-typed nested cast bug (arrow#43838)
+        source = self.struct_array if pa.types.is_struct(type) else self.list_array
+        return safe_cast(source, type)
 
     def __array__(self, dtype=None, copy=True):
         """Convert the extension array to a numpy array.
