@@ -282,6 +282,78 @@ def test_to_parquet():
         assert_frame_equal(nf, nf2)
 
 
+@pytest.mark.parametrize("list_struct", [False, True])
+def test_to_pyarrow_list_struct_roundtrip(list_struct):
+    """to_pyarrow / to_parquet support both nested layouts and round-trip."""
+    # Source is already ArrowDtype-backed so flat-column dtypes round-trip too.
+    nf = read_parquet("tests/test_data/nested.parquet")
+    nested_col = nf.nested_columns[0]
+
+    # The requested layout is reflected in the table schema.
+    table = nf.to_pyarrow(list_struct=list_struct)
+    table.validate(full=True)  # the produced table must be structurally sound
+    nested_type = table.schema.field(nested_col).type
+    if list_struct:
+        assert pa.types.is_list(nested_type) or pa.types.is_large_list(nested_type)
+    else:
+        assert pa.types.is_struct(nested_type)
+
+    # In-memory and on-disk round-trips both reconstruct the NestedFrame.
+    assert_frame_equal(nf, from_pyarrow(table))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "layout.parquet")
+        nf.to_parquet(path, list_struct=list_struct)
+        pq.read_table(path).validate(full=True)  # the written file must be sound
+        assert_frame_equal(nf, read_parquet(path))
+
+
+def test_to_parquet_roundtrip_null_nested_field():
+    """Round-trip a nested column with an all-null (``null``-typed) field.
+
+    Regression test for https://github.com/lincc-frameworks/nested-pandas/issues/507:
+    ``list<null>`` fields tripped an upstream pyarrow bug both on write (via the
+    schema-rebuilding ``table.cast``) and on read (via ``Table.to_pandas``), which
+    corrupted the list offsets of the all-null field.
+    """
+    # Struct-of-lists with an all-null field ``n`` and uneven list lengths [1, 1, 2].
+    offsets = pa.array([0, 1, 2, 4], type=pa.int32())
+    struct = pa.StructArray.from_arrays(
+        [
+            pa.ListArray.from_arrays(offsets, pa.nulls(4, pa.null())),
+            pa.ListArray.from_arrays(offsets, pa.array([10, 20, 30, 40], pa.int64())),
+        ],
+        names=["n", "v"],
+    )
+    table = pa.table({"id": pa.array([1, 2, 3]), "nested": struct})
+    nf = from_pyarrow(table)
+
+    def assert_roundtrips(other):
+        assert nf.nested_columns == other.nested_columns == ["nested"]
+        assert nf["nested"].dtype == other["nested"].dtype
+        assert_frame_equal(nf.drop(columns="nested"), other.drop(columns="nested"))
+        # Compare the flattened nested data, including the all-null ``n`` field.
+        assert_frame_equal(
+            nf["nested"].nest.to_flat().reset_index(drop=True),
+            other["nested"].nest.to_flat().reset_index(drop=True),
+        )
+
+    # In-memory round-trip through the public pyarrow API (no schema metadata).
+    # ``validate(full=True)`` guards against silent corruption of the all-null
+    # field: the pyarrow bug produces an invalid array without raising, so a
+    # round-trip comparison alone would not reliably catch it.
+    round_tripped = nf.to_pyarrow()
+    round_tripped.validate(full=True)
+    assert round_tripped.schema.metadata is None
+    assert_roundtrips(from_pyarrow(round_tripped))
+
+    # Round-trip through a parquet file on disk.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "null_field.parquet")
+        nf.to_parquet(path)
+        pq.read_table(path).validate(full=True)  # the written file must be sound
+        assert_roundtrips(read_parquet(path))
+
+
 def test_pandas_read_parquet():
     """Test that pandas can read our serialized files"""
 

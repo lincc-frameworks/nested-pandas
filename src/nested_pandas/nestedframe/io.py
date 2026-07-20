@@ -551,19 +551,19 @@ def from_pyarrow(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # Convert to NestedFrame
-    # not zero-copy, but reduce memory pressure via the self_destruct kwarg
-    # https://arrow.apache.org/docs/python/pandas.html#reducing-memory-use-in-table-to-pandas
+    # Convert to a NestedFrame. With types_mapper=pd.ArrowDtype every column is
+    # backed by the table's Arrow buffers, so this is zero-copy and there is no
+    # need for the self_destruct memory optimization (which only helps the
+    # NumPy-conversion path).
     df = NestedFrame(
         table.to_pandas(
             types_mapper=pd.ArrowDtype,
             split_blocks=True,
-            self_destruct=True,
             ignore_metadata=not use_pandas_metadata,
         )
     )
-    # Attempt to cast struct columns to NestedDTypes
-    df = _cast_struct_cols_to_nested(df, reject_nesting)
+    # Replace struct columns with NestedExtensionArrays built from the table.
+    df = _cast_struct_cols_to_nested(df, reject_nesting, table)
 
     # If autocast_list is True, cast list columns to NestedDTypes
     if autocast_list:
@@ -572,28 +572,34 @@ def from_pyarrow(
     return df
 
 
-def _cast_struct_cols_to_nested(df, reject_nesting):
-    """cast struct columns to nested dtype"""
-    # Attempt to cast struct columns to NestedDTypes
-    for col, dtype in df.dtypes.items():
-        if col in reject_nesting:
+def _cast_struct_cols_to_nested(df: NestedFrame, reject_nesting: list[str], table: pa.Table) -> NestedFrame:
+    """Replace struct columns of ``df`` with nested columns built from ``table``.
+
+    The nested columns are constructed straight from the pyarrow ``table``
+    rather than from the ``df`` columns produced by ``Table.to_pandas``.
+    Converting a struct column that holds a ``null``-typed (all-null) field via
+    ``types_mapper=pd.ArrowDtype`` corrupts it
+    (https://github.com/apache/arrow/issues/44881).
+    """
+    for field in table.schema:
+        if field.name in reject_nesting:
             continue
 
-        if not NestedExtensionArray.is_input_pa_type_supported(dtype.pyarrow_dtype):
+        if not NestedExtensionArray.is_input_pa_type_supported(field.type):
             continue
 
         try:
             # Attempt to cast Struct to NestedDType
-            df[col] = NestedExtensionArray(pa.array(df[col]))
+            df[field.name] = NestedExtensionArray(table.column(field.name))
         except ValueError as err:
             # If cast fails, the struct likely does not fit nested-pandas
             # criteria for a valid nested column
             raise ValueError(
-                f"Column '{col}' is a Struct, but an attempt to cast it to a NestedDType failed. "
+                f"Column '{field.name}' is a Struct, but an attempt to cast it to a NestedDType failed. "
                 "This is likely due to the struct not meeting the requirements for a nested column "
                 "(all fields should be equal length). To proceed, you may add the column to the "
                 "`reject_nesting` argument of the read_parquet function to skip the cast attempt:"
-                f" read_parquet(..., reject_nesting=['{col}'])"
+                f" read_parquet(..., reject_nesting=['{field.name}'])"
             ) from err
     return df
 
