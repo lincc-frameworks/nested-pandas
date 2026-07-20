@@ -579,10 +579,7 @@ def _cast_struct_cols_to_nested(df: NestedFrame, reject_nesting: list[str], tabl
     rather than from the ``df`` columns produced by ``Table.to_pandas``.
     Converting a struct column that holds a ``null``-typed (all-null) field via
     ``types_mapper=pd.ArrowDtype`` corrupts it
-    (https://github.com/apache/arrow/issues/44881); building from the table
-    avoids the bug and preserves the exact field types (e.g. ``large_string``).
-    Since the table is still alive (see ``from_pyarrow``), this is as cheap as
-    reading from the ``df`` column would have been.
+    (https://github.com/apache/arrow/issues/44881).
     """
     for field in table.schema:
         if field.name in reject_nesting:

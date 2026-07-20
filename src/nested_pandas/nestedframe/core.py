@@ -2369,9 +2369,6 @@ class NestedFrame(pd.DataFrame):
         df = self.to_pandas(list_struct=list_struct, large_list=large_list)
 
         # This is potentially not zero-copy
-        # Note: Without pandas metadata, index writing is not as robust set
-        # preserve_index=None for best behavior but index will generally
-        # need to be set manually on load
         table = pa.Table.from_pandas(df, preserve_index=None)
 
         # Drop pandas metadata so NestedDtypes are not re-derived on read.
