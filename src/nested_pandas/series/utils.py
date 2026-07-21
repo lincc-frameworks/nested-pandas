@@ -670,6 +670,11 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
     already matches the target: a ``null``-typed child is returned unchanged,
     which is correct since casting a value to its own type is a no-op.
 
+    Canary: ``tests/nested_pandas/test_pyarrow_null_bugs.py::
+    test_pyarrow_43838_null_list_identity_cast``. If pyarrow fixes this (the
+    canary starts xpassing), calls to ``safe_cast`` can revert to plain
+    ``.cast()`` and this function can likely be removed.
+
     Non-nested casts, and casts that genuinely change a non-null leaf type, are
     delegated to pyarrow, which handles them correctly.
 
@@ -724,15 +729,19 @@ def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> p
     appending struct/list scalars one at a time. pyarrow raises
     ``ArrowNotImplementedError: AppendScalar for type null`` when a struct or
     list scalar being appended has a ``null``-typed child -- its builder has no
-    scalar-append support for a ``null`` child (see
-    ``tests/nested_pandas/test_pyarrow_null_bugs.py::
-    test_pyarrow_struct_array_from_null_field_scalars``; no upstream issue is
-    filed, since this is a missing feature rather than data corruption).
+    scalar-append support for a ``null`` child. No upstream issue is filed,
+    since this is a missing feature rather than data corruption.
 
     Instead, struct and (large_)list containers are rebuilt directly from their
     children's already-materialized arrays (``scalar.values``, per-field
     scalars), which never goes through the unsupported append path. Leaf types
     are unaffected by the gap and are built with plain ``pa.array``.
+
+    Canary: ``tests/nested_pandas/test_pyarrow_null_bugs.py::
+    test_pyarrow_struct_array_from_null_field_scalars``. If pyarrow adds the
+    missing support (the canary starts xpassing), calls to this function can
+    revert to plain ``pa.array(scalars, type=pa_type)`` and it can likely be
+    removed.
 
     Parameters
     ----------

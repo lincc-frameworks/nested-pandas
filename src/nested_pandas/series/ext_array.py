@@ -215,7 +215,8 @@ def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) 
             ty = scalar.type
             # Align to the target column type here (per-array, via safe_cast) instead of
             # casting the whole assembled struct scalar below: Scalar.cast corrupts a
-            # null-typed child the same way as arrow#43838's array cast does.
+            # null-typed child the same way as arrow#43838's array cast does. Canary:
+            # test_pyarrow_null_bugs.py::test_pyarrow_43838_null_list_identity_cast.
             if target is not None and ty != target.type and is_pa_type_a_list(target.type):
                 scalar = pa.scalar(safe_cast(scalar.values, target.type.value_type), type=target.type)
                 ty = target.type
@@ -383,7 +384,8 @@ class NestedExtensionArray(ExtensionArray):
             # pa.repeat, not `pa.array([scalar] * n)`: the latter appends the
             # scalar n times through pyarrow's builders, which raises
             # "ArrowNotImplementedError: AppendScalar for type null" when the
-            # struct scalar has a null-typed field (see test_pyarrow_null_bugs.py).
+            # struct scalar has a null-typed field. Canary:
+            # test_pyarrow_null_bugs.py::test_pyarrow_struct_array_from_null_field_scalars.
             # pa.repeat broadcasts the already-materialized scalar instead.
             value = pa.repeat(scalar, pa.compute.sum(pa_mask).as_py())
 
@@ -678,7 +680,8 @@ class NestedExtensionArray(ExtensionArray):
         # list_array is the default "external" representation
         if type is None:
             return self.list_array
-        # safe_cast avoids pyarrow's null-typed nested cast bug (arrow#43838)
+        # safe_cast avoids pyarrow's null-typed nested cast bug (arrow#43838).
+        # Canary: test_pyarrow_null_bugs.py::test_pyarrow_43838_null_list_identity_cast.
         source = self.struct_array if pa.types.is_struct(type) else self.list_array
         return safe_cast(source, type)
 
@@ -808,15 +811,19 @@ class NestedExtensionArray(ExtensionArray):
                 # scalars_to_pa_array (not `[s.cast(pa_type) for s in scalars]` then
                 # `pa.array(scalars)`) avoids two pyarrow null-typed-nested-field
                 # issues: Scalar.cast corrupting a null child the same way as
-                # arrow#43838, and pa.array raising
-                # "ArrowNotImplementedError: AppendScalar for type null" when a
-                # struct/list scalar has a null child (no upstream issue filed for
-                # that one; see test_pyarrow_null_bugs.py).
+                # arrow#43838 (canary:
+                # test_pyarrow_null_bugs.py::test_pyarrow_43838_null_list_identity_cast),
+                # and pa.array raising "ArrowNotImplementedError: AppendScalar for
+                # type null" when a struct/list scalar has a null child (no upstream
+                # issue filed for that one; canary:
+                # test_pyarrow_null_bugs.py::test_pyarrow_struct_array_from_null_field_scalars).
                 pa_array = scalars_to_pa_array(scalars, pa_type)
                 # We already copied the data into scalars
 
         # We always cast - even if the type is the same, it does not hurt
         # If the type is different, the result may still be a view, so we do not set copy=False
+        # safe_cast (not plain .cast()) avoids arrow#43838; canary:
+        # test_pyarrow_null_bugs.py::test_pyarrow_43838_null_list_identity_cast.
         if pa_type is not None:
             pa_array = safe_cast(pa_array, pa_type)
 
