@@ -71,6 +71,7 @@ from nested_pandas.series.utils import (
     normalize_struct_list_type,
     rechunk,
     safe_cast,
+    scalars_to_pa_array,
     struct_field_names,
     transpose_struct_list_type,
 )
@@ -200,25 +201,35 @@ def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) 
     d = {}
     types = {}
     columns = df.columns
+    target_fields: dict[str, pa.Field] = {}
     if pa_type is not None:
         names = struct_field_names(pa_type)
         columns = names + list(set(columns) - set(names))
+        target_fields = {field.name: field for field in pa_type}
     for column in columns:
         series = df[column]
+        target = target_fields.get(column)
         if isinstance(series.dtype, NestedDtype):
             # We do know that array is NestedExtensionArray and does have .to_pyarrow_scalar
             scalar = series.array.to_pyarrow_scalar(list_struct=True)  # type: ignore[attr-defined]
             ty = scalar.type
+            # Align to the target column type here (per-array, via safe_cast) instead of
+            # casting the whole assembled struct scalar below: Scalar.cast corrupts a
+            # null-typed child the same way as arrow#43838's array cast does.
+            if target is not None and ty != target.type and is_pa_type_a_list(target.type):
+                scalar = pa.scalar(safe_cast(scalar.values, target.type.value_type), type=target.type)
+                ty = target.type
         else:
             array = pa.array(series)
-            ty = pa.large_list(array.type)
+            if target is not None and is_pa_type_a_list(target.type):
+                array = safe_cast(array, target.type.value_type)
+                ty = target.type
+            else:
+                ty = pa.large_list(array.type)
             scalar = pa.scalar(array, type=ty)
         d[column] = scalar
         types[column] = ty
-    result = pa.scalar(d, type=pa.struct(types), from_pandas=True)
-    if pa_type is not None:
-        result = result.cast(pa_type)
-    return result
+    return pa.scalar(d, type=pa.struct(types), from_pandas=True)
 
 
 class NestedExtensionArray(ExtensionArray):
@@ -368,8 +379,13 @@ class NestedExtensionArray(ExtensionArray):
             # Copy will happen later in replace_with_mask() anyway
             value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
-            # Our replace_with_mask implementation doesn't work with scalars
-            value = pa.array([scalar] * pa.compute.sum(pa_mask).as_py())
+            # Our replace_with_mask implementation doesn't work with scalars.
+            # pa.repeat, not `pa.array([scalar] * n)`: the latter appends the
+            # scalar n times through pyarrow's builders, which raises
+            # "ArrowNotImplementedError: AppendScalar for type null" when the
+            # struct scalar has a null-typed field (see test_pyarrow_null_bugs.py).
+            # pa.repeat broadcasts the already-materialized scalar instead.
+            value = pa.repeat(scalar, pa.compute.sum(pa_mask).as_py())
 
         if argsort is not None:
             value = value.take(argsort)
@@ -789,14 +805,20 @@ class NestedExtensionArray(ExtensionArray):
                 # However, we just cast everything to the specified type here.
                 if pa_type is None:
                     pa_type = scalars[-1].type
-                scalars = [s.cast(pa_type) for s in scalars]
-                pa_array = pa.array(scalars)
+                # scalars_to_pa_array (not `[s.cast(pa_type) for s in scalars]` then
+                # `pa.array(scalars)`) avoids two pyarrow null-typed-nested-field
+                # issues: Scalar.cast corrupting a null child the same way as
+                # arrow#43838, and pa.array raising
+                # "ArrowNotImplementedError: AppendScalar for type null" when a
+                # struct/list scalar has a null child (no upstream issue filed for
+                # that one; see test_pyarrow_null_bugs.py).
+                pa_array = scalars_to_pa_array(scalars, pa_type)
                 # We already copied the data into scalars
 
         # We always cast - even if the type is the same, it does not hurt
         # If the type is different, the result may still be a view, so we do not set copy=False
         if pa_type is not None:
-            pa_array = pa_array.cast(pa_type)
+            pa_array = safe_cast(pa_array, pa_type)
 
         return pa_array
 

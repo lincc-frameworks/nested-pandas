@@ -1,5 +1,6 @@
 from __future__ import annotations  # TYPE_CHECKING
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -714,3 +715,70 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
         return list_cls.from_arrays(offsets, values, mask=mask)
 
     return array.cast(target_type)
+
+
+def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> pa.Array:
+    """Build an array from per-row scalars without pyarrow's null-builder gap.
+
+    Equivalent to ``pa.array(scalars, type=pa_type)``, except it avoids
+    appending struct/list scalars one at a time. pyarrow raises
+    ``ArrowNotImplementedError: AppendScalar for type null`` when a struct or
+    list scalar being appended has a ``null``-typed child -- its builder has no
+    scalar-append support for a ``null`` child (see
+    ``tests/nested_pandas/test_pyarrow_null_bugs.py::
+    test_pyarrow_struct_array_from_null_field_scalars``; no upstream issue is
+    filed, since this is a missing feature rather than data corruption).
+
+    Instead, struct and (large_)list containers are rebuilt directly from their
+    children's already-materialized arrays (``scalar.values``, per-field
+    scalars), which never goes through the unsupported append path. Leaf types
+    are unaffected by the gap and are built with plain ``pa.array``.
+
+    Parameters
+    ----------
+    scalars : Sequence[pa.Scalar]
+        One scalar per row, all of type ``pa_type``.
+    pa_type : pa.DataType
+        The common type of ``scalars``.
+
+    Returns
+    -------
+    pa.Array
+        An array equivalent to ``pa.array(scalars, type=pa_type)``.
+    """
+    if pa.types.is_struct(pa_type):
+        validity = [s.is_valid for s in scalars]
+        rows = list(zip(scalars, validity, strict=True))
+        field_arrays = [
+            scalars_to_pa_array(
+                [s[field.name] if valid else pa.scalar(None, type=field.type) for s, valid in rows],
+                field.type,
+            )
+            for field in pa_type
+        ]
+        mask = None if all(validity) else pa.array([not valid for valid in validity])
+        return pa.StructArray.from_arrays(field_arrays, fields=list(pa_type), mask=mask)
+
+    if _is_list_type(pa_type):
+        value_type = pa_type.value_type
+        offsets_dtype = pa.int64() if pa.types.is_large_list(pa_type) else pa.int32()
+        offsets = [0]
+        chunks = []
+        validity = []
+        for s in scalars:
+            valid = s.is_valid
+            validity.append(valid)
+            offsets.append(offsets[-1] + (len(s.values) if valid else 0))
+            if valid:
+                # Rows may disagree on the values' concrete type (e.g. an
+                # all-null row infers `null`, another infers `double`); align
+                # each row to the target type before concatenating. safe_cast
+                # (rather than a plain .cast()) avoids arrow#43838 here too.
+                chunks.append(safe_cast(s.values, value_type))
+        values = pa.concat_arrays(chunks) if chunks else pa.array([], type=value_type)
+        offsets_array = pa.array(offsets, type=offsets_dtype)
+        mask = None if all(validity) else pa.array([not valid for valid in validity])
+        list_cls = pa.LargeListArray if pa.types.is_large_list(pa_type) else pa.ListArray
+        return list_cls.from_arrays(offsets_array, values, mask=mask)
+
+    return pa.array(scalars, type=pa_type)

@@ -61,4 +61,7 @@ def test_from_sequence_null_field():
     series = _null_nested_series()
     rebuilt = NestedExtensionArray._from_sequence(list(series), dtype=series.dtype)
     _validate_struct(rebuilt)
-    assert rebuilt.struct_array.field("n").values.null_count == 4
+    struct_array = rebuilt.struct_array
+    if isinstance(struct_array, pa.ChunkedArray):
+        struct_array = struct_array.combine_chunks()
+    assert struct_array.field("n").values.null_count == 4
