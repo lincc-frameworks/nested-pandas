@@ -650,7 +650,14 @@ def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.S
     return array.cast(norm_type)
 
 
-def _is_list_type(pa_type: pa.DataType) -> bool:
+def _is_offset_list_type(pa_type: pa.DataType) -> bool:
+    """``list`` or ``large_list`` -- the variable-length list types with ``.offsets``.
+
+    Deliberately narrower than ``is_pa_type_a_list``, which also matches
+    ``fixed_size_list``: ``FixedSizeListArray`` has no ``.offsets`` and isn't
+    built via ``ListArray.from_arrays(offsets, values)``, so it can't go
+    through the offset-based reconstruction below.
+    """
     return pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type)
 
 
@@ -712,7 +719,7 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
             mask = array.is_null() if array.null_count else None
             return pa.StructArray.from_arrays(children, fields=target_fields, mask=mask)
 
-    elif _is_list_type(array.type) and _is_list_type(target_type):
+    elif _is_offset_list_type(array.type) and _is_offset_list_type(target_type):
         values = safe_cast(array.values, target_type.value_type)
         offsets = _offsets_for_list_type(array.offsets, target_type)
         mask = array.is_null() if array.null_count else None
@@ -768,7 +775,7 @@ def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> p
         mask = None if all(validity) else pa.array([not valid for valid in validity])
         return pa.StructArray.from_arrays(field_arrays, fields=list(pa_type), mask=mask)
 
-    if _is_list_type(pa_type):
+    if _is_offset_list_type(pa_type):
         value_type = pa_type.value_type
         offsets_dtype = pa.int64() if pa.types.is_large_list(pa_type) else pa.int32()
         offsets = [0]
