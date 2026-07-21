@@ -667,6 +667,22 @@ def _offsets_for_list_type(offsets: pa.Array, list_type: pa.DataType) -> pa.Arra
     return offsets if offsets.type == target else offsets.cast(target)
 
 
+def _contains_null_type(pa_type: pa.DataType) -> bool:
+    """Whether ``pa_type`` is, or nests, pyarrow's ``null`` type anywhere.
+
+    Used by :func:`safe_cast` to skip its manual reconstruction when no
+    ``null``-typed leaf can possibly be involved, since arrow#43838 only
+    corrupts a ``null``-typed child cast to its own type.
+    """
+    if pa.types.is_null(pa_type):
+        return True
+    if pa.types.is_struct(pa_type):
+        return any(_contains_null_type(field.type) for field in pa_type)
+    if _is_offset_list_type(pa_type):
+        return _contains_null_type(pa_type.value_type)
+    return False
+
+
 def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa.Array | pa.ChunkedArray:
     """Cast ``array`` to ``target_type`` without triggering pyarrow's null-cast bug.
 
@@ -676,6 +692,11 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
     into struct and (large_)list children and never cast a child whose type
     already matches the target: a ``null``-typed child is returned unchanged,
     which is correct since casting a value to its own type is a no-op.
+
+    ``array.type`` is checked up front for a ``null``-typed leaf anywhere in its
+    structure; when there is none, the bug cannot be triggered and the cast is
+    delegated straight to pyarrow, which is both correct and faster than the
+    manual reconstruction below.
 
     Canary: ``tests/nested_pandas/test_pyarrow_null_bugs.py::
     test_pyarrow_43838_null_list_identity_cast``. If pyarrow fixes this (the
@@ -701,6 +722,11 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
     # and skips redundant work.
     if array.type == target_type:
         return array
+
+    # No null-typed leaf anywhere in the source: the bug this function works
+    # around cannot be triggered, so let pyarrow do the (faster) native cast.
+    if not _contains_null_type(array.type):
+        return array.cast(target_type)
 
     if isinstance(array, pa.ChunkedArray):
         return pa.chunked_array(
