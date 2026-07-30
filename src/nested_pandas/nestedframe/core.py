@@ -28,6 +28,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
+from nested_pandas.series.registry import wrap_series
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -238,18 +239,16 @@ class NestedFrame(pd.DataFrame):
         return super().__getitem__(item)
 
     def _getitem_str(self, item):
-        if self._is_nested_column(item):
-            return NestedSeries(super().__getitem__(item))
-        # Preempt the nested check if the item is a base column, with or without
-        # dots and backticks.
+        # Base column access, with or without dots and backticks. Columns whose dtype has
+        # a registered series class (e.g. NestedDtype -> NestedSeries) are wrapped in it.
         if item in self.columns:
-            return super().__getitem__(item)
+            return wrap_series(super().__getitem__(item))
         components = self._parse_hierarchical_components(item)
         # One more check on the entirety of the item name, in case backticks were used
         # (even if they weren't necessary).
         cleaned_item = ".".join(components)
         if cleaned_item in self.columns:
-            return super().__getitem__(cleaned_item)
+            return wrap_series(super().__getitem__(cleaned_item))
 
         # If a nested column name is passed, return a flat series for that column
         # flat series is chosen over list series for utility

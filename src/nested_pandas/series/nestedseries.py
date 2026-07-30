@@ -3,6 +3,7 @@ from functools import wraps
 import pandas as pd
 
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.registry import register_series_class
 
 __all__ = ["NestedSeries"]
 
@@ -147,3 +148,6 @@ class NestedSeries(pd.Series):
         4    [0.54775186 3.96202978]  [87.63891523 87.81425034]    [1. 1.]  ['g' 'r']
         """
         return self.nest.to_lists(columns=columns)
+
+
+register_series_class(NestedDtype, NestedSeries)
