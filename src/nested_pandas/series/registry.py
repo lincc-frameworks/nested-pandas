@@ -17,12 +17,23 @@ may return plain ``pd.Series`` objects that get re-wrapped on access.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 from pandas.api.extensions import ExtensionDtype
 
-__all__ = ["register_series_class", "unregister_series_class", "get_series_class", "wrap_series"]
+__all__ = [
+    "register_series_class",
+    "unregister_series_class",
+    "get_series_class",
+    "wrap_series",
+    "register_html_formatter",
+    "unregister_html_formatter",
+    "get_html_formatter",
+]
 
 _SERIES_CLASSES: dict[type[ExtensionDtype], type[pd.Series]] = {}
+_HTML_FORMATTERS: dict[type[ExtensionDtype], Callable] = {}
 
 
 def register_series_class(dtype_class: type[ExtensionDtype], series_class: type[pd.Series]) -> None:
@@ -99,3 +110,55 @@ def wrap_series(series: pd.Series) -> pd.Series:
     if series_class is None or type(series) is series_class:
         return series
     return series_class(series)
+
+
+def register_html_formatter(dtype_class: type[ExtensionDtype], formatter: Callable) -> None:
+    """Register a cell HTML formatter for columns of the given dtype.
+
+    ``NestedFrame._repr_html_`` formats the cells of every column whose dtype
+    has a registered formatter through it (via a pandas Styler, so the
+    returned HTML is inserted unescaped). Nested columns themselves are the
+    first client of this mechanism.
+
+    Parameters
+    ----------
+    dtype_class : type[ExtensionDtype]
+        The extension dtype class to associate with the formatter.
+    formatter : Callable
+        Called with each cell value (which may be a missing-value marker);
+        must return an HTML string.
+    """
+    _HTML_FORMATTERS[dtype_class] = formatter
+
+
+def unregister_html_formatter(dtype_class: type[ExtensionDtype]) -> None:
+    """Remove a previously registered cell HTML formatter.
+
+    Parameters
+    ----------
+    dtype_class : type[ExtensionDtype]
+        The extension dtype class to unregister. No-op if not registered.
+    """
+    _HTML_FORMATTERS.pop(dtype_class, None)
+
+
+def get_html_formatter(dtype) -> Callable | None:
+    """Return the registered cell HTML formatter for a dtype instance, if any.
+
+    Walks the dtype's class MRO, so subclasses of a registered dtype resolve
+    to the same formatter unless they register their own.
+
+    Parameters
+    ----------
+    dtype
+        A dtype instance (e.g. ``series.dtype``).
+
+    Returns
+    -------
+    Callable or None
+        The registered formatter, or None if no formatter is registered.
+    """
+    for klass in type(dtype).__mro__:
+        if klass in _HTML_FORMATTERS:
+            return _HTML_FORMATTERS[klass]
+    return None

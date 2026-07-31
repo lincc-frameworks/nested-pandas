@@ -6,7 +6,12 @@ from .nestedframe.io import from_pyarrow, read_parquet
 from .series.accessor import NestSeriesAccessor  # noqa: F401
 from .series.dtype import NestedDtype
 from .series.nestedseries import NestedSeries
-from .series.registry import register_series_class, unregister_series_class
+from .series.registry import (
+    register_html_formatter,
+    register_series_class,
+    unregister_html_formatter,
+    unregister_series_class,
+)
 
 __all__ = [
     "NestedDtype",
@@ -16,5 +21,7 @@ __all__ = [
     "NestedSeries",
     "register_series_class",
     "unregister_series_class",
+    "register_html_formatter",
+    "unregister_html_formatter",
     "__version__",
 ]

@@ -79,3 +79,27 @@ def test_wrap_series_already_wrapped(int_series_registered):
     """wrap_series does not re-wrap a series already of the registered class."""
     series = _IntSeries(pd.array([1, 2, 3], dtype=pd.ArrowDtype(pa.int64())))
     assert wrap_series(series) is series
+
+
+def test_nested_dtype_html_formatter_preregistered():
+    """NestedDtype has a cell HTML formatter registered on import."""
+    from nested_pandas.series.registry import get_html_formatter
+
+    dtype = NestedDtype.from_columns({"a": pa.int64()})
+    assert get_html_formatter(dtype) is not None
+
+
+def test_repr_html_uses_registered_formatter():
+    """A custom dtype's registered formatter drives NestedFrame._repr_html_."""
+    from nested_pandas import register_html_formatter, unregister_html_formatter
+
+    register_html_formatter(pd.ArrowDtype, lambda value: f"<b>custom:{value}</b>")
+    try:
+        ndf = NestedFrame({"a": pd.array([1, 2], dtype=pd.ArrowDtype(pa.int64())), "b": [1.0, 2.0]})
+        html = ndf._repr_html_()
+        assert "<b>custom:1</b>" in html
+        assert "<b>custom:2</b>" in html
+    finally:
+        unregister_html_formatter(pd.ArrowDtype)
+    # After unregistering, the plain pandas path is used again
+    assert "<b>custom:1</b>" not in ndf._repr_html_()

@@ -28,10 +28,53 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
-from nested_pandas.series.registry import wrap_series
+from nested_pandas.series.registry import get_html_formatter, register_html_formatter, wrap_series
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
+
+
+
+def _repack_nested_row(chunk, header=True):
+    """Render one nested cell as a small single-row html dataframe.
+
+    The cell HTML formatter registered for `NestedDtype` (see
+    `nested_pandas.register_html_formatter`).
+    """
+    # If the chunk is None or empty, return None (displayed same as Null)
+    if chunk is None or len(chunk) == 0:
+        return "None"
+    n_rows = len(chunk)
+
+    if n_rows <= 2:
+        # For 1 or 2 rows, show all rows without a footer
+        chunk = chunk.round(8)
+        max_rows_html = n_rows
+    else:
+        # For 3+ rows, show first row and a "+N rows" footer
+        chunk = chunk.head(1).round(8)
+        chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
+        len_row = pd.DataFrame(
+            {
+                col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
+                for i, col in enumerate(chunk.columns)
+            }
+        )
+        chunk = pd.concat([chunk, len_row], ignore_index=True)
+        max_rows_html = 2
+
+    # Estimate width and resize
+    return chunk.to_html(
+        max_rows=max_rows_html,
+        max_cols=5,
+        show_dimensions=False,
+        index=False,
+        header=header,
+        escape=False,
+    )
+
+
+register_html_formatter(NestedDtype, _repack_nested_row)
 
 
 class NestedFrame(pd.DataFrame):
@@ -109,10 +152,20 @@ class NestedFrame(pd.DataFrame):
         return self.columns[nested_mask].tolist()
 
     def _repr_html_(self) -> str | None:
-        """Override html representation"""
+        """Override html representation
 
-        # Without nested columns (or empty), just do representation as normal
-        if len(self.nested_columns) == 0 or len(self) == 0:
+        Columns whose dtype has a registered cell HTML formatter (see
+        `nested_pandas.register_html_formatter`; nested columns are
+        preregistered) are rendered through it via a pandas Styler.
+        """
+        formatted_columns = {
+            column: formatter
+            for column in self.columns
+            if (formatter := get_html_formatter(self.dtypes[column])) is not None
+        }
+
+        # Without formatted columns (or empty), just do representation as normal
+        if len(formatted_columns) == 0 or len(self) == 0:
             # This mimics pandas behavior
             if pd.get_option("display.max_rows") is None:
                 # If max_rows is None, just show the header
@@ -121,43 +174,6 @@ class NestedFrame(pd.DataFrame):
                 return super().to_html(max_rows=pd.get_option("display.min_rows"), show_dimensions=True)
             else:
                 return super().to_html(max_rows=pd.get_option("display.max_rows"), show_dimensions=True)
-
-        # Nested Column Formatting
-
-        # Display nested columns as small html dataframes with a single row
-        def repack_row(chunk, header=True):
-            # If the chunk is None or empty, return None (displayed same as Null)
-            if chunk is None or len(chunk) == 0:
-                return "None"
-            n_rows = len(chunk)
-
-            if n_rows <= 2:
-                # For 1 or 2 rows, show all rows without a footer
-                chunk = chunk.round(8)
-                max_rows_html = n_rows
-            else:
-                # For 3+ rows, show first row and a "+N rows" footer
-                chunk = chunk.head(1).round(8)
-                chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
-                len_row = pd.DataFrame(
-                    {
-                        col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
-                        for i, col in enumerate(chunk.columns)
-                    }
-                )
-                chunk = pd.concat([chunk, len_row], ignore_index=True)
-                max_rows_html = 2
-
-            # Estimate width and resize
-            html_res = chunk.to_html(
-                max_rows=max_rows_html,
-                max_cols=5,
-                show_dimensions=False,
-                index=False,
-                header=header,
-                escape=False,
-            )
-            return html_res
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
@@ -172,7 +188,7 @@ class NestedFrame(pd.DataFrame):
         # replace index to ensure proper behavior for duplicate index values
         index_values = html_df.index
         html_df = html_df.reset_index(drop=True)
-        repr = html_df.style.format({col: repack_row for col in self.nested_columns})
+        repr = html_df.style.format(formatted_columns)
 
         # Create a mapping function to retrieve original index
         def map_true_index(index):
