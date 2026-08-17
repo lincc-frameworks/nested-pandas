@@ -12,6 +12,9 @@ from .series.registry import (
     unregister_html_formatter,
     unregister_series_class,
 )
+from .tensor.dtype import TensorDtype
+from .tensor.ext_array import TensorArray
+from .tensor.tensorseries import TensorSeries
 
 __all__ = [
     "NestedDtype",
@@ -19,6 +22,9 @@ __all__ = [
     "read_parquet",
     "from_pyarrow",
     "NestedSeries",
+    "TensorDtype",
+    "TensorArray",
+    "TensorSeries",
     "register_series_class",
     "unregister_series_class",
     "register_html_formatter",

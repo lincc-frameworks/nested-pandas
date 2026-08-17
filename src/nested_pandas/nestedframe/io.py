@@ -17,6 +17,8 @@ from upath import UPath
 from ..series.ext_array import NestedExtensionArray
 from ..series.packer import pack_lists
 from ..series.utils import is_pa_type_a_list, table_to_struct_array
+from ..tensor.arrow_ext import is_tensor_pyarrow_type
+from ..tensor.dtype import TensorDtype
 from .core import NestedFrame
 
 # Use smaller block size for these FSSPEC filesystems.
@@ -554,10 +556,10 @@ def from_pyarrow(
     # Convert to a NestedFrame. With types_mapper=pd.ArrowDtype every column is
     # backed by the table's Arrow buffers, so this is zero-copy and there is no
     # need for the self_destruct memory optimization (which only helps the
-    # NumPy-conversion path).
+    # NumPy-conversion path). Tensor extension columns map to TensorDtype.
     df = NestedFrame(
         table.to_pandas(
-            types_mapper=pd.ArrowDtype,
+            types_mapper=_types_mapper,
             split_blocks=True,
             ignore_metadata=not use_pandas_metadata,
         )
@@ -570,6 +572,17 @@ def from_pyarrow(
         df = _cast_list_cols_to_nested(df)
 
     return df
+
+
+def _types_mapper(pa_type: pa.DataType) -> pd.api.extensions.ExtensionDtype:
+    """Map pyarrow types to pandas dtypes for Table.to_pandas.
+
+    Tensor extension columns (fixed or variable shape) become TensorDtype;
+    everything else keeps the default pd.ArrowDtype mapping.
+    """
+    if is_tensor_pyarrow_type(pa_type):
+        return TensorDtype.from_pyarrow(pa_type)
+    return pd.ArrowDtype(pa_type)
 
 
 def _cast_struct_cols_to_nested(df: NestedFrame, reject_nesting: list[str], table: pa.Table) -> NestedFrame:
