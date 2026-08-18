@@ -49,6 +49,7 @@ Extended Pandas.DataFrame Interface
     NestedFrame.dropna
     NestedFrame.sort_values
     NestedFrame.map_rows
+    NestedFrame.split
     NestedFrame.drop
     NestedFrame.min
     NestedFrame.max
