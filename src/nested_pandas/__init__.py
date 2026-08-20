@@ -14,6 +14,7 @@ from .series.registry import (
 )
 from .tensor.dtype import TensorDtype
 from .tensor.ext_array import TensorArray
+from .tensor.imageseries import ImageDtype, ImageSeries
 from .tensor.tensorseries import TensorSeries
 
 __all__ = [
@@ -25,6 +26,8 @@ __all__ = [
     "TensorDtype",
     "TensorArray",
     "TensorSeries",
+    "ImageDtype",
+    "ImageSeries",
     "register_series_class",
     "unregister_series_class",
     "register_html_formatter",

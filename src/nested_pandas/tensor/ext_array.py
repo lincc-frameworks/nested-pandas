@@ -95,8 +95,8 @@ class TensorArray(ExtensionArray):
             chunks = list(values.chunks)
 
         # In memory, fixed-shape columns always use fixed-size-list storage;
-        # convert struct-typed chunks (the nullable-serialization layout) back.
-        storage_type = dtype.pyarrow_dtype.storage_type
+        # convert struct-typed chunks (the struct-serialization layout) back.
+        storage_type = dtype.pyarrow_storage_type
         struct_type = TensorType(dtype.value_type, dtype.ndim).storage_type
         normalized = []
         for chunk in chunks:
@@ -285,7 +285,7 @@ class TensorArray(ExtensionArray):
             raise TypeError(f"Cannot concatenate TensorArrays with different dtypes: {dtypes}")
         chunks = [chunk for array in to_concat for chunk in array._storage.chunks]
         dtype = to_concat[0].dtype
-        storage = pa.chunked_array(chunks, type=dtype.pyarrow_dtype.storage_type)
+        storage = pa.chunked_array(chunks, type=dtype.pyarrow_storage_type)
         return cls._from_storage(storage, dtype)
 
     def dropna(self) -> TensorArray:
@@ -301,7 +301,7 @@ class TensorArray(ExtensionArray):
         """
         del dtype, copy
         if na_value is no_default:
-            na_value = None
+            na_value = self._dtype.na_value
         result = np.empty(len(self), dtype=object)
         for index in range(len(self)):
             value = self._scalar_at(index)
@@ -341,19 +341,23 @@ class TensorArray(ExtensionArray):
     def __arrow_array__(self, type=None):  # noqa: A002
         """Convert to a pyarrow extension array (used e.g. by parquet writing).
 
-        Fixed-shape columns without missing values become the canonical
-        ``arrow.fixed_shape_tensor``. Fixed-shape columns *with* missing
-        values become :class:`TensorType` with a declared shape, because the
-        pyarrow parquet reader cannot reconstruct fixed-size lists with null
-        slots; the declared shape brings the column back as the same
-        fixed-shape dtype on read.
+        Plain fixed-shape tensor columns without missing values become the
+        canonical ``arrow.fixed_shape_tensor``. Everything else becomes
+        :class:`TensorType`: missing values, because the pyarrow parquet
+        reader cannot reconstruct fixed-size lists with null slots (the
+        declared shape brings the column back as the same fixed-shape dtype
+        on read); dtype subclasses with a kind (e.g. image columns), because
+        only the TensorType metadata can carry their identity.
         """
         storage = self._combined_storage()
-        if self._dtype.is_fixed_shape and storage.null_count > 0:
-            extension_type = TensorType(self._dtype.value_type, self._dtype.ndim, shape=self._dtype.shape)
-            storage = fsl_storage_to_struct_storage(storage, self._dtype.shape)
-        else:
-            extension_type = self._dtype.pyarrow_dtype
+        extension_type = self._dtype.pyarrow_dtype
+        if self._dtype.is_fixed_shape:
+            if isinstance(extension_type, pa.FixedShapeTensorType) and storage.null_count > 0:
+                extension_type = TensorType(
+                    self._dtype.value_type, self._dtype.ndim, shape=self._dtype.shape
+                )
+            if isinstance(extension_type, TensorType):
+                storage = fsl_storage_to_struct_storage(storage, self._dtype.shape)
         extension = pa.ExtensionArray.from_storage(extension_type, storage)
         if type is not None and not extension.type.equals(type):
             if extension.type.storage_type.equals(type):

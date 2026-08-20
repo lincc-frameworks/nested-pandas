@@ -52,9 +52,19 @@ class TensorType(pa.ExtensionType):
         round-trips to a fixed-shape ``TensorDtype``. This is how nullable
         fixed-shape columns are serialized, since the canonical
         ``arrow.fixed_shape_tensor`` cannot hold nulls in parquet.
+    kind : str or None, default None
+        Semantic tag carried in the type metadata, so ``TensorDtype``
+        subclasses (e.g. image dtypes, ``kind="image"``) keep their identity
+        through serialization. None means a plain tensor column.
     """
 
-    def __init__(self, value_type: pa.DataType, ndim: int, shape: tuple[int, ...] | None = None):
+    def __init__(
+        self,
+        value_type: pa.DataType,
+        ndim: int,
+        shape: tuple[int, ...] | None = None,
+        kind: str | None = None,
+    ):
         if ndim < 1:
             raise ValueError(f"ndim must be a positive integer, got {ndim}")
         if shape is not None:
@@ -64,6 +74,7 @@ class TensorType(pa.ExtensionType):
         self._value_type = value_type
         self._ndim = int(ndim)
         self._shape = shape
+        self._kind = kind
         storage_type = pa.struct(
             [
                 pa.field("data", pa.list_(value_type)),
@@ -87,17 +98,31 @@ class TensorType(pa.ExtensionType):
         """The declared fixed shape, or None for variable-shape columns."""
         return self._shape
 
+    @property
+    def kind(self) -> str | None:
+        """The semantic tag of the column, or None for a plain tensor."""
+        return self._kind
+
     def __arrow_ext_serialize__(self) -> bytes:
-        return json.dumps(
-            {"ndim": self._ndim, "shape": list(self._shape) if self._shape is not None else None}
-        ).encode()
+        metadata: dict = {
+            "ndim": self._ndim,
+            "shape": list(self._shape) if self._shape is not None else None,
+        }
+        if self._kind is not None:
+            metadata["kind"] = self._kind
+        return json.dumps(metadata).encode()
 
     @classmethod
     def __arrow_ext_deserialize__(cls, storage_type, serialized):
         metadata = json.loads(serialized.decode())
         value_type = storage_type.field("data").type.value_type
         shape = metadata.get("shape")
-        return cls(value_type, metadata["ndim"], shape=tuple(shape) if shape is not None else None)
+        return cls(
+            value_type,
+            metadata["ndim"],
+            shape=tuple(shape) if shape is not None else None,
+            kind=metadata.get("kind"),
+        )
 
     def to_pandas_dtype(self):
         from nested_pandas.tensor.dtype import TensorDtype
@@ -105,9 +130,11 @@ class TensorType(pa.ExtensionType):
         return TensorDtype.from_pyarrow(self)
 
 
-def tensor_type(value_type: pa.DataType, ndim: int, shape: tuple[int, ...] | None = None) -> TensorType:
+def tensor_type(
+    value_type: pa.DataType, ndim: int, shape: tuple[int, ...] | None = None, kind: str | None = None
+) -> TensorType:
     """Create a :class:`TensorType` instance."""
-    return TensorType(value_type, ndim, shape=shape)
+    return TensorType(value_type, ndim, shape=shape, kind=kind)
 
 
 def is_tensor_pyarrow_type(pa_type: pa.DataType) -> bool:

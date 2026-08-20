@@ -23,6 +23,10 @@ def _dtype_string_pattern(prefix: str) -> re.Pattern:
     return re.compile(rf"^{re.escape(prefix)}\[(?P<value>[^,\]]+), (?:\((?P<shape>[\d, ]*)\)|ndim=(?P<ndim>\d+))\]$")
 
 
+_TENSOR_KIND_REGISTRY: dict[str, type] = {}
+"""Maps TensorType semantic kinds to their TensorDtype subclasses."""
+
+
 @register_extension_dtype
 class TensorDtype(ExtensionDtype):
     """Data type for columns of n-dimensional array values.
@@ -70,6 +74,16 @@ class TensorDtype(ExtensionDtype):
 
     _name_prefix = "tensor"
     """Prefix used in the dtype string; subclasses (e.g. image dtypes) override it."""
+
+    _kind: str | None = None
+    """Semantic tag serialized in the arrow type metadata; subclasses set it
+    (e.g. ``"image"``) so their identity survives serialization. Subclasses
+    with a kind are auto-registered for round-trip dispatch."""
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if cls._kind is not None:
+            _TENSOR_KIND_REGISTRY[cls._kind] = cls
 
     def __init__(self, value_type=None, shape=None, ndim=None):
         if value_type is None:
@@ -177,9 +191,20 @@ class TensorDtype(ExtensionDtype):
         fixed-shape columns are *serialized* as :class:`TensorType` with a
         declared shape, see ``TensorArray.__arrow_array__``.
         """
-        if self._shape is not None:
+        if self._shape is not None and self._kind is None:
             return pa.fixed_shape_tensor(self._value_type, self._shape)
-        return tensor_type(self._value_type, self._ndim)
+        return tensor_type(self._value_type, self._ndim, shape=self._shape, kind=self._kind)
+
+    @property
+    def pyarrow_storage_type(self) -> pa.DataType:
+        """The arrow storage layout used in memory.
+
+        Fixed-shape columns use flat fixed-size lists regardless of kind;
+        variable-shape columns the ``struct<data, shape>`` layout.
+        """
+        if self._shape is not None:
+            return pa.fixed_shape_tensor(self._value_type, self._shape).storage_type
+        return tensor_type(self._value_type, self._ndim).storage_type
 
     @classmethod
     def from_pyarrow(cls, pa_type: pa.DataType) -> TensorDtype:
@@ -189,12 +214,17 @@ class TensorDtype(ExtensionDtype):
         ----------
         pa_type : pa.DataType
             Either a ``pa.FixedShapeTensorType`` or a :class:`TensorType`
-            (with or without a declared fixed shape).
+            (with or without a declared fixed shape). A :class:`TensorType`
+            with a registered ``kind`` resolves to the corresponding
+            ``TensorDtype`` subclass, e.g. an image dtype.
         """
         if isinstance(pa_type, pa.FixedShapeTensorType):
             return cls(pa_type.value_type, shape=tuple(pa_type.shape))
         if isinstance(pa_type, TensorType):
+            klass = cls
+            if pa_type.kind is not None:
+                klass = _TENSOR_KIND_REGISTRY.get(pa_type.kind, cls)
             if pa_type.shape is not None:
-                return cls(pa_type.value_type, shape=pa_type.shape)
-            return cls(pa_type.value_type, ndim=pa_type.ndim)
+                return klass(pa_type.value_type, shape=pa_type.shape)
+            return klass(pa_type.value_type, ndim=pa_type.ndim)
         raise TypeError(f"Cannot construct a 'TensorDtype' from pyarrow type '{pa_type}'")
