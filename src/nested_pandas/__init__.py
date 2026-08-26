@@ -12,9 +12,10 @@ from .series.registry import (
     unregister_html_formatter,
     unregister_series_class,
 )
+from .tensor.cutouts import CutoutArray, CutoutDtype, CutoutSeries, DictImageStore, ImageStore
 from .tensor.dtype import TensorDtype
 from .tensor.ext_array import TensorArray
-from .tensor.imageseries import ImageDtype, ImageSeries
+from .tensor.imageseries import BaseImageSeries, ImageDtype, ImageSeries
 from .tensor.tensorseries import TensorSeries
 
 __all__ = [
@@ -26,8 +27,14 @@ __all__ = [
     "TensorDtype",
     "TensorArray",
     "TensorSeries",
+    "BaseImageSeries",
     "ImageDtype",
     "ImageSeries",
+    "CutoutDtype",
+    "CutoutArray",
+    "CutoutSeries",
+    "ImageStore",
+    "DictImageStore",
     "register_series_class",
     "unregister_series_class",
     "register_html_formatter",
