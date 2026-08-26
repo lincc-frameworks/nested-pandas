@@ -147,7 +147,9 @@ class TensorArray(ExtensionArray):
         if dtype.is_fixed_shape:
             pa_array = build_fixed_shape_tensor_array(tensors, dtype.value_type, dtype.shape)
         else:
-            pa_array = build_tensor_struct_array(tensors, dtype.value_type, dtype.ndim)
+            pa_array = build_tensor_struct_array(
+                tensors, dtype.value_type, dtype.ndim, type_class=dtype._arrow_type_class
+            )
         return cls(pa_array, dtype=dtype)
 
     @classmethod
@@ -346,14 +348,15 @@ class TensorArray(ExtensionArray):
         :class:`TensorType`: missing values, because the pyarrow parquet
         reader cannot reconstruct fixed-size lists with null slots (the
         declared shape brings the column back as the same fixed-shape dtype
-        on read); dtype subclasses with a kind (e.g. image columns), because
-        only the TensorType metadata can carry their identity.
+        on read); dtype subclasses with their own extension type (e.g. image
+        columns), because the canonical type's name cannot carry their
+        identity.
         """
         storage = self._combined_storage()
         extension_type = self._dtype.pyarrow_dtype
         if self._dtype.is_fixed_shape:
             if isinstance(extension_type, pa.FixedShapeTensorType) and storage.null_count > 0:
-                extension_type = TensorType(
+                extension_type = self._dtype._arrow_type_class(
                     self._dtype.value_type, self._dtype.ndim, shape=self._dtype.shape
                 )
             if isinstance(extension_type, TensorType):

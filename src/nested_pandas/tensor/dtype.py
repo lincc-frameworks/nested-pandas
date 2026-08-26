@@ -23,8 +23,8 @@ def _dtype_string_pattern(prefix: str) -> re.Pattern:
     return re.compile(rf"^{re.escape(prefix)}\[(?P<value>[^,\]]+), (?:\((?P<shape>[\d, ]*)\)|ndim=(?P<ndim>\d+))\]$")
 
 
-_TENSOR_KIND_REGISTRY: dict[str, type] = {}
-"""Maps TensorType semantic kinds to their TensorDtype subclasses."""
+_ARROW_TYPE_TO_DTYPE: dict[type[TensorType], type] = {}
+"""Maps arrow tensor extension type classes to their TensorDtype (sub)classes."""
 
 
 @register_extension_dtype
@@ -75,15 +75,16 @@ class TensorDtype(ExtensionDtype):
     _name_prefix = "tensor"
     """Prefix used in the dtype string; subclasses (e.g. image dtypes) override it."""
 
-    _kind: str | None = None
-    """Semantic tag serialized in the arrow type metadata; subclasses set it
-    (e.g. ``"image"``) so their identity survives serialization. Subclasses
-    with a kind are auto-registered for round-trip dispatch."""
+    _arrow_type_class: type[TensorType] = TensorType
+    """The arrow extension type class this dtype serializes as. Subclasses
+    override it with their own :class:`TensorType` subclass (e.g. an image
+    type) so the extension *name* carries their identity; overriding it
+    auto-registers the pair for round-trip dispatch."""
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        if cls._kind is not None:
-            _TENSOR_KIND_REGISTRY[cls._kind] = cls
+        if "_arrow_type_class" in cls.__dict__:
+            _ARROW_TYPE_TO_DTYPE[cls._arrow_type_class] = cls
 
     def __init__(self, value_type=None, shape=None, ndim=None):
         if value_type is None:
@@ -186,14 +187,15 @@ class TensorDtype(ExtensionDtype):
     def pyarrow_dtype(self) -> pa.DataType:
         """The primary pyarrow extension type backing this dtype.
 
-        Fixed-shape dtypes map to the canonical ``arrow.fixed_shape_tensor``;
-        variable-shape dtypes to :class:`TensorType`. Note that nullable
-        fixed-shape columns are *serialized* as :class:`TensorType` with a
-        declared shape, see ``TensorArray.__arrow_array__``.
+        Plain fixed-shape tensor dtypes map to the canonical
+        ``arrow.fixed_shape_tensor``; everything else (variable shape, or a
+        dtype subclass with its own arrow type) to that arrow type class.
+        Note that nullable fixed-shape columns are *serialized* as the struct
+        layout with a declared shape, see ``TensorArray.__arrow_array__``.
         """
-        if self._shape is not None and self._kind is None:
+        if self._shape is not None and self._arrow_type_class is TensorType and type(self) is TensorDtype:
             return pa.fixed_shape_tensor(self._value_type, self._shape)
-        return tensor_type(self._value_type, self._ndim, shape=self._shape, kind=self._kind)
+        return self._arrow_type_class(self._value_type, self._ndim, shape=self._shape)
 
     @property
     def pyarrow_storage_type(self) -> pa.DataType:
@@ -214,17 +216,18 @@ class TensorDtype(ExtensionDtype):
         ----------
         pa_type : pa.DataType
             Either a ``pa.FixedShapeTensorType`` or a :class:`TensorType`
-            (with or without a declared fixed shape). A :class:`TensorType`
-            with a registered ``kind`` resolves to the corresponding
-            ``TensorDtype`` subclass, e.g. an image dtype.
+            (with or without a declared fixed shape). :class:`TensorType`
+            subclasses resolve to their registered ``TensorDtype`` subclass,
+            e.g. ``nested_pandas.image`` to the image dtype.
         """
         if isinstance(pa_type, pa.FixedShapeTensorType):
             return cls(pa_type.value_type, shape=tuple(pa_type.shape))
         if isinstance(pa_type, TensorType):
-            klass = cls
-            if pa_type.kind is not None:
-                klass = _TENSOR_KIND_REGISTRY.get(pa_type.kind, cls)
+            klass = _ARROW_TYPE_TO_DTYPE.get(type(pa_type), cls)
             if pa_type.shape is not None:
                 return klass(pa_type.value_type, shape=pa_type.shape)
             return klass(pa_type.value_type, ndim=pa_type.ndim)
         raise TypeError(f"Cannot construct a 'TensorDtype' from pyarrow type '{pa_type}'")
+
+
+_ARROW_TYPE_TO_DTYPE[TensorType] = TensorDtype

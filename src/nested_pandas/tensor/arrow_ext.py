@@ -25,6 +25,7 @@ import pyarrow as pa
 
 __all__ = [
     "TensorType",
+    "ImageType",
     "tensor_type",
     "is_tensor_pyarrow_type",
     "build_fixed_shape_tensor_array",
@@ -52,18 +53,22 @@ class TensorType(pa.ExtensionType):
         round-trips to a fixed-shape ``TensorDtype``. This is how nullable
         fixed-shape columns are serialized, since the canonical
         ``arrow.fixed_shape_tensor`` cannot hold nulls in parquet.
-    kind : str or None, default None
-        Semantic tag carried in the type metadata, so ``TensorDtype``
-        subclasses (e.g. image dtypes, ``kind="image"``) keep their identity
-        through serialization. None means a plain tensor column.
+
+    Notes
+    -----
+    Semantic subtypes are distinct extension types: subclasses override
+    ``EXTENSION_NAME`` (e.g. :class:`ImageType`, ``nested_pandas.image``) so
+    the type name itself carries the column's identity through serialization.
     """
+
+    EXTENSION_NAME = "nested_pandas.tensor"
+    """The registered arrow extension name; subclasses override it."""
 
     def __init__(
         self,
         value_type: pa.DataType,
         ndim: int,
         shape: tuple[int, ...] | None = None,
-        kind: str | None = None,
     ):
         if ndim < 1:
             raise ValueError(f"ndim must be a positive integer, got {ndim}")
@@ -74,14 +79,13 @@ class TensorType(pa.ExtensionType):
         self._value_type = value_type
         self._ndim = int(ndim)
         self._shape = shape
-        self._kind = kind
         storage_type = pa.struct(
             [
                 pa.field("data", pa.list_(value_type)),
                 pa.field("shape", pa.list_(pa.int32())),
             ]
         )
-        super().__init__(storage_type, "nested_pandas.tensor")
+        super().__init__(storage_type, type(self).EXTENSION_NAME)
 
     @property
     def value_type(self) -> pa.DataType:
@@ -98,18 +102,11 @@ class TensorType(pa.ExtensionType):
         """The declared fixed shape, or None for variable-shape columns."""
         return self._shape
 
-    @property
-    def kind(self) -> str | None:
-        """The semantic tag of the column, or None for a plain tensor."""
-        return self._kind
-
     def __arrow_ext_serialize__(self) -> bytes:
         metadata: dict = {
             "ndim": self._ndim,
             "shape": list(self._shape) if self._shape is not None else None,
         }
-        if self._kind is not None:
-            metadata["kind"] = self._kind
         return json.dumps(metadata).encode()
 
     @classmethod
@@ -121,7 +118,6 @@ class TensorType(pa.ExtensionType):
             value_type,
             metadata["ndim"],
             shape=tuple(shape) if shape is not None else None,
-            kind=metadata.get("kind"),
         )
 
     def to_pandas_dtype(self):
@@ -130,11 +126,19 @@ class TensorType(pa.ExtensionType):
         return TensorDtype.from_pyarrow(self)
 
 
-def tensor_type(
-    value_type: pa.DataType, ndim: int, shape: tuple[int, ...] | None = None, kind: str | None = None
-) -> TensorType:
+class ImageType(TensorType):
+    """Arrow extension type for image pixel columns.
+
+    Identical storage and metadata to :class:`TensorType`; the distinct
+    extension name is what round-trips columns back to an image dtype.
+    """
+
+    EXTENSION_NAME = "nested_pandas.image"
+
+
+def tensor_type(value_type: pa.DataType, ndim: int, shape: tuple[int, ...] | None = None) -> TensorType:
     """Create a :class:`TensorType` instance."""
-    return TensorType(value_type, ndim, shape=shape, kind=kind)
+    return TensorType(value_type, ndim, shape=shape)
 
 
 def is_tensor_pyarrow_type(pa_type: pa.DataType) -> bool:
@@ -194,7 +198,11 @@ def build_fixed_shape_tensor_array(tensors, value_type: pa.DataType, shape: tupl
 
 
 def build_tensor_struct_array(
-    tensors, value_type: pa.DataType, ndim: int, shape: tuple[int, ...] | None = None
+    tensors,
+    value_type: pa.DataType,
+    ndim: int,
+    shape: tuple[int, ...] | None = None,
+    type_class: type[TensorType] = TensorType,
 ) -> pa.Array:
     """Build a :class:`TensorType` extension array from numpy tensors.
 
@@ -210,13 +218,15 @@ def build_tensor_struct_array(
     shape : tuple of int or None, default None
         When given, validate every tensor against it and declare the type as
         fixed shape.
+    type_class : type[TensorType], default TensorType
+        The extension type class to build, e.g. :class:`ImageType`.
 
     Returns
     -------
     pa.Array
-        An extension array of type ``TensorType(value_type, ndim, shape)``.
+        An extension array of type ``type_class(value_type, ndim, shape)``.
     """
-    tensor_type_ = TensorType(value_type, ndim, shape=shape)
+    tensor_type_ = type_class(value_type, ndim, shape=shape)
     np_value = np.dtype(value_type.to_pandas_dtype())
 
     flats: list[np.ndarray] = []
@@ -309,12 +319,13 @@ def struct_storage_to_fsl_storage(
 
 
 def _register_extension_types():
-    """Register the tensor extension type with pyarrow (idempotent)."""
-    try:
-        pa.register_extension_type(TensorType(pa.float32(), 1))
-    except pa.ArrowKeyError:
-        # Already registered, e.g. by a reloaded module.
-        pass
+    """Register the tensor extension types with pyarrow (idempotent)."""
+    for type_class in (TensorType, ImageType):
+        try:
+            pa.register_extension_type(type_class(pa.float32(), 1))
+        except pa.ArrowKeyError:
+            # Already registered, e.g. by a reloaded module.
+            pass
 
 
 _register_extension_types()

@@ -6,7 +6,7 @@ import pytest
 
 import nested_pandas as npd
 from nested_pandas import ImageDtype, ImageSeries, TensorArray, TensorDtype, TensorSeries
-from nested_pandas.tensor.arrow_ext import TensorType
+from nested_pandas.tensor.arrow_ext import ImageType, TensorType
 from nested_pandas.tensor.display import image_cell_html, image_series_html
 
 
@@ -57,13 +57,18 @@ def test_image_dtype_survives_operations(image_array):
     assert isinstance(concatenated.dtype, ImageDtype)
 
 
-def test_image_pyarrow_type_carries_kind(image_array):
+def test_image_pyarrow_type_is_distinct(image_array):
     ext = image_array.__arrow_array__()
-    assert isinstance(ext.type, TensorType)
-    assert ext.type.kind == "image"
+    assert isinstance(ext.type, ImageType)
+    assert ext.type.extension_name == "nested_pandas.image"
     assert ext.type.shape == (2, 2)
     assert TensorDtype.from_pyarrow(ext.type) == image_array.dtype
     assert isinstance(TensorDtype.from_pyarrow(ext.type), ImageDtype)
+    # A plain tensor column keeps the plain type name.
+    plain = TensorArray._from_sequence([np.ones((1, 2))], dtype=TensorDtype("float64", ndim=2))
+    plain_type = plain.__arrow_array__().type
+    assert isinstance(plain_type, TensorType) and not isinstance(plain_type, ImageType)
+    assert plain_type.extension_name == "nested_pandas.tensor"
 
 
 @pytest.mark.parametrize("with_na", [False, True])
@@ -77,8 +82,7 @@ def test_parquet_roundtrip_fixed_image(tmp_path, with_na):
     nf.to_parquet(path)
 
     file_type = pq.read_schema(path).field("img").type
-    assert isinstance(file_type, TensorType)
-    assert file_type.kind == "image"
+    assert isinstance(file_type, ImageType)
 
     back = npd.read_parquet(path)
     assert isinstance(back["img"].dtype, ImageDtype)

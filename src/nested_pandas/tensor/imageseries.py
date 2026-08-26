@@ -5,8 +5,9 @@ An image column is a tensor column whose cells are image pixel arrays
 :class:`ImageDtype` subclasses :class:`TensorDtype` and :class:`ImageSeries`
 subclasses :class:`TensorSeries`; the series-class registry dispatches on the
 dtype's MRO, so image columns come back as ``ImageSeries`` while plain tensor
-columns stay ``TensorSeries``. The dtype's ``kind`` tag is carried in the
-arrow extension type metadata, so image identity survives serialization.
+columns stay ``TensorSeries``. Image columns serialize as their own arrow
+extension type (``nested_pandas.image``), so the identity survives
+serialization in the type name itself.
 
 This is the tensor-backed (materialized pixels) entry point of the image
 column design. A store-backed variant — descriptor rows resolved against a
@@ -20,6 +21,7 @@ import numpy as np
 from pandas.api.extensions import register_extension_dtype
 
 from nested_pandas.series.registry import register_html_formatter, register_series_class
+from nested_pandas.tensor.arrow_ext import ImageType
 from nested_pandas.tensor.display import image_cell_html, image_series_html
 from nested_pandas.tensor.dtype import TensorDtype
 from nested_pandas.tensor.tensorseries import TensorSeries
@@ -36,14 +38,13 @@ class ImageDtype(TensorDtype):
     :class:`ImageSeries`, renders cells as thumbnails in HTML reprs, and its
     dtype string uses the ``image`` prefix, e.g. ``"image[float, (25, 25)]"``.
 
-    Image columns are serialized as the ``nested_pandas.tensor`` extension
-    type with ``kind="image"`` (never the canonical
-    ``arrow.fixed_shape_tensor``, whose type metadata cannot carry the image
-    identity), so they read back as image columns.
+    Image columns are serialized as the ``nested_pandas.image`` extension
+    type (never the canonical ``arrow.fixed_shape_tensor``, whose name cannot
+    carry the image identity), so they read back as image columns.
     """
 
     _name_prefix = "image"
-    _kind = "image"
+    _arrow_type_class = ImageType
 
 
 class ImageSeries(TensorSeries):
