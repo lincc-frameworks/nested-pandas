@@ -1,21 +1,25 @@
-"""nested-pandas operations that currently break on an all-null nested field.
+"""nested-pandas write/build operations over an all-null nested field.
 
 A nested sub-column that is entirely null is represented with pyarrow's ``null``
-data type. Reading such data works, but several write/build operations still
-fail, for two unrelated reasons:
+data type. Two unrelated pyarrow limitations used to break these operations, and
+each is now worked around:
 
-* ``_box_pa_array`` casts the stored array to the requested type via pyarrow's
-  ``Array.cast``, which corrupts the null field. Same upstream cast bug as
-  https://github.com/apache/arrow/issues/43838; should route through
-  ``utils.safe_cast`` like ``__arrow_array__`` already does.
-* ``__setitem__`` and ``_from_sequence`` build the array from per-row pyarrow
+* ``_box_pa_array`` cast the stored array to the requested type via pyarrow's
+  ``Array.cast``, which corrupts a ``null`` field
+  (https://github.com/apache/arrow/issues/43838). It now routes through
+  ``utils.safe_cast``, as ``__arrow_array__`` does.
+* ``__setitem__`` and ``_from_sequence`` built the array from per-row pyarrow
   scalars, which raises ``ArrowNotImplementedError: AppendScalar for type
   null``. This isn't corruption -- pyarrow just hasn't implemented
-  scalar-append into a ``null``-typed struct field yet (canary:
-  ``test_pyarrow_null_bugs.test_pyarrow_struct_array_from_null_field_scalars``).
-  nested-pandas needs a workaround that avoids that code path.
+  scalar-append into a ``null``-typed struct field. ``__setitem__`` now
+  broadcasts with ``pa.repeat``, and ``_box_pa_array`` builds via
+  ``utils.scalars_to_pa_array``, so neither reaches that code path.
 
-These tests currently FAIL and mark the next things to fix.
+Both limitations are pinned by strict-xfail canaries in
+``tests/nested_pandas/test_pyarrow_null_bugs.py``; if pyarrow fixes either, the
+matching canary fails and points at the workaround that can then be removed.
+
+These are regression tests: they must keep passing.
 """
 
 import pandas as pd
