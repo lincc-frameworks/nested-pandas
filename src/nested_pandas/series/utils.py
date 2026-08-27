@@ -668,14 +668,15 @@ def _contains_null_type(pa_type: pa.DataType) -> bool:
     ``null``-typed leaf can possibly be involved, since arrow#43838 only
     corrupts a ``null``-typed child cast to its own type.
 
+    Child types are walked generically rather than per-container, so this also
+    sees a ``null`` leaf inside a container :func:`safe_cast` cannot rebuild
+    itself -- ``fixed_size_list`` (no ``.offsets``) and ``map``. Those must not
+    take the "no null leaf, delegate to pyarrow" fast path either; reaching the
+    recursion lets the exact-type no-op return the null-bearing child untouched.
     """
     if pa.types.is_null(pa_type):
         return True
-    if pa.types.is_struct(pa_type):
-        return any(_contains_null_type(field.type) for field in pa_type)
-    if _is_varlength_list_type(pa_type):
-        return _contains_null_type(pa_type.value_type)
-    return False
+    return any(_contains_null_type(pa_type.field(i).type) for i in range(pa_type.num_fields))
 
 
 def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa.Array | pa.ChunkedArray:

@@ -68,3 +68,60 @@ def test_arrow_array_almost_same_type_null_field():
     assert struct_type != almost  # a whole-array `type ==` guard would not fire
     result = _validate(pa.array(ext_array, type=almost))
     assert result.field("n").values.null_count == 4
+
+
+def _nested_array_with_inner(inner_values):
+    """large_list<struct<n: <inner>, v: int64>> with row lengths [1, 1, 2].
+
+    Like :func:`_null_nested_array`, but ``n``'s ``null``-typed leaf sits inside
+    another container (a fixed-size list, a map) rather than being the element
+    type of ``n``'s own list.
+    """
+    struct = pa.StructArray.from_arrays(
+        [inner_values, pa.array([10, 20, 30, 40], pa.int64())],
+        names=["n", "v"],
+    )
+    return pa.LargeListArray.from_arrays(pa.array([0, 1, 2, 4], pa.int64()), struct)
+
+
+def _almost_same_struct_type(ext_array):
+    """The array's struct type with only the non-null ``v`` field's nullability flipped.
+
+    A pyarrow-supported difference that leaves ``n`` byte-for-byte identical, so
+    a whole-array ``type ==`` guard does not fire and the null leaf is reached.
+    """
+    struct_type = ext_array.struct_array.type
+    almost = pa.struct(
+        [f if f.name == "n" else pa.field(f.name, f.type, nullable=False) for f in struct_type]
+    )
+    assert struct_type != almost
+    return almost
+
+
+def test_arrow_array_null_inside_fixed_size_list():
+    """A ``null`` leaf nested in a fixed-size list must survive the cast.
+
+    ``fixed_size_list`` has no ``.offsets``, so it cannot go through the
+    offset-based reconstruction that handles ``list``/``large_list``. It still
+    has to be detected as containing a ``null`` leaf, or the cast is delegated
+    to pyarrow and arrow#43838 truncates the values buffer.
+    """
+    inner = pa.FixedSizeListArray.from_arrays(pa.nulls(8, pa.null()), 2)
+    ext_array = NestedExtensionArray(_nested_array_with_inner(inner))
+    assert ext_array.dtype.pyarrow_dtype.field("n").type.value_type == inner.type
+
+    result = _validate(pa.array(ext_array, type=_almost_same_struct_type(ext_array)))
+    assert result.field("n").values.values.null_count == 8
+
+
+def test_arrow_array_null_inside_map():
+    """A ``null``-typed map value must survive the cast, for the same reason."""
+    inner = pa.MapArray.from_arrays(
+        pa.array([0, 1, 2, 3, 4], pa.int32()),
+        pa.array(["a", "b", "c", "d"], pa.string()),
+        pa.nulls(4, pa.null()),
+    )
+    ext_array = NestedExtensionArray(_nested_array_with_inner(inner))
+    assert ext_array.dtype.pyarrow_dtype.field("n").type.value_type == inner.type
+
+    _validate(pa.array(ext_array, type=_almost_same_struct_type(ext_array)))
