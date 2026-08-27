@@ -84,14 +84,31 @@ def zero_align_large_list_offsets(array: pa.LargeListArray) -> pa.LargeListArray
     pa.LargeListArray
         List array with offsets starting at zero and values sliced accordingly.
     """
+    return cast(pa.LargeListArray, _zero_align_list_offsets(array))
+
+
+def _zero_align_list_offsets(array: pa.Array) -> pa.Array:
+    """Realign a ``list``/``large_list`` array so its offsets start at zero.
+
+    Nulls are preserved: rebasing rebuilds the array from ``offsets``, which
+    carry no validity of their own, so the mask has to be reapplied explicitly.
+
+    A sliced list array keeps its parent's offsets, so they start mid-buffer.
+    ``from_arrays`` refuses such offsets together with a validity mask
+    ("Null bitmap with offsets slice not supported"), so any reconstruction
+    passing a mask must rebase first.
+
+    If the first offset is already zero the original array is returned unchanged.
+    """
     offsets = array.offsets
     first = offsets[0].as_py()
     if first == 0:
         return array
-    new_offsets = pa.compute.subtract(offsets, offsets[0])
-    return pa.LargeListArray.from_arrays(
+    list_cls = pa.LargeListArray if pa.types.is_large_list(array.type) else pa.ListArray
+    return list_cls.from_arrays(
         values=array.values[first : offsets[-1].as_py()],
-        offsets=new_offsets,
+        offsets=pa.compute.subtract(offsets, offsets[0]),
+        mask=array.is_null() if array.null_count else None,
     )
 
 
@@ -741,6 +758,9 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
             mask = array.is_null() if array.null_count else None
             return pa.StructArray.from_arrays(children, fields=target_fields, mask=mask)
     elif _is_varlength_list_type(array.type) and _is_varlength_list_type(target_type):
+        # A slice keeps its parent's offsets, which from_arrays rejects together
+        # with the validity mask below; rebase them to zero first.
+        array = _zero_align_list_offsets(array)
         values = safe_cast(array.values, target_type.value_type)
         offsets = _offsets_for_list_type(array.offsets, target_type)
         mask = array.is_null() if array.null_count else None
