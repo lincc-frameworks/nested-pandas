@@ -15,8 +15,8 @@ to work around them:
   ``ArrowNotImplementedError: AppendScalar for type null`` when one of the
   struct's fields is ``null``-typed. This is not corruption -- pyarrow simply
   hasn't implemented scalar-append for a ``null``-typed builder yet -- but
-  nested-pandas still needs to avoid that code path (e.g. ``__setitem__`` and
-  ``_from_sequence`` go through it today).
+  nested-pandas still has to avoid that code path, which ``_from_sequence``
+  would otherwise reach.
 
 These tests assert the behavior nested-pandas needs, so they fail while the
 upstream limitations are present. They act as canaries: once pyarrow adds the
@@ -131,19 +131,15 @@ def test_pyarrow_struct_array_from_null_field_scalars():
     the (perfectly valid) array. No apache/arrow issue is filed for this yet --
     it's a missing feature, not corruption.
 
-    Workarounds, both of which avoid ever appending a struct/list scalar with a
-    null-typed child one at a time:
+    Workaround: ``utils.scalars_to_pa_array`` rebuilds struct/list containers
+    directly from each scalar's already-materialized child array/scalar instead
+    of going through ``pa.array(scalars)``. Used by
+    ``NestedExtensionArray._box_pa_array`` (its per-row-scalar fallback path,
+    reached from ``_from_sequence``).
 
-    * ``utils.scalars_to_pa_array`` -- rebuilds struct/list containers directly
-      from each scalar's already-materialized child array/scalar instead of
-      going through ``pa.array(scalars)``. Used by
-      ``NestedExtensionArray._box_pa_array`` (its per-row-scalar fallback path,
-      reached from ``_from_sequence``).
-    * ``NestedExtensionArray.__setitem__`` -- broadcasts a single scalar via
-      ``pa.repeat(scalar, n)`` instead of ``pa.array([scalar] * n)``.
-
-    If this test starts passing (xpass), both call sites can revert to plain
-    ``pa.array(...)``, and ``scalars_to_pa_array`` can likely be removed.
+    If this test starts passing (xpass), that call site can revert to plain
+    ``pa.array(scalars, type=pa_type)`` and ``scalars_to_pa_array`` can likely
+    be removed.
     """
     struct_type = pa.struct([("n", pa.null()), ("v", pa.int64())])
     row = pa.scalar({"n": None, "v": 1}, type=struct_type)

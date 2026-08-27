@@ -1,21 +1,16 @@
 """nested-pandas write/build operations over an all-null nested field.
 
 A nested sub-column that is entirely null is represented with pyarrow's ``null``
-data type. Two unrelated pyarrow limitations used to break these operations, and
-each is now worked around:
+data type. Two unrelated pyarrow limitations used to break these operations:
 
-* ``_box_pa_array`` cast the stored array to the requested type via pyarrow's
-  ``Array.cast``, which corrupts a ``null`` field
-  (https://github.com/apache/arrow/issues/43838). It now routes through
-  ``utils.safe_cast``, as ``__arrow_array__`` does.
-* ``__setitem__`` and ``_from_sequence`` built the array from per-row pyarrow
-  scalars, which raises ``ArrowNotImplementedError: AppendScalar for type
-  null``. This isn't corruption -- pyarrow just hasn't implemented
-  scalar-append into a ``null``-typed struct field. ``__setitem__`` now
-  broadcasts with ``pa.repeat``, and ``_box_pa_array`` builds via
-  ``utils.scalars_to_pa_array``, so neither reaches that code path.
+* ``Array.cast`` corrupts a ``null`` field
+  (https://github.com/apache/arrow/issues/43838). ``_box_pa_array`` now routes
+  through ``utils.safe_cast``, as ``__arrow_array__`` does.
+* Building an array from per-row scalars raises ``ArrowNotImplementedError:
+  AppendScalar for type null``. ``_box_pa_array`` now builds via
+  ``utils.scalars_to_pa_array`` instead.
 
-Both limitations are pinned by strict-xfail canaries in
+Both are pinned by strict-xfail canaries in
 ``tests/nested_pandas/test_pyarrow_null_bugs.py``; if pyarrow fixes either, the
 matching canary fails and points at the workaround that can then be removed.
 

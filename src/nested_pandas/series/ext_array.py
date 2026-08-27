@@ -380,13 +380,7 @@ class NestedExtensionArray(ExtensionArray):
             # Copy will happen later in replace_with_mask() anyway
             value = self._box_pa_array(value, pa_type=self._pyarrow_dtype)
         else:
-            # Our replace_with_mask implementation doesn't work with scalars.
-            # pa.repeat, not `pa.array([scalar] * n)`: the latter appends the
-            # scalar n times through pyarrow's builders, which raises
-            # "ArrowNotImplementedError: AppendScalar for type null" when the
-            # struct scalar has a null-typed field. Canary:
-            # test_pyarrow_null_bugs.py::test_pyarrow_struct_array_from_null_field_scalars.
-            # pa.repeat broadcasts the already-materialized scalar instead.
+            # Our replace_with_mask implementation doesn't work with scalars
             value = pa.repeat(scalar, pa.compute.sum(pa_mask).as_py())
 
         if argsort is not None:
