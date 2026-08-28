@@ -1,5 +1,6 @@
 from __future__ import annotations  # TYPE_CHECKING
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -83,14 +84,31 @@ def zero_align_large_list_offsets(array: pa.LargeListArray) -> pa.LargeListArray
     pa.LargeListArray
         List array with offsets starting at zero and values sliced accordingly.
     """
+    return cast(pa.LargeListArray, _zero_align_list_offsets(array))
+
+
+def _zero_align_list_offsets(array: pa.Array) -> pa.Array:
+    """Realign a ``list``/``large_list`` array so its offsets start at zero.
+
+    Nulls are preserved: rebasing rebuilds the array from ``offsets``, which
+    carry no validity of their own, so the mask has to be reapplied explicitly.
+
+    A sliced list array keeps its parent's offsets, so they start mid-buffer.
+    ``from_arrays`` refuses such offsets together with a validity mask
+    ("Null bitmap with offsets slice not supported"), so any reconstruction
+    passing a mask must rebase first.
+
+    If the first offset is already zero the original array is returned unchanged.
+    """
     offsets = array.offsets
     first = offsets[0].as_py()
     if first == 0:
         return array
-    new_offsets = pa.compute.subtract(offsets, offsets[0])
-    return pa.LargeListArray.from_arrays(
+    list_cls = pa.LargeListArray if pa.types.is_large_list(array.type) else pa.ListArray
+    return list_cls.from_arrays(
         values=array.values[first : offsets[-1].as_py()],
-        offsets=new_offsets,
+        offsets=pa.compute.subtract(offsets, offsets[0]),
+        mask=array.is_null() if array.null_count else None,
     )
 
 
@@ -647,3 +665,177 @@ def normalize_struct_list_array(array: pa.StructArray | pa.ChunkedArray) -> pa.S
     if norm_type == array.type:
         return array
     return array.cast(norm_type)
+
+
+def _is_varlength_list_type(pa_type: pa.DataType) -> bool:
+    """``list`` or ``large_list`` -- the variable-length list types with ``.offsets``."""
+    return pa.types.is_list(pa_type) or pa.types.is_large_list(pa_type)
+
+
+def _offsets_for_list_type(offsets: pa.Array, list_type: pa.DataType) -> pa.Array:
+    """Return list offsets with the integer width required by ``list_type``."""
+    target = pa.int64() if pa.types.is_large_list(list_type) else pa.int32()
+    return offsets if offsets.type == target else offsets.cast(target)
+
+
+def _contains_null_type(pa_type: pa.DataType) -> bool:
+    """Whether ``pa_type`` is, or nests, pyarrow's ``null`` type anywhere.
+
+    Used by :func:`safe_cast` to skip its manual reconstruction when no
+    ``null``-typed leaf can possibly be involved, since arrow#43838 only
+    corrupts a ``null``-typed child cast to its own type.
+
+    Child types are walked generically rather than per-container, so this also
+    sees a ``null`` leaf inside a container :func:`safe_cast` cannot rebuild
+    itself -- ``fixed_size_list`` (no ``.offsets``) and ``map``. Those must not
+    take the "no null leaf, delegate to pyarrow" fast path either; reaching the
+    recursion lets the exact-type no-op return the null-bearing child untouched.
+    """
+    if pa.types.is_null(pa_type):
+        return True
+    return any(_contains_null_type(pa_type.field(i).type) for i in range(pa_type.num_fields))
+
+
+def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa.Array | pa.ChunkedArray:
+    """Cast ``array`` to ``target_type`` without triggering pyarrow's null-cast bug.
+
+    pyarrow silently corrupts a ``null``-typed child array when it is cast to its
+    own type (https://github.com/apache/arrow/issues/43838). This happens even
+    inside a larger cast where only some fields change. To avoid it, we recurse
+    into struct and (large_)list children and never cast a child whose type
+    already matches the target: a ``null``-typed child is returned unchanged,
+    which is correct since casting a value to its own type is a no-op.
+
+    ``array.type`` is checked up front for a ``null``-typed leaf anywhere in its
+    structure; when there is none, the bug cannot be triggered and the cast is
+    delegated straight to pyarrow, which is both correct and faster than the
+    manual reconstruction below.
+
+    Canary: ``tests/nested_pandas/test_pyarrow_null_bugs.py::
+    test_pyarrow_43838_null_list_identity_cast``. If pyarrow fixes this (the
+    canary starts xpassing), calls to ``safe_cast`` can revert to plain
+    ``.cast()`` and this function can likely be removed.
+
+    Non-nested casts, and casts that genuinely change a non-null leaf type, are
+    delegated to pyarrow, which handles them correctly.
+
+    Parameters
+    ----------
+    array : pa.Array or pa.ChunkedArray
+        Input array.
+    target_type : pa.DataType
+        Type to cast to.
+
+    Returns
+    -------
+    pa.Array or pa.ChunkedArray
+        The array cast to ``target_type``.
+    """
+    # Exact match at any nesting level: no-op. This both avoids the null-cast bug
+    # and skips redundant work.
+    if array.type == target_type:
+        return array
+
+    # No null-typed leaf anywhere in the source: the bug this function works
+    # around cannot be triggered, so let pyarrow do the (faster) native cast.
+    if not _contains_null_type(array.type):
+        return array.cast(target_type)
+
+    if isinstance(array, pa.ChunkedArray):
+        return pa.chunked_array(
+            [safe_cast(chunk, target_type) for chunk in array.iterchunks()],
+            type=target_type,
+        )
+
+    if pa.types.is_struct(array.type) and pa.types.is_struct(target_type):
+        source_names = set(struct_field_names(array.type))
+        target_fields = struct_fields(target_type)
+        # Only recurse when we can source every target field by name; otherwise
+        # the structures differ in a way this helper does not model, so defer to
+        # pyarrow (which does not involve a null-typed no-op cast here).
+        if all(field.name in source_names for field in target_fields):
+            children = [safe_cast(array.field(field.name), field.type) for field in target_fields]
+            mask = array.is_null() if array.null_count else None
+            return pa.StructArray.from_arrays(children, fields=target_fields, mask=mask)
+    elif _is_varlength_list_type(array.type) and _is_varlength_list_type(target_type):
+        # A slice keeps its parent's offsets, which from_arrays rejects together
+        # with the validity mask below; rebase them to zero first.
+        array = _zero_align_list_offsets(array)
+        values = safe_cast(array.values, target_type.value_type)
+        offsets = _offsets_for_list_type(array.offsets, target_type)
+        mask = array.is_null() if array.null_count else None
+        list_cls = pa.LargeListArray if pa.types.is_large_list(target_type) else pa.ListArray
+        return list_cls.from_arrays(offsets, values, mask=mask)
+
+    return array.cast(target_type)
+
+
+def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> pa.Array:
+    """Build an array from per-row scalars without pyarrow's null-builder gap.
+
+    Equivalent to ``pa.array(scalars, type=pa_type)``, except it avoids
+    appending struct/list scalars one at a time. pyarrow raises
+    ``ArrowNotImplementedError: AppendScalar for type null`` when a struct or
+    list scalar being appended has a ``null``-typed child -- its builder has no
+    scalar-append support for a ``null`` child. No upstream issue is filed,
+    since this is a missing feature rather than data corruption.
+
+    Instead, struct and (large_)list containers are rebuilt directly from their
+    children's already-materialized arrays (``scalar.values``, per-field
+    scalars), which never goes through the unsupported append path. Leaf types
+    are unaffected by the gap and are built with plain ``pa.array``.
+
+    Canary: ``tests/nested_pandas/test_pyarrow_null_bugs.py::
+    test_pyarrow_struct_array_from_null_field_scalars``. If pyarrow adds the
+    missing support (the canary starts xpassing), calls to this function can
+    revert to plain ``pa.array(scalars, type=pa_type)`` and it can likely be
+    removed.
+
+    Parameters
+    ----------
+    scalars : Sequence[pa.Scalar]
+        One scalar per row, all of type ``pa_type``.
+    pa_type : pa.DataType
+        The common type of ``scalars``.
+
+    Returns
+    -------
+    pa.Array
+        An array equivalent to ``pa.array(scalars, type=pa_type)``.
+    """
+    if pa.types.is_struct(pa_type):
+        validity = [s.is_valid for s in scalars]
+        rows = list(zip(scalars, validity, strict=True))
+        field_arrays = [
+            scalars_to_pa_array(
+                [s[field.name] if valid else pa.scalar(None, type=field.type) for s, valid in rows],
+                field.type,
+            )
+            for field in pa_type
+        ]
+        mask = None if all(validity) else pa.array([not valid for valid in validity])
+        return pa.StructArray.from_arrays(field_arrays, fields=list(pa_type), mask=mask)
+
+    if _is_varlength_list_type(pa_type):
+        value_type = pa_type.value_type
+        offsets_dtype = pa.int64() if pa.types.is_large_list(pa_type) else pa.int32()
+        offsets = [0]
+        chunks = []
+        validity = []
+        for s in scalars:
+            valid = s.is_valid
+            validity.append(valid)
+            offsets.append(offsets[-1] + (len(s.values) if valid else 0))
+            if valid:
+                # Rows may disagree on the values' concrete type (e.g. an
+                # all-null row infers `null`, another infers `double`); align
+                # each row to the target type before concatenating. safe_cast
+                # (rather than a plain .cast()) avoids arrow#43838 here too.
+                chunks.append(safe_cast(s.values, value_type))
+        values = pa.concat_arrays(chunks) if chunks else pa.array([], type=value_type)
+        offsets_array = pa.array(offsets, type=offsets_dtype)
+        mask = None if all(validity) else pa.array([not valid for valid in validity])
+        list_cls = pa.LargeListArray if pa.types.is_large_list(pa_type) else pa.ListArray
+        return list_cls.from_arrays(offsets_array, values, mask=mask)
+
+    return pa.array(scalars, type=pa_type)

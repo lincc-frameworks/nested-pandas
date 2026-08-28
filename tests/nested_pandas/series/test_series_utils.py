@@ -10,6 +10,7 @@ from nested_pandas.series.utils import (
     nested_types_mapper,
     normalize_list_array,
     normalize_struct_list_array,
+    safe_cast,
     struct_field_names,
     transpose_list_struct_array,
     transpose_list_struct_scalar,
@@ -17,6 +18,7 @@ from nested_pandas.series.utils import (
     transpose_struct_list_array,
     transpose_struct_list_type,
     validate_struct_list_type,
+    zero_align_large_list_offsets,
 )
 
 
@@ -349,3 +351,55 @@ def test_downcast_large_list_array_mixed_struct():
     assert pa.types.is_list(result.type.field("y").type), "already-list_ field should remain list_"
     assert result.field("x").equals(large_list_col.cast(pa.list_(pa.int64())))
     assert result.field("y").equals(regular_list_col)
+
+
+def _sliced_null_bearing_list(list_cls, offsets_type):
+    """A sliced list array containing a null row, so offsets no longer start at zero."""
+    struct = pa.StructArray.from_arrays(
+        [pa.nulls(6, pa.null()), pa.array([1, 2, 3, 4, 5, 6], pa.int64())],
+        names=["n", "v"],
+    )
+    array = list_cls.from_arrays(
+        pa.array([0, 1, 3, 3, 5, 6], offsets_type),
+        struct,
+        mask=pa.array([False, True, False, False, False]),
+    )
+    return array.slice(1, 3)
+
+
+def test_zero_align_large_list_offsets_preserves_nulls():
+    """Rebasing offsets must not turn a null row into a non-null one."""
+    array = _sliced_null_bearing_list(pa.LargeListArray, pa.int64())
+    assert array.offsets[0].as_py() != 0
+    assert array.to_pylist() == [None, [], [{"n": None, "v": 4}, {"n": None, "v": 5}]]
+
+    result = zero_align_large_list_offsets(array)
+
+    result.validate(full=True)
+    assert result.offsets[0].as_py() == 0
+    assert result.null_count == array.null_count
+    assert result.to_pylist() == array.to_pylist()
+
+
+@pytest.mark.parametrize(
+    ("list_cls", "offsets_type", "target_list"),
+    [
+        (pa.LargeListArray, pa.int64(), pa.large_list),
+        (pa.ListArray, pa.int32(), pa.list_),
+    ],
+)
+def test_safe_cast_sliced_null_bearing_list(list_cls, offsets_type, target_list):
+    """safe_cast must handle a sliced list array whose rows include a null.
+
+    ``from_arrays`` rejects a validity mask together with offsets that do not
+    start at zero ("Null bitmap with offsets slice not supported"), which is
+    exactly the shape a sliced null-bearing list array has.
+    """
+    array = _sliced_null_bearing_list(list_cls, offsets_type)
+    target = target_list(pa.struct([pa.field("n", pa.null()), pa.field("v", pa.int64(), nullable=False)]))
+    assert target != array.type  # forces the manual reconstruction path
+
+    result = safe_cast(array, target)
+
+    result.validate(full=True)
+    assert result.to_pylist() == array.to_pylist()
