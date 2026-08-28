@@ -389,23 +389,19 @@ def _columns_to_load(
 def _read_remote_parquet_directory(
     dir_upath: UPath, filesystem, storage_options, columns: list[str] | None, **kwargs
 ) -> pa.Table:
-    """Read files one-by-one with fsspec.open_parquet_file and concat the result"""
+    """List files recursively and read them with fsspec.parquet.open_parquet_files."""
+    file_paths = filesystem.find(dir_upath.path, withdirs=False, detail=False)
+    parquet_files = fsspec.parquet.open_parquet_files(
+        file_paths,
+        columns=_columns_to_load(columns, kwargs.get("filters")),
+        storage_options=storage_options,
+        fs=filesystem,
+        engine="pyarrow",
+    )
     tables = []
-    for upath in dir_upath.iterdir():
-        # Go recursively for filesystems which support file/directory identification with fsspec file
-        # handlers. This would work for e.g. S3, but not for HTTP(S).
-        if upath.is_dir():
-            table = _read_remote_parquet_directory(upath, filesystem, storage_options, columns, **kwargs)
-        else:
-            with fsspec.parquet.open_parquet_file(
-                upath.path,
-                columns=_columns_to_load(columns, kwargs.get("filters")),
-                storage_options=storage_options,
-                fs=filesystem,
-                engine="pyarrow",
-            ) as parquet_file:
-                table = _read_table_with_partial_load_check(parquet_file, columns=columns, **kwargs)
-        tables.append(table)
+    for parquet_file in parquet_files:
+        with parquet_file:
+            tables.append(_read_table_with_partial_load_check(parquet_file, columns=columns, **kwargs))
     return pa.concat_tables(tables)
 
 
