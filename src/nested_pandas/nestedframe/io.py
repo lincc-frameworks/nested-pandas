@@ -220,21 +220,21 @@ def _read_parquet_into_table(
 ) -> pa.Table:
     """Reads parquet file(s) from path and returns a pyarrow table.
 
-    For single Parquet file paths, we want to use
-    `fsspec.parquet.open_parquet_file`.  But for any other usage
-    (which includes file-like objects, local directories and lists
-    thereof), we want to defer to `pq.read_table`.
+    For single remote Parquet file paths, we want to use
+    `fsspec.parquet.open_parquet_file`. Remote directories are handled
+    separately via `_read_remote_parquet_directory`. For everything local
+    (files and directories alike), as well as file-like objects and lists
+    thereof, we want to defer to `pq.read_table`, which can read local
+    directories directly.
 
-    NOTE: the test for _is_local_dir is sufficient, because we're
-    preserving a path to pq.read_table, which can read local
-    directories, but not remote directories. Remote directories
-    are supported separately via _read_parquet_directory.
-    We don't support HTTP "directories", because 1) calling .is_dir()
-    may be very expensive, because it downloads content first,
-    2) because .iter_dir() is likely to return a lot of "junk"
-    besides of the actual parquet files.
+    NOTE: local paths are routed straight to `pq.read_table` via `_is_local_path`,
+    without ever checking whether they're a file or a directory, since
+    `pq.read_table` handles both natively. We don't support HTTP
+    "directories", because 1) calling .is_dir() may be very expensive, because
+    it downloads content first, 2) because .iter_dir() is likely to return a
+    lot of "junk" besides of the actual parquet files.
     """
-    if isinstance(data, str | Path | UPath) and not _is_local_dir(path_to_data := UPath(data), is_dir=is_dir):
+    if isinstance(data, str | Path | UPath) and not _is_local_path(path_to_data := UPath(data)):
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
         if not filesystem:
@@ -310,20 +310,9 @@ def _validate_structs_from_schema(data, columns=None, filesystem=None):
                             )
 
 
-def _is_local_dir(upath: UPath, is_dir: bool | None) -> bool:
-    """Returns True if the given path refers to a local directory.
-
-    It's necessary to have this function, rather than simply checking
-    ``UPath(p).is_dir()``, because ``UPath.is_dir`` can be quite
-    expensive in the case of a remote file path that isn't a directory.
-    """
-
-    # For non-local filesystems, return False right away
-    if upath.protocol not in ("", "file"):
-        return False
-    # For local filesystems, check is_dir if provided, otherwise use upath.is_dir()
-    else:
-        return upath.is_dir() if is_dir is None else is_dir
+def _is_local_path(upath: UPath) -> bool:
+    """Returns True if the given path refers to a local file or directory."""
+    return upath.protocol in ("", "file")
 
 
 def _is_remote_dir(orig_data: str | Path | UPath, upath: UPath, is_dir: bool | None) -> bool:
@@ -466,6 +455,9 @@ def _transform_read_parquet_data_arg(data):
         return data, None
     # Check if `data` is a UPath and use it
     if isinstance(data, UPath):
+        # Local filesystem: never hand off to fsspec, just use the plain path.
+        if data.protocol in ("", "file"):
+            return data.path, None
         return data.path, data.fs
     # Check if `data` is a Path (Path is a superclass for UPath, so this order of checks)
     if isinstance(data, Path):
