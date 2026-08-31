@@ -167,6 +167,34 @@
         "version": "4a225583d4100d419aecf0777bf473bb7d0453c7b89ffde0e415e10ccd4dd669",
         "warmup_time": -1
     },
+    "benchmarks.ReadFewColumnsTmpfs.peakmem_run": {
+        "code": "class ReadFewColumnsTmpfs:\n    def peakmem_run(self, _data):\n        \"\"\"Benchmark the memory usage of read_parquet on the tmpfs file.\"\"\"\n        self.run()\n\n    def setup(self, data):\n        \"\"\"Write the cached bytes to a tmpfs (or temp dir) file before each repeat.\"\"\"\n        tmpfs_dir = \"/dev/shm\" if platform.system() == \"Linux\" else tempfile.gettempdir()\n        self.local_path = UPath(tmpfs_dir) / \"nested_pandas_bench_read_few_columns.parquet\"\n        self.local_path.write_bytes(data)\n\n    def setup_cache(self) -> bytes:\n        \"\"\"Download the source parquet file once; cached and reused across repeats.\"\"\"\n        return self.original_path.read_bytes()",
+        "name": "benchmarks.ReadFewColumnsTmpfs.peakmem_run",
+        "param_names": [],
+        "params": [],
+        "setup_cache_key": "benchmarks:279",
+        "timeout": 300,
+        "type": "peakmemory",
+        "unit": "bytes",
+        "version": "e850638de4b22413b298fbe3bb23e0ed7097e457fbdb67f970a75c876a4d5a6b"
+    },
+    "benchmarks.ReadFewColumnsTmpfs.time_run": {
+        "code": "class ReadFewColumnsTmpfs:\n    def time_run(self, _data):\n        \"\"\"Benchmark the runtime of read_parquet on the tmpfs file.\"\"\"\n        self.run()\n\n    def setup(self, data):\n        \"\"\"Write the cached bytes to a tmpfs (or temp dir) file before each repeat.\"\"\"\n        tmpfs_dir = \"/dev/shm\" if platform.system() == \"Linux\" else tempfile.gettempdir()\n        self.local_path = UPath(tmpfs_dir) / \"nested_pandas_bench_read_few_columns.parquet\"\n        self.local_path.write_bytes(data)\n\n    def setup_cache(self) -> bytes:\n        \"\"\"Download the source parquet file once; cached and reused across repeats.\"\"\"\n        return self.original_path.read_bytes()",
+        "min_run_count": 2,
+        "name": "benchmarks.ReadFewColumnsTmpfs.time_run",
+        "number": 0,
+        "param_names": [],
+        "params": [],
+        "repeat": 0,
+        "rounds": 2,
+        "sample_time": 0.01,
+        "setup_cache_key": "benchmarks:279",
+        "timeout": 300,
+        "type": "time",
+        "unit": "seconds",
+        "version": "965261410e71e64421c941b922966ba0046db1cb976b82f701ed2e70f9c1506e",
+        "warmup_time": -1
+    },
     "benchmarks.ReassignHalfOfNestedSeries.peakmem_run": {
         "code": "class ReassignHalfOfNestedSeries:\n    def peakmem_run(self):\n        \"\"\"Benchmark the memory usage of changing a single nested series element.\"\"\"\n        self.run()\n\n    def setup(self):\n        \"\"\"Set up the benchmark environment.\"\"\"\n        # When we had NestedExtentionArray inheriting ArrowExtentionArray, it sorted the fields, so we need to\n        # order by field name here for backwards compatibility.\n        dtype = NestedDtype.from_columns({\"band\": pa.string(), \"flux\": pa.float64(), \"time\": pa.float64()})\n        original_df = pd.DataFrame(\n            {\n                \"time\": np.linspace(0, 1, self.n_sources),\n                \"flux\": np.arange(self.n_sources, dtype=np.float64),\n                \"band\": np.full_like(\"sdssu\", self.n_sources),\n            }\n        )\n        self.series = pd.Series(\n            [original_df] * self.n_objects,\n            dtype=dtype,\n        )\n    \n        new_df = pd.DataFrame(\n            {\n                \"time\": np.arange(self.n_sources, dtype=np.float64),\n                \"flux\": np.linspace(0, 1, self.n_sources),\n                \"band\": np.full_like(\"lsstg\", self.n_sources),\n            }\n        )\n        self.new_series = pd.Series([new_df] * (self.n_objects // 2), dtype=dtype)",
         "name": "benchmarks.ReassignHalfOfNestedSeries.peakmem_run",
