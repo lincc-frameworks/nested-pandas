@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 
 import fsspec.implementations.http
-import fsspec.implementations.local
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -438,7 +437,7 @@ def test__transform_read_parquet_data_arg():
     assert _transform_read_parquet_data_arg(Path(local_path)) == (Path(local_path), None)
 
     local_upath = UPath(local_path)
-    assert _transform_read_parquet_data_arg(local_upath) == (local_path, local_upath.fs)
+    assert _transform_read_parquet_data_arg(local_upath) == (local_path, None)
 
     s3_path = "s3://nasa-irsa-euclid-q1/contributed/q1/merged_objects/hats/euclid_q1_merged_objects-hats/dataset/Norder=3/Dir=0/Npix=334/part0.snappy.parquet"
     path, fs = _transform_read_parquet_data_arg(s3_path)
@@ -459,7 +458,7 @@ def test__transform_read_parquet_data_arg():
     local_upaths = list(UPath("tests/test_data").glob("*.parquet"))
     paths, fs = _transform_read_parquet_data_arg(local_upaths)
     assert paths == [up.path for up in local_upaths]
-    assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
+    assert fs is None
 
     with pytest.raises(ValueError):
         _transform_read_parquet_data_arg(
@@ -525,27 +524,13 @@ def test__get_storage_options():
     assert storage_opts.get("block_size") != FSSPEC_BLOCK_SIZE
 
 
-def test__is_local_dir():
-    """Test the _is_local_dir function with various scenarios."""
-    from nested_pandas.nestedframe.io import _is_local_dir
+def test__is_local_path():
+    """Test the _is_local_path function with various scenarios."""
+    from nested_pandas.nestedframe.io import _is_local_path
 
-    # Local path that is a directory
-    local_dir = UPath("tests/test_data")
-    assert _is_local_dir(local_dir, is_dir=True) is True
-    assert _is_local_dir(local_dir, is_dir=False) is False
-    assert _is_local_dir(local_dir, is_dir=None) is True
-
-    # Local path that is a file
-    local_file = UPath("tests/test_data/nested.parquet")
-    assert _is_local_dir(local_file, is_dir=True) is True
-    assert _is_local_dir(local_file, is_dir=False) is False
-    assert _is_local_dir(local_file, is_dir=None) is False
-
-    # Remote path (should always return False)
-    remote_path = UPath("https://example.com/data.parquet")
-    assert _is_local_dir(remote_path, is_dir=True) is False
-    assert _is_local_dir(remote_path, is_dir=False) is False
-    assert _is_local_dir(remote_path, is_dir=None) is False
+    assert _is_local_path(UPath("tests/test_data")) is True
+    assert _is_local_path(UPath("tests/test_data/nested.parquet")) is True
+    assert _is_local_path(UPath("https://example.com/data.parquet")) is False
 
 
 def test__is_remote_dir():

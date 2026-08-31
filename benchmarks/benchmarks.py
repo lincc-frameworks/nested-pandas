@@ -3,6 +3,9 @@
 For more information on writing benchmarks:
 https://asv.readthedocs.io/en/stable/writing_benchmarks.html."""
 
+import platform
+import tempfile
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -254,4 +257,49 @@ class ReadFewColumnsHTTPS:
 
     def peakmem_run(self):
         """Benchmark the memory usage of read_parquet(self.path, columns=self.columns)"""
+        self.run()
+
+
+class ReadFewColumnsTmpfs:
+    """Benchmark read_parquet("<local path>", columns=[...]) on a tmpfs-cached file.
+
+    Falls back to a disk temp dir off-Linux, for local testing.
+    """
+
+    # May be required to download the original file
+    timeout = 300
+
+    columns = ["_healpix_29", "ra", "stetsonk"]
+    original_path = (
+        UPath("s3://ipac-irsa-ztf/ztf/enhanced/dr24/objects/hats/ztf_dr24_objects-hats/", anon=True)
+        / "dataset/Norder=4/Dir=0/Npix=98/part0.snappy.parquet"
+    )
+    local_path: UPath
+
+    def setup_cache(self) -> bytes:
+        """Download the source parquet file once; cached and reused across repeats."""
+        return self.original_path.read_bytes()
+
+    def setup(self, data):
+        """Write the cached bytes to a tmpfs (or temp dir) file before each repeat."""
+        tmpfs_dir = "/dev/shm" if platform.system() == "Linux" else tempfile.gettempdir()
+        self.local_path = UPath(tmpfs_dir) / "nested_pandas_bench_read_few_columns.parquet"
+        self.local_path.write_bytes(data)
+
+    def teardown(self, _data):
+        """Remove the tmpfs file after each repeat."""
+        self.local_path.unlink(missing_ok=True)
+
+    def run(self):
+        """Run the benchmark."""
+        _ = read_parquet(
+            self.local_path, columns=self.columns, is_dir=False, use_pandas_metadata=False, use_threads=False
+        )
+
+    def time_run(self, _data):
+        """Benchmark the runtime of read_parquet on the tmpfs file."""
+        self.run()
+
+    def peakmem_run(self, _data):
+        """Benchmark the memory usage of read_parquet on the tmpfs file."""
         self.run()
