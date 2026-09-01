@@ -19,9 +19,13 @@ from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
     FSSPEC_BLOCK_SIZE,
     _columns_to_load,
+    _datafusion_filters_to_expr,
+    _datafusion_read_table,
     _get_storage_options,
+    _pyarrow_read_table,
     _transform_read_parquet_data_arg,
     from_pyarrow,
+    get_the_best_engine,
 )
 
 
@@ -697,3 +701,358 @@ def test__columns_to_load():
     # tuple in nested list that can't be unpacked into (col, op, val) → ValueError
     with pytest.raises(ValueError, match="filters format must be"):
         _columns_to_load(cols, [[("z", "<", 0.5, "extra")]])
+
+
+# ------------------------------------------------------------------------------
+# "datafusion" engine
+# ------------------------------------------------------------------------------
+
+# (columns, filters) pairs the "datafusion" and "pyarrow" engines must agree on
+DATAFUSION_READ_CASES = [
+    (None, None),
+    (["a"], None),
+    (["a", "flux"], None),
+    (["nested.flux"], None),
+    (["nested.flux", "nested.t"], None),
+    # The same leaf name in two nested columns, pyarrow returns two "band" columns
+    (["nested.band", "lincc.band"], None),
+    # The order of the requested columns must be preserved
+    (["nested.t", "a", "lincc.frameworks"], None),
+    (None, [("a", ">", 0.5)]),
+    (["a"], [("a", ">", 0.5)]),
+    # The filter column is not among the loaded ones
+    (["nested.flux"], [("flux", "<", 50.0)]),
+    # A filter on a column loaded as a nested sub-column
+    (["a", "nested.t"], [("a", "<", 0.5)]),
+    # Conjunction
+    (["a"], [("a", ">", 0.1), ("a", "<", 0.9)]),
+    # Disjunction of conjunctions
+    (["a"], [[("a", "<", 0.1)], [("a", ">", 0.5), ("flux", "<", 50.0)]]),
+    # Every comparison operator
+    (["a"], [("a", "=", 0.417022004702574)]),
+    (["a"], [("a", "==", 0.417022004702574)]),
+    (["a"], [("a", "!=", 0.417022004702574)]),
+    (["a"], [("a", ">=", 0.5)]),
+    (["a"], [("a", "<=", 0.5)]),
+    # in / not in
+    (["a", "flux"], [("a", "in", [0.417022004702574, 0.7203244934421581])]),
+    (["a", "flux"], [("a", "not in", [0.417022004702574])]),
+    # A filter matching nothing
+    (["a"], [("a", ">", 1e9)]),
+]
+
+
+@pytest.mark.parametrize("columns,filters", DATAFUSION_READ_CASES)
+def test_read_parquet_datafusion_matches_pyarrow(columns, filters):
+    """The "datafusion" engine returns exactly what the "pyarrow" engine returns."""
+    path = "tests/test_data/nested.parquet"
+
+    pyarrow_nf = read_parquet(path, columns=columns, filters=filters, engine="pyarrow")
+    datafusion_nf = read_parquet(path, columns=columns, filters=filters, engine="datafusion")
+
+    assert_frame_equal(datafusion_nf, pyarrow_nf)
+
+
+def test_read_parquet_datafusion_pandas_metadata():
+    """The pandas metadata survives the datafusion read, so the index is restored."""
+    # pandas writes the "pandas" schema metadata, nested-pandas' to_parquet does not
+    df = pd.DataFrame({"a": [1, 2, 3]}, index=pd.Index([10, 11, 12], name="object_id"))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "meta.parquet")
+        df.to_parquet(path)
+
+        assert b"pandas" in _datafusion_read_table(path).schema.metadata
+
+        for use_pandas_metadata in [True, False]:
+            assert_frame_equal(
+                read_parquet(path, engine="datafusion", use_pandas_metadata=use_pandas_metadata),
+                read_parquet(path, engine="pyarrow", use_pandas_metadata=use_pandas_metadata),
+            )
+
+        # The index is restored from the metadata, rather than left as a column
+        assert read_parquet(path, engine="datafusion").index.name == "object_id"
+        assert read_parquet(path, engine="datafusion", use_pandas_metadata=False).index.name is None
+
+
+def test_read_parquet_datafusion_directory():
+    """The "datafusion" engine reads a directory of parquet files."""
+    nf = generate_data(10, 5, seed=1)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i in range(2):
+            nf.iloc[5 * i : 5 * (i + 1)].to_parquet(os.path.join(tmpdir, f"part{i}.parquet"))
+
+        pyarrow_nf = read_parquet(tmpdir, columns=["a", "nested.t"], engine="pyarrow")
+        datafusion_nf = read_parquet(tmpdir, columns=["a", "nested.t"], engine="datafusion")
+
+    # datafusion makes no promise about the order it reads the files in
+    assert_frame_equal(
+        datafusion_nf.sort_values("a", ignore_index=True),
+        pyarrow_nf.sort_values("a", ignore_index=True),
+    )
+
+
+def test_read_parquet_datafusion_row_order():
+    """Rows come back in file order, as they do from pyarrow.
+
+    In parallel datafusion splits the row groups of even a single file across
+    partitions, and the output order is then not even reproducible run to run.
+    """
+    # The scan is only split when each partition would be worth it, so the file has
+    # to be bigger than roughly `target_partitions` (the CPU count) megabytes. On a
+    # machine with many more cores than this file has megabytes the split does not
+    # happen and this test passes whatever the settings are; the directory test
+    # below has no such threshold.
+    n_rows = 2_000_000
+    expected = np.arange(n_rows)
+    table = pa.table({"i": pa.array(expected)})
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Several row groups, so there is something for datafusion to split
+        path = os.path.join(tmpdir, "ordered.parquet")
+        pq.write_table(table, path, row_group_size=50_000, compression="none")
+
+        for _ in range(3):
+            actual = _datafusion_read_table(path)
+            np.testing.assert_array_equal(actual.column("i").to_numpy(), expected)
+
+        # A filtered read keeps the order of the rows it selects, and those come
+        # from row groups far enough apart to land in different partitions
+        selected = [7, n_rows // 2, n_rows - 1]
+        actual = _datafusion_read_table(path, filters=[("i", "in", selected)])
+        assert actual.column("i").to_pylist() == selected
+
+
+def test_read_parquet_datafusion_directory_row_order():
+    """A directory is read in the same order pyarrow reads it, file by file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i in range(4):
+            pq.write_table(pa.table({"i": pa.array([10 * i, 10 * i + 1])}), f"{tmpdir}/part{i}.parquet")
+
+        expected = _pyarrow_read_table(tmpdir).column("i").to_pylist()
+        for _ in range(3):
+            assert _datafusion_read_table(tmpdir).column("i").to_pylist() == expected
+
+
+def test_read_parquet_datafusion_quoted_column_names():
+    """Names datafusion would otherwise lower-case or split on the dot."""
+    table = pa.table(
+        {
+            "CamelCase": pa.array([1, 2]),
+            "nested": pa.array([{"Sub": [1.0]}, {"Sub": [2.0]}]),
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "names.parquet")
+        pq.write_table(table, path)
+
+        nf = read_parquet(path, columns=["CamelCase", "nested.Sub"], engine="datafusion")
+
+    assert nf.columns.tolist() == ["CamelCase", "nested"]
+    assert nf.nested.nest.columns == ["Sub"]
+
+
+def test_read_parquet_datafusion_list_struct_error():
+    """Partially loading a list-of-structs column gives the pyarrow engine's error."""
+    path = "tests/list_struct_data/list_struct.parquet"
+    with pytest.raises(ValueError, match="not a struct"):
+        read_parquet(path, columns=["lightcurve.hmjd"], engine="datafusion")
+
+
+def test_read_parquet_datafusion_missing_column_error():
+    """A plain naming mistake still raises."""
+    with pytest.raises(Exception, match="not_a_column"):
+        read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"], engine="datafusion")
+
+
+class _PointExtensionType(pa.ExtensionType):
+    """A custom extension type, to check datafusion doesn't drop the unknown ones."""
+
+    def __init__(self):
+        super().__init__(pa.list_(pa.float64(), 2), "nested_pandas.test.point")
+
+    def __arrow_ext_serialize__(self):
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+        return cls()
+
+
+@pytest.fixture(name="point_extension_type")
+def fixture_point_extension_type():
+    """Register the custom extension type for the duration of a single test."""
+    point_type = _PointExtensionType()
+    pa.register_extension_type(point_type)
+    yield point_type
+    pa.unregister_extension_type(point_type.extension_name)
+
+
+@pytest.mark.parametrize("pass_schema", [True, False])
+@pytest.mark.parametrize("store_schema", [True, False])
+def test_datafusion_read_table_extension_types(point_extension_type, store_schema, pass_schema):
+    """Extension types come back from a datafusion read, not their storage types.
+
+    datafusion has no notion of an extension type, it carries the storage type and
+    the "ARROW:extension:*" field metadata, and pyarrow rebuilds the type from its
+    own registry. The metadata comes either from the file's own arrow schema, or
+    from the `schema` argument. With neither, only the storage type is left.
+    """
+    tensor_type = pa.fixed_shape_tensor(pa.float64(), [2, 2])
+    table = pa.table(
+        {
+            "tensor": pa.ExtensionArray.from_storage(
+                tensor_type,
+                pa.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]], pa.list_(pa.float64(), 4)),
+            ),
+            "point": pa.ExtensionArray.from_storage(
+                point_extension_type,
+                pa.array([[1.0, 2.0], [3.0, 4.0]], pa.list_(pa.float64(), 2)),
+            ),
+            "a": pa.array([1, 2]),
+        }
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "extension.parquet")
+        writer = pq.ParquetWriter(path, table.schema, store_schema=store_schema)
+        writer.write_table(table)
+        writer.close()
+
+        schema = table.schema if pass_schema else None
+        actual = _datafusion_read_table(path, schema=schema)
+        projected = _datafusion_read_table(path, columns=["tensor", "point"], schema=schema)
+
+    if store_schema or pass_schema:
+        assert actual.schema.types == [tensor_type, point_extension_type, pa.int64()]
+        # The types survive the projection too
+        assert projected.schema.types == [tensor_type, point_extension_type]
+
+        # The tensor is readable as a tensor: to_pylist() would only give the flat
+        # storage lists, the [2, 2] shape is what the extension type is for
+        for tensor_column in [actual.column("tensor"), projected.column("tensor")]:
+            ndarray = tensor_column.combine_chunks().to_numpy_ndarray()
+            assert ndarray.shape == (2, 2, 2)
+            np.testing.assert_array_equal(ndarray, [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]])
+
+        assert projected.column("point").to_pylist() == [[1.0, 2.0], [3.0, 4.0]]
+    else:
+        # There is nothing to rebuild them from, only the physical parquet types are
+        # left. They are not even the storage types: parquet does not record the
+        # fixed length of a list, so both come back as a variable-length list.
+        assert not any(isinstance(type_, pa.ExtensionType) for type_ in actual.schema.types)
+        assert actual.schema.types == [
+            pa.list_(pa.float64()),
+            pa.list_(pa.float64()),
+            pa.int64(),
+        ]
+
+
+def test_datafusion_read_table_unregistered_extension_type():
+    """An unregistered extension type keeps its metadata, exactly as with pyarrow."""
+    point_type = _PointExtensionType()
+    pa.register_extension_type(point_type)
+    tmpdir = tempfile.mkdtemp()
+    path = os.path.join(tmpdir, "point.parquet")
+    try:
+        table = pa.table(
+            {
+                "point": pa.ExtensionArray.from_storage(
+                    point_type, pa.array([[1.0, 2.0]], pa.list_(pa.float64(), 2))
+                )
+            }
+        )
+        pq.write_table(table, path)
+    finally:
+        pa.unregister_extension_type(point_type.extension_name)
+
+    # The type is no longer registered, so pyarrow cannot rebuild it for either engine
+    for read_table in [_pyarrow_read_table, _datafusion_read_table]:
+        actual = read_table(path)
+        assert actual.schema.field("point").type == point_type.storage_type
+        assert actual.schema.field("point").metadata[b"ARROW:extension:name"] == b"nested_pandas.test.point"
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        # Nothing to prune, datafusion would only add its query planning overhead
+        ({}, "pyarrow"),
+        ({"columns": ["a", "flux"]}, "pyarrow"),
+        # A nested sub-column, which pyarrow cannot push down to the leaf
+        ({"columns": ["nested.flux"]}, "datafusion"),
+        ({"columns": ["a", "nested.flux"]}, "datafusion"),
+        # A filter, which datafusion pushes into the parquet reader
+        ({"filters": [("a", ">", 0.5)]}, "datafusion"),
+        ({"columns": ["a"], "filters": [("a", ">", 0.5)]}, "datafusion"),
+        # Reads datafusion cannot serve at all, despite their shape
+        ({"columns": ["nested.flux"], "filters": pc.field("a") > 0.5}, "pyarrow"),
+        ({"columns": ["nested.flux"], "read_dictionary": ["a"]}, "pyarrow"),
+        ({"columns": ["nested.flux"], "use_threads": False}, "pyarrow"),
+        # use_threads=True is what datafusion does anyway
+        ({"columns": ["nested.flux"], "use_threads": True}, "datafusion"),
+    ],
+)
+def test_get_the_best_engine(kwargs, expected):
+    """The engine is picked by what datafusion can do, and by what it is better at."""
+    assert get_the_best_engine("tests/test_data/nested.parquet", **kwargs) == expected
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        # Remote paths, both as a plain string and as a UPath
+        "https://example.com/nested.parquet",
+        "s3://bucket/nested.parquet",
+        UPath("https://example.com/nested.parquet"),
+        # A list of paths and a file-like object
+        ["tests/test_data/nested.parquet", "tests/test_data/nested.parquet"],
+        io.BytesIO(b""),
+    ],
+)
+def test_get_the_best_engine_unsupported_data(data):
+    """Sources datafusion cannot read fall back to pyarrow, even for a read it wins at."""
+    assert get_the_best_engine(data, columns=["nested.flux"], filters=[("a", ">", 0.5)]) == "pyarrow"
+
+
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        ({"data": "https://example.com/nested.parquet"}, "local paths only"),
+        ({"data": UPath("s3://bucket/nested.parquet")}, "local paths only"),
+        ({"data": ["a.parquet", "b.parquet"]}, "single path only"),
+        ({"data": io.BytesIO(b"")}, "single path only"),
+        ({"filesystem": fsspec.implementations.http.HTTPFileSystem()}, "not supported"),
+        ({"filters": pc.field("a") > 0.5}, "PyArrow Expression"),
+        ({"read_dictionary": ["a"]}, "not supported"),
+        ({"use_threads": False}, "use_threads=False"),
+    ],
+)
+def test_datafusion_read_table_unsupported(kwargs, match):
+    """What datafusion cannot serve raises, and names the engine to use instead."""
+    kwargs = {"data": "tests/test_data/nested.parquet", **kwargs}
+    with pytest.raises(ValueError, match=match):
+        _datafusion_read_table(**kwargs)
+
+
+def test_datafusion_read_table_local_filesystem():
+    """A local pyarrow filesystem is accepted, it is what datafusion would use anyway."""
+    path = UPath("tests/test_data/nested.parquet")
+    actual = _datafusion_read_table(path.path, filesystem=pyarrow.fs.LocalFileSystem())
+    assert actual.column_names == ["a", "flux", "nested", "lincc"]
+
+
+@pytest.mark.parametrize(
+    "filters,match",
+    [
+        ("a > 0.5", "filters must be"),
+        (42, "filters must be"),
+        ([], "filters format must be"),
+        ([[]], "filters format must be"),
+        ([("a", ">", 0.5), "not_a_tuple"], "filters format must be"),
+        ([[("a", ">", 0.5, "extra")]], "filters format must be"),
+        ([("a", "~=", 0.5)], "Unsupported filter operator"),
+    ],
+)
+def test_datafusion_filters_to_expr_errors(filters, match):
+    """Malformed filters are rejected with the messages the pyarrow path uses."""
+    with pytest.raises(ValueError, match=match):
+        _datafusion_filters_to_expr(filters)

@@ -18,6 +18,9 @@ classifiers = [
 dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [
+    "datafusion>=43",  # adds parquet.schema_force_view_types
+    # datafusion requires it, and versions < 4 conflict with other stuff
+    "typing-extensions>=4.0.0; python_version < '3.13'",
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
     "pandas>=3,<4",
