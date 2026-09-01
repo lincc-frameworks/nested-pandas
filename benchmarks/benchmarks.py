@@ -3,6 +3,7 @@
 For more information on writing benchmarks:
 https://asv.readthedocs.io/en/stable/writing_benchmarks.html."""
 
+import os
 import platform
 import tempfile
 
@@ -302,4 +303,69 @@ class ReadFewColumnsTmpfs:
 
     def peakmem_run(self, _data):
         """Benchmark the memory usage of read_parquet on the tmpfs file."""
+        self.run()
+
+
+class ReadFewColumnsColdDisk:
+    """Benchmark read_parquet("<local path>", columns=[...]) with a cold page cache.
+
+    Cache eviction works on Linux only.
+    """
+
+    # May be required to download the original file and write it to disk
+    timeout = 600
+
+    # A single run, no warm-up: a repeated read would hit the page cache
+    number = 1
+    repeat = 1
+    rounds = 1
+    warmup_time = 0.0
+    min_run_count = 1
+    processes = 1
+
+    columns = ["_healpix_29", "objra", "objdec", "lightcurve.mag"]
+    original_path = (
+        UPath("s3://ipac-irsa-ztf/ztf/enhanced/dr24/lc/hats/ztf_dr24_lc-hats/", anon=True)
+        / "dataset/Norder=5/Dir=10000/Npix=12240/part0.snappy.parquet"
+    )
+    local_path: UPath
+
+    @staticmethod
+    def evict_page_cache(path) -> None:
+        """Drop the page cache for a single file, if the platform allows it."""
+        if not hasattr(os, "posix_fadvise"):
+            return
+        os.sync()
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+
+    def setup_cache(self) -> bytes:
+        """Download the source parquet file once; cached and reused across repeats."""
+        return self.original_path.read_bytes()
+
+    def setup(self, data):
+        """Write the file to a disk-backed temp dir and evict it from the page cache."""
+        self.local_path = UPath(tempfile.gettempdir()) / "nested_pandas_bench_cold_read.parquet"
+        self.local_path.write_bytes(data)
+        self.evict_page_cache(self.local_path)
+
+    def teardown(self, _data):
+        """Remove the temporary file after each repeat."""
+        self.local_path.unlink(missing_ok=True)
+
+    def run(self):
+        """Run the benchmark."""
+        _ = read_parquet(
+            self.local_path, columns=self.columns, is_dir=False, use_pandas_metadata=False, use_threads=False
+        )
+
+    def time_run(self, _data):
+        """Benchmark the runtime of a cold-cache read_parquet."""
+        self.run()
+
+    def peakmem_run(self, _data):
+        """Benchmark the memory usage of a cold-cache read_parquet."""
         self.run()
