@@ -294,7 +294,10 @@ class ReadFewColumnsTmpfs:
     def run(self):
         """Run the benchmark."""
         _ = read_parquet(
-            self.local_path, columns=self.columns, is_dir=False, use_pandas_metadata=False, use_threads=False
+            self.local_path,
+            columns=self.columns,
+            is_dir=False,
+            use_pandas_metadata=False,
         )
 
     def time_run(self, _data):
@@ -359,7 +362,10 @@ class ReadFewColumnsColdDisk:
     def run(self):
         """Run the benchmark."""
         _ = read_parquet(
-            self.local_path, columns=self.columns, is_dir=False, use_pandas_metadata=False, use_threads=False
+            self.local_path,
+            columns=self.columns,
+            is_dir=False,
+            use_pandas_metadata=False,
         )
 
     def time_run(self, _data):
