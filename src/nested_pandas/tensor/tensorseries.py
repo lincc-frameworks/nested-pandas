@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from nested_pandas.series.registry import register_html_formatter, register_series_class
+from nested_pandas.tensor.display import tensor_cell_html, tensor_series_html
 from nested_pandas.tensor.dtype import TensorDtype
 from nested_pandas.tensor.ext_array import TensorArray
 
@@ -67,16 +68,12 @@ class TensorSeries(pd.Series):
         """Convert to a single (n, ...) numpy block; see TensorArray.to_stack."""
         return self.array.to_stack(na_value=na_value)
 
-
-def _tensor_cell_html(value) -> str:
-    """Compact HTML for one tensor cell in NestedFrame._repr_html_."""
-    import html
-
-    if value is pd.NA or value is None:
-        return str(pd.NA)
-    shape = "×".join(str(size) for size in value.shape)
-    return html.escape(f"[{shape}] {value.dtype}")
+    def _repr_html_(self) -> str | None:
+        """HTML repr with viridis thumbnails and colorbars for the first 2-d rows (used by notebooks)."""
+        if not isinstance(self.dtype, TensorDtype):
+            return None
+        return tensor_series_html(self)
 
 
 register_series_class(TensorDtype, TensorSeries)
-register_html_formatter(TensorDtype, _tensor_cell_html)
+register_html_formatter(TensorDtype, tensor_cell_html)

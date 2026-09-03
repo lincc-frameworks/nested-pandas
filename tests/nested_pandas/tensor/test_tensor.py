@@ -5,7 +5,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import nested_pandas as npd
-from nested_pandas import TensorArray, TensorDtype, TensorSeries
+from nested_pandas import ImageDtype, ImageSeries, NestedFrame, TensorArray, TensorDtype, TensorSeries
 from nested_pandas.tensor.arrow_ext import TensorType, is_tensor_pyarrow_type
 
 
@@ -16,9 +16,7 @@ def fixed_array():
 
 @pytest.fixture
 def ragged_array():
-    return TensorArray._from_sequence(
-        [np.ones((1, 2), np.float64), np.zeros((2, 3), np.float64), None]
-    )
+    return TensorArray._from_sequence([np.ones((1, 2), np.float64), np.zeros((2, 3), np.float64), None])
 
 
 def test_dtype_fixed_shape():
@@ -300,3 +298,58 @@ def test_unregistered_readers_get_storage(tmp_path, fixed_array):
     # without the extension type registered would degrade to exactly this.
     schema = pq.read_schema(path)
     assert schema.field("tensor").type.storage_type == pa.list_(pa.float32(), 6)
+
+
+def test_tensor_cell_html_renders_viridis_thumbnail_with_colorbar():
+    """2-d tensor cells render as a colormapped thumbnail plus a labelled colorbar."""
+    pytest.importorskip("matplotlib")
+    from nested_pandas.tensor.display import tensor_cell_html
+
+    cell = np.array([[0.0, 10.0], [20.0, 30.0]], dtype=np.float32)
+    html = tensor_cell_html(cell)
+    assert html.count("<img src=") == 2  # thumbnail + colorbar strip
+    assert 'title="colorbar"' in html
+    assert "[2×2] float32" in html
+    # colorbar labels are the displayed (1st-99th percentile) range, top then bottom
+    assert html.index("29.7") < html.index("0.3")
+
+    assert tensor_cell_html(pd.NA) == "&lt;NA&gt;"
+    assert "[2×3×3] float32" in tensor_cell_html(np.zeros((2, 3, 3), dtype=np.float32))
+    assert tensor_cell_html(np.zeros(3, dtype=np.float32)) == "[3] float32"
+
+
+def test_tensor_cell_html_bool_tensor():
+    """Boolean tensors render too (values are cast to float for the colormap)."""
+    pytest.importorskip("matplotlib")
+    from nested_pandas.tensor.display import tensor_cell_html
+
+    html = tensor_cell_html(np.array([[True, False], [False, True]]))
+    assert 'title="colorbar"' in html
+    assert "[2×2] bool" in html
+
+
+def test_tensor_series_repr_html():
+    """TensorSeries HTML repr renders the first MAX_RENDERED rows with colorbars; images stay grayscale."""
+    pytest.importorskip("matplotlib")
+    from nested_pandas.tensor.display import MAX_RENDERED
+
+    array = TensorArray.from_stack(np.arange(4 * (MAX_RENDERED + 2), dtype=np.float32).reshape(-1, 2, 2))
+    series = TensorSeries(pd.Series(array, name="tensor"))
+    html = series._repr_html_()
+    assert "<table>" in html
+    assert html.count('title="colorbar"') == MAX_RENDERED
+    assert "not rendered in preview" in html
+    assert f"dtype: {array.dtype}" in html
+    # image columns keep their grayscale, colorbar-free rendering
+    image_dtype = ImageDtype("float32", shape=(2, 2))
+    image = ImageSeries(pd.Series(TensorArray._from_sequence(list(array.to_numpy()), dtype=image_dtype)))
+    assert "colorbar" not in image._repr_html_()
+
+
+def test_nestedframe_repr_html_uses_tensor_formatter():
+    """NestedFrame HTML repr renders every displayed tensor cell with a colorbar."""
+    pytest.importorskip("matplotlib")
+    array = TensorArray.from_stack(np.zeros((3, 2, 2), dtype=np.float32))
+    nf = NestedFrame({"t": array, "x": [1, 2, 3]})
+    html = nf._repr_html_()
+    assert html.count('title="colorbar"') == 3
