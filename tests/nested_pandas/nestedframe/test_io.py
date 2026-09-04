@@ -18,14 +18,15 @@ from nested_pandas import NestedFrame, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
     FSSPEC_BLOCK_SIZE,
+    _check_datafusion_support,
     _columns_to_load,
     _datafusion_filters_to_expr,
+    _datafusion_object_store,
     _datafusion_read_table,
     _get_storage_options,
     _pyarrow_read_table,
     _transform_read_parquet_data_arg,
     from_pyarrow,
-    get_the_best_engine,
 )
 
 
@@ -972,52 +973,27 @@ def test_datafusion_read_table_unregistered_extension_type():
 
 
 @pytest.mark.parametrize(
-    "kwargs,expected",
-    [
-        # Nothing to prune, datafusion would only add its query planning overhead
-        ({}, "pyarrow"),
-        ({"columns": ["a", "flux"]}, "pyarrow"),
-        # A nested sub-column, which pyarrow cannot push down to the leaf
-        ({"columns": ["nested.flux"]}, "datafusion"),
-        ({"columns": ["a", "nested.flux"]}, "datafusion"),
-        # A filter, which datafusion pushes into the parquet reader
-        ({"filters": [("a", ">", 0.5)]}, "datafusion"),
-        ({"columns": ["a"], "filters": [("a", ">", 0.5)]}, "datafusion"),
-        # Reads datafusion cannot serve at all, despite their shape
-        ({"columns": ["nested.flux"], "filters": pc.field("a") > 0.5}, "pyarrow"),
-        ({"columns": ["nested.flux"], "read_dictionary": ["a"]}, "pyarrow"),
-        ({"columns": ["nested.flux"], "use_threads": False}, "pyarrow"),
-        # use_threads=True is what datafusion does anyway
-        ({"columns": ["nested.flux"], "use_threads": True}, "datafusion"),
-    ],
-)
-def test_get_the_best_engine(kwargs, expected):
-    """The engine is picked by what datafusion can do, and by what it is better at."""
-    assert get_the_best_engine("tests/test_data/nested.parquet", **kwargs) == expected
-
-
-@pytest.mark.parametrize(
     "data",
     [
-        # Remote paths, both as a plain string and as a UPath
+        # Remote paths we can build an object store for
         "https://example.com/nested.parquet",
-        "s3://bucket/nested.parquet",
         UPath("https://example.com/nested.parquet"),
-        # A list of paths and a file-like object
-        ["tests/test_data/nested.parquet", "tests/test_data/nested.parquet"],
-        io.BytesIO(b""),
+        UPath("s3://bucket/nested.parquet", key="AK", secret="SK"),
     ],
 )
-def test_get_the_best_engine_unsupported_data(data):
-    """Sources datafusion cannot read fall back to pyarrow, even for a read it wins at."""
-    assert get_the_best_engine(data, columns=["nested.flux"], filters=[("a", ">", 0.5)]) == "pyarrow"
+def test_datafusion_supported_remote(data):
+    """A remote path datafusion can build an object store for is not an error."""
+    _check_datafusion_support(data, columns=["nested.flux"])
 
 
 @pytest.mark.parametrize(
     "kwargs,match",
     [
-        ({"data": "https://example.com/nested.parquet"}, "local paths only"),
-        ({"data": UPath("s3://bucket/nested.parquet")}, "local paths only"),
+        # Remote paths we cannot build an object store for
+        ({"data": "http://example.com/nested.parquet"}, "cannot build an object store"),
+        ({"data": "gs://bucket/nested.parquet"}, "cannot build an object store"),
+        ({"data": UPath("s3://bucket/nested.parquet")}, "needs both 'key' and 'secret'"),
+        ({"data": UPath("s3://bucket/nested.parquet", anon=True)}, "needs both 'key' and 'secret'"),
         ({"data": ["a.parquet", "b.parquet"]}, "single path only"),
         ({"data": io.BytesIO(b"")}, "single path only"),
         ({"filesystem": fsspec.implementations.http.HTTPFileSystem()}, "not supported"),
@@ -1031,6 +1007,108 @@ def test_datafusion_read_table_unsupported(kwargs, match):
     kwargs = {"data": "tests/test_data/nested.parquet", **kwargs}
     with pytest.raises(ValueError, match=match):
         _datafusion_read_table(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "data,expected_base,expected_store",
+    [
+        # HTTPS needs no credentials, and registers under scheme://host/
+        ("https://data.example.com/a/b.parquet", "https://data.example.com/", "Http"),
+        (UPath("https://data.example.com/a/b.parquet"), "https://data.example.com/", "Http"),
+        # S3 with a key and a secret we can hand over directly
+        (UPath("s3://bucket/a.parquet", key="AK", secret="SK"), "s3://bucket/", "AmazonS3"),
+        (
+            UPath("s3://bucket/a.parquet", key="AK", secret="SK", endpoint_url="http://e"),
+            "s3://bucket/",
+            "AmazonS3",
+        ),
+        # A region is the one client_kwarg we know how to pass on
+        (
+            UPath("s3://bucket/a.parquet", key="AK", secret="SK", client_kwargs={"region_name": "us-1"}),
+            "s3://bucket/",
+            "AmazonS3",
+        ),
+    ],
+)
+def test_datafusion_object_store(data, expected_base, expected_store):
+    """We build a store only from what the path itself carries, never the environment."""
+    base_url, store = _datafusion_object_store(UPath(data))
+    assert base_url == expected_base
+    assert type(store).__name__ == expected_store
+
+
+@pytest.mark.parametrize(
+    "data,match",
+    [
+        # Plain HTTP: the object store needs allow_http, which Http() does not take
+        ("http://data.example.com/a.parquet", "cannot build an object store"),
+        # Protocols we have not wired up
+        (UPath("gs://bucket/a.parquet"), "cannot build an object store"),
+        (UPath("az://container/a.parquet"), "cannot build an object store"),
+        # No credentials at all, and datafusion cannot request anonymously
+        (UPath("s3://bucket/a.parquet"), "needs both 'key' and 'secret'"),
+        (UPath("s3://bucket/a.parquet", anon=True), "needs both 'key' and 'secret'"),
+        # Half a credential pair is not enough
+        (UPath("s3://bucket/a.parquet", key="AK"), "needs both 'key' and 'secret'"),
+        # Options we would silently drop, named in the message
+        (
+            UPath("https://data.example.com/a.parquet", headers={"key": "value"}),
+            r"HTTPS storage options on to its object store: \['headers'\]",
+        ),
+        (
+            UPath("s3://bucket/a.parquet", key="AK", secret="SK", use_ssl=False),
+            r"S3 storage options on to its object store: \['use_ssl'\]",
+        ),
+        (
+            UPath("s3://bucket/a.parquet", key="AK", secret="SK", client_kwargs={"verify": False}),
+            r"S3 storage options on to its object store: \['verify'\]",
+        ),
+        # A session token: AmazonS3 cannot take one on our oldest datafusion
+        (
+            UPath("s3://bucket/a.parquet", key="AK", secret="SK", token="T"),
+            r"S3 storage options on to its object store: \['token'\]",
+        ),
+    ],
+)
+def test_datafusion_object_store_unsupported(data, match):
+    """A path we cannot build a store for raises, and says which part we choked on."""
+    with pytest.raises(ValueError, match=match):
+        _datafusion_object_store(UPath(data))
+
+
+def test_datafusion_object_store_is_reused():
+    """Building a store stands up an HTTPS client, so equivalent paths share one."""
+    https = UPath("https://data.example.com/a.parquet")
+    other = UPath("https://data.example.com/b/c.parquet")
+    # Same host, so the same base URL and the same store object
+    assert _datafusion_object_store(https)[1] is _datafusion_object_store(other)[1]
+    # A different host gets its own
+    assert (
+        _datafusion_object_store(https)[1]
+        is not _datafusion_object_store(UPath("https://other.example.com/a.parquet"))[1]
+    )
+
+    s3 = UPath("s3://bucket/a.parquet", key="AK", secret="SK")
+    assert (
+        _datafusion_object_store(s3)[1]
+        is _datafusion_object_store(UPath("s3://bucket/b.parquet", key="AK", secret="SK"))[1]
+    )
+    # Different credentials must never share a client
+    assert (
+        _datafusion_object_store(s3)[1]
+        is not _datafusion_object_store(UPath("s3://bucket/a.parquet", key="AK", secret="OTHER"))[1]
+    )
+
+
+def test_datafusion_object_store_does_not_mutate_storage_options():
+    """Reading the options out of a UPath leaves the UPath alone."""
+    path = UPath("s3://bucket/a.parquet", key="AK", secret="SK", client_kwargs={"region_name": "us-1"})
+    _datafusion_object_store(path)
+    assert dict(path.storage_options) == {
+        "key": "AK",
+        "secret": "SK",
+        "client_kwargs": {"region_name": "us-1"},
+    }
 
 
 def test_datafusion_read_table_local_filesystem():

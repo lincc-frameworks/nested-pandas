@@ -41,7 +41,7 @@ def read_parquet(
     autocast_list: bool = False,
     is_dir: bool | None = None,
     use_pandas_metadata: bool = True,
-    engine: Literal["pyarrow", "datafusion", "auto"] = "auto",
+    engine: Literal["pyarrow", "datafusion"] = "pyarrow",
     **kwargs,
 ) -> NestedFrame:
     """Load a parquet object from a file path into a NestedFrame.
@@ -92,10 +92,10 @@ def read_parquet(
         file's schema when constructing the NestedFrame (e.g. restoring the
         index and column dtypes). This matches the default behavior of
         pd.read_parquet. Set to False to ignore the metadata.
-    engine: "pyarrow", "datafusion" or "auto", default="auto"
+    engine: "pyarrow" or "datafusion", default="pyarrow"
         Which library to use for the parquet read.
 
-        - "pyarrow" uses `fsspec.parquet` (remote paths only) and
+        - "pyarrow" (default) uses `fsspec.parquet` (remote paths only) and
           `pyarrow.parquet.read_table`. It reads a nested column whole even
           when a single sub-column is asked for, and it applies `filters`
           after reading the row groups they select, so it is not the best
@@ -105,18 +105,16 @@ def read_parquet(
           pushes both down into the parquet reader, so it reads a nested
           sub-column without its siblings, and a filter without the pages it
           excludes. It costs a few milliseconds of query planning, which
-          dominates for small files or a handful of small columns, and it
-          reads a single local path only: for remote paths, file-like
-          objects and lists of paths use "pyarrow".
-        - "auto" (default) uses "datafusion" for the reads it can serve and
-          is faster at, and "pyarrow" for everything else. See
-          `get_the_best_engine` for the exact rule.
+          dominates for small files or a handful of small columns. It reads a
+          single local, HTTPS, or S3 path, the last with `key` and `secret`
+          in its `storage_options`, and raises for anything else it cannot
+          serve.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`, of which
         the "datafusion" engine accepts `filters` and `filesystem` (a local
         one), plus a `schema` of its own. `filters` must be in the
-        list-of-tuples format there, and a `pyarrow.compute.Expression`
-        selects the "pyarrow" engine under `engine="auto"`.
+        list-of-tuples format there, a `pyarrow.compute.Expression` is not
+        supported by the "datafusion" engine.
 
     Returns
     -------
@@ -166,8 +164,8 @@ def read_parquet(
 
     """
 
-    if engine not in ("pyarrow", "datafusion", "auto"):
-        raise ValueError(f"Invalid engine: '{engine}', must be 'pyarrow', 'datafusion' or 'auto'")
+    if engine not in ("pyarrow", "datafusion"):
+        raise ValueError(f"Invalid engine: '{engine}', must be 'pyarrow' or 'datafusion'")
 
     _validate_filter_columns(kwargs.get("filters"))
 
@@ -268,7 +266,8 @@ def _read_parquet_into_table(
     """
     if isinstance(data, str | Path | UPath) and not _is_local_path(path_to_data := UPath(data)):
         if engine == "datafusion":
-            raise ValueError(_datafusion_unsupported_reason(data, columns=columns, **kwargs))
+            # Raises ValueError
+            return _datafusion_read_table(path_to_data, columns=columns, **kwargs)
 
         storage_options = _get_storage_options(path_to_data)
         filesystem = kwargs.get("filesystem")
@@ -306,14 +305,6 @@ def _read_parquet_into_table(
 
 
 def _validate_filter_columns(filters) -> None:
-    """Reject filters on a nested sub-column, which neither engine can apply.
-
-    pyarrow's DNF filters have no way to name a nested field at all, and while
-    datafusion resolves "nested.t" it can only compare the whole list of a row
-    against the scalar. Both fail, with unrelated messages, so say it up front.
-
-    Anything else about the format is left to the engines, which report it.
-    """
     if filters is None or isinstance(filters, pc.Expression) or not isinstance(filters, list):
         return
     # Both [(column, op, value), ...] and [[(column, op, value), ...], ...]
@@ -333,92 +324,89 @@ def _validate_filter_columns(filters) -> None:
                 )
 
 
-def _datafusion_unsupported_reason(
+@lru_cache(maxsize=128)
+def _build_http_store(base_url: str):
+    from datafusion.object_store import Http
+
+    return Http(base_url)
+
+
+@lru_cache(maxsize=128)
+def _build_s3_store(bucket: str, region: str | None, key: str, secret: str, endpoint: str | None):
+    from datafusion.object_store import AmazonS3
+
+    return AmazonS3(
+        bucket_name=bucket,
+        region=region,
+        access_key_id=key,
+        secret_access_key=secret,
+        endpoint=endpoint,
+    )
+
+
+def _datafusion_object_store(path: UPath):
+    options = dict(path.storage_options)
+
+    # Only https: datafusion-python doesn't support http yet
+    if path.protocol == "https":
+        if options:
+            raise ValueError(
+                f"The 'datafusion' engine cannot pass these HTTPS storage options on to its "
+                f"object store: {sorted(options)}; use engine='pyarrow' to read with them."
+            )
+        base_url = f"{path.drive}/"
+        return base_url, _build_http_store(base_url)
+
+    if path.protocol == "s3":
+        key = options.pop("key", None)
+        secret = options.pop("secret", None)
+        endpoint = options.pop("endpoint_url", None)
+        client_kwargs = options.pop("client_kwargs", None) or {}
+        region = client_kwargs.get("region_name")
+        if key is None or secret is None:
+            raise ValueError(
+                "The 'datafusion' engine needs both 'key' and 'secret' in the S3 path's "
+                "storage_options: it cannot read credentials from the environment, nor "
+                "make an anonymous request; use engine='pyarrow' for either."
+            )
+        if leftover := sorted(options) + sorted(set(client_kwargs) - {"region_name"}):
+            raise ValueError(
+                f"The 'datafusion' engine cannot pass these S3 storage options on to its "
+                f"object store: {leftover}; use engine='pyarrow' to read with them."
+            )
+        bucket = path.drive
+        return f"s3://{bucket}/", _build_s3_store(bucket, region, key, secret, endpoint)
+
+    raise ValueError(
+        f"The 'datafusion' engine cannot build an object store for this '{path.protocol}' "
+        "path, it reads local paths, HTTPS, and S3 with an explicit key and secret; "
+        "use engine='pyarrow' for anything else."
+    )
+
+
+def _check_datafusion_support(
     data, *, columns=None, filesystem=None, filters=None, schema=None, use_threads=True, **kwargs
-) -> str | None:
-    """Why the 'datafusion' engine cannot serve this read, None if it can.
-
-    The named arguments are the ones the engine supports, so anything left in
-    `kwargs` rules it out. `columns` and `schema` it takes as they come, the
-    rest are checked below.
-
-    The returned string is a complete sentence, suitable for an error message.
-    """
-    # datafusion reads through its own object store layer, it has no way to consume
-    # a Python file-like object, a list of paths, or a bytes buffer
+) -> None:
     if not isinstance(data, str | Path | UPath):
-        return (
+        raise ValueError(
             f"The 'datafusion' engine supports a single path only, got '{type(data).__name__}'; "
             "use engine='pyarrow' for file-like objects and lists of paths."
         )
-    # Covers both UPath and plain "https://..." / "s3://..." strings
     if not _is_local_path(path := UPath(data)):
-        return (
-            f"The 'datafusion' engine supports local paths only, got a '{path.protocol}' path; "
-            "use engine='pyarrow' for remote files."
-        )
-    # A local filesystem is what datafusion would use anyway, anything else it cannot use
+        _datafusion_object_store(path)
     if filesystem is not None and not isinstance(filesystem, pa.fs.LocalFileSystem):
-        return f"The '{type(filesystem).__name__}' filesystem is not supported by the 'datafusion' engine."
-    # There is no simple way to introspect PyArrow expression objects
+        raise ValueError(
+            f"The '{type(filesystem).__name__}' filesystem is not supported by the 'datafusion' engine."
+        )
     if isinstance(filters, pc.Expression):
-        return (
+        raise ValueError(
             "PyArrow Expression 'filters' are not supported by the 'datafusion' engine, "
             "use the list-of-tuples format instead: [(column, op, value), ...]."
         )
-    # datafusion always runs on its own thread pool, there is no way to turn that off
     if not use_threads:
-        return "'use_threads=False' is not supported by the 'datafusion' engine."
+        raise ValueError("'use_threads=False' is not supported by the 'datafusion' engine.")
     if kwargs:
-        return f"These arguments are not supported by the 'datafusion' engine: {sorted(kwargs)}."
-    return None
-
-
-def get_the_best_engine(
-    data: str | Path | UPath | bytes,
-    columns: list[str] | None = None,
-    filesystem: pa.fs.FileSystem | None = None,
-    filters: pc.Expression | list[tuple] | list[list[tuple]] | None = None,
-    **kwargs,
-) -> Literal["pyarrow", "datafusion"]:
-    """Pick the engine `read_parquet` should use for the given read.
-
-    "datafusion" is chosen only when it can serve the read at all, and when the
-    read has the shape it is actually better at: a filter, or a partial load of
-    a nested column, where it prunes I/O that pyarrow would do. Otherwise
-    "pyarrow" wins, because datafusion adds a few milliseconds of query planning.
-
-    Parameters
-    ----------
-    data : str, Path, UPath, bytes, file-like object, or list of these
-        The parquet source, same as `read_parquet`'s `data`.
-    columns : list of str, optional
-        Columns to load, sub-columns of nested columns are given with a dot,
-        e.g. "nested.flux".
-    filesystem : pyarrow.fs.FileSystem, optional
-        Filesystem to read the data with.
-    filters : pyarrow.compute.Expression, or list of tuples, or list of lists of tuples, optional
-        Row filters, in either of the formats `pyarrow.parquet.read_table` accepts.
-    **kwargs
-        Other keyword arguments `read_parquet` would pass to the reader. Any
-        argument datafusion has no equivalent for rules datafusion out.
-
-    Returns
-    -------
-    {"pyarrow", "datafusion"}
-        Name of the engine to use.
-    """
-    if (
-        _datafusion_unsupported_reason(
-            data, columns=columns, filesystem=filesystem, filters=filters, **kwargs
-        )
-        is not None
-    ):
-        return "pyarrow"
-    # Without filters and without nested sub-columns there is nothing for datafusion to prune
-    if filters is None and (columns is None or all("." not in column for column in columns)):
-        return "pyarrow"
-    return "datafusion"
+        raise ValueError(f"These arguments are not supported by the 'datafusion' engine: {sorted(kwargs)}.")
 
 
 def _pyarrow_read_table(data, *, columns=None, filesystem=None, **kwargs):
@@ -470,7 +458,7 @@ def _datafusion_read_table(
     -------
     pyarrow.Table
     """
-    reason = _datafusion_unsupported_reason(
+    _check_datafusion_support(
         data,
         columns=columns,
         filesystem=filesystem,
@@ -479,12 +467,20 @@ def _datafusion_read_table(
         use_threads=use_threads,
         **kwargs,
     )
-    if reason is not None:
-        raise ValueError(reason)
 
-    df = _datafusion_session_context().read_parquet(
+    context = _datafusion_session_context()
+    path = UPath(data)
+    if _is_local_path(path):
         # UPath.path drops the "file://" prefix, which DataFusion doesn't understand
-        UPath(data).path,
+        source = path.path
+    else:
+        # The check above already established that we can build one
+        base_url, store = _datafusion_object_store(path)
+        context.register_object_store(base_url, store)
+        source = str(path)
+
+    df = context.read_parquet(
+        source,
         skip_metadata=False,
         schema=schema,
     )
@@ -494,15 +490,12 @@ def _datafusion_read_table(
         df = df.filter(_datafusion_filters_to_expr(filters))
 
     if columns is not None:
-        # DataFusion requires the projected names to be unique, while pyarrow happily
-        # returns two "band" columns for columns=["nested.band", "lincc.band"]. Project
-        # to positional names and put the pyarrow ones back afterwards.
+        # DataFusion requires the projected names to be unique. Project
+        # to positional names and put the pyarrow ones back afterward.
         try:
             df = df.select(
                 *(_datafusion_column_expr(column).alias(f"__npd_{i}") for i, column in enumerate(columns))
             )
-        # DataFusion raises a bare Exception when a sub-column is requested from a
-        # list-of-structs column, give the same helpful message the pyarrow engine gives.
         except Exception as e:
             if any("." in column for column in columns):
                 try:
@@ -514,7 +507,6 @@ def _datafusion_read_table(
     table = df.to_arrow_table()
 
     if columns is not None:
-        # Be explicit about the output names, DataFusion may rename duplicates.
         table = table.rename_columns([column.split(".")[-1] for column in columns])
 
     return table
@@ -540,11 +532,6 @@ DATAFUSION_SESSION_SETTINGS = {
 
 @lru_cache(maxsize=1)
 def _datafusion_session_context():
-    """A single DataFusion session context, shared by all reads.
-
-    It is cached because the context also caches parquet footer metadata across
-    queries (`datafusion.runtime.metadata_cache_limit`, 50 MB by default).
-    """
     from datafusion import SessionConfig, SessionContext
 
     config = SessionConfig()
@@ -554,11 +541,6 @@ def _datafusion_session_context():
 
 
 def _datafusion_column_expr(column: str):
-    """Build a DataFusion expression for a possibly nested column name.
-
-    "nested.flux" becomes a struct field access aliased to "flux", the name
-    `pyarrow.parquet.read_table(columns=["nested.flux"])` gives it.
-    """
     from datafusion import col as df_col
 
     name, *sub_fields = column.split(".")
@@ -571,11 +553,6 @@ def _datafusion_column_expr(column: str):
 
 
 def _datafusion_filters_to_expr(filters):
-    """Convert pyarrow's DNF `filters` into a single DataFusion expression.
-
-    [(column, op, value), ...] is a conjunction, [[(column, op, value), ...], ...]
-    is a disjunction of conjunctions.
-    """
     from datafusion import functions as df_functions
     from datafusion import literal as df_literal
 
@@ -642,9 +619,6 @@ _DATAFUSION_FILTER_OPS = {
 
 def _read_table_with_partial_load_check(data, *, columns=None, filesystem=None, engine: str, **kwargs):
     """Read a pyarrow table with partial load check for nested structures"""
-    if engine == "auto":
-        engine = get_the_best_engine(data, columns=columns, filesystem=filesystem, **kwargs)
-
     if engine == "pyarrow":
         return _pyarrow_read_table(data, columns=columns, filesystem=filesystem, **kwargs)
     elif engine == "datafusion":
