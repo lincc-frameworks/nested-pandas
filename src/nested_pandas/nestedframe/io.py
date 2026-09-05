@@ -100,15 +100,10 @@ def read_parquet(
           when a single sub-column is asked for, and it applies `filters`
           after reading the row groups they select, so it is not the best
           choice for partial loads or selective filters.
-        - "datafusion" uses `datafusion.SessionContext.read_parquet`, and
-          translates `columns` and `filters` into a DataFusion query. It
-          pushes both down into the parquet reader, so it reads a nested
-          sub-column without its siblings, and a filter without the pages it
-          excludes. It costs a few milliseconds of query planning, which
-          dominates for small files or a handful of small columns. It reads a
-          single local, HTTPS, or S3 path, the last with `key` and `secret`
-          in its `storage_options`, and raises for anything else it cannot
-          serve.
+        - "datafusion" may be very fast when a few rows and/or a few nested
+          subcolumns are selected. It reads a single local, HTTPS, or
+          S3 path, and raises for anything else. Needs the optional
+          `datafusion` package.
     kwargs: dict
         Keyword arguments passed to `pyarrow.parquet.read_table`, of which
         the "datafusion" engine accepts `filters` and `filesystem` (a local
@@ -387,6 +382,14 @@ def _datafusion_object_store(path: UPath):
 def _check_datafusion_support(
     data, *, columns=None, filesystem=None, filters=None, schema=None, use_threads=True, **kwargs
 ) -> None:
+    try:
+        import datafusion  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            "The 'datafusion' engine requires the 'datafusion' package, install it with "
+            "`pip install datafusion`."
+        ) from e
+
     if not isinstance(data, str | Path | UPath):
         raise ValueError(
             f"The 'datafusion' engine supports a single path only, got '{type(data).__name__}'; "
@@ -504,7 +507,11 @@ def _datafusion_read_table(
                     raise validation_error from e
             raise
 
-    table = df.to_arrow_table()
+    # Draining the partition streams in index order keeps the rows in the order they
+    # have in the input files, which `.collect_partitioned()` does not guarantee.
+    batches = [batch.to_pyarrow() for stream in df.execute_stream_partitioned() for batch in stream]
+    # The streams yield no batches at all when the filters exclude every row
+    table = pa.Table.from_batches(batches, schema=df.schema())
 
     if columns is not None:
         table = table.rename_columns([column.split(".")[-1] for column in columns])
@@ -523,19 +530,27 @@ DATAFUSION_SESSION_SETTINGS = {
     "datafusion.execution.parquet.schema_force_view_types": "false",
     # Default is 8192, which chunks the output table 15x more finely than pyarrow does
     "datafusion.execution.batch_size": "131072",
-    # Scan in a single partition, so rows come back in file order like pyarrow's do.
-    # In parallel DataFusion splits the row groups of even a single file across
-    # partitions and the output order is not reproducible from run to run.
-    "datafusion.execution.target_partitions": "1",
+}
+
+# Work stealing lets an idle partition read the files of another one, which breaks the
+# row order `_datafusion_read_table` relies on. The option was added in datafusion v55,
+# and setting an unknown option panics, so it is applied to newer versions only.
+DATAFUSION_SESSION_SETTINGS_V55 = {
+    "datafusion.execution.enable_file_stream_work_stealing": "false",
 }
 
 
 @lru_cache(maxsize=1)
 def _datafusion_session_context():
     from datafusion import SessionConfig, SessionContext
+    from datafusion import __version__ as datafusion_version
+
+    settings = dict(DATAFUSION_SESSION_SETTINGS)
+    if int(datafusion_version.split(".")[0]) >= 55:
+        settings.update(DATAFUSION_SESSION_SETTINGS_V55)
 
     config = SessionConfig()
-    for key, value in DATAFUSION_SESSION_SETTINGS.items():
+    for key, value in settings.items():
         config = config.set(key, value)
     return SessionContext(config)
 

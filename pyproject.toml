@@ -18,8 +18,8 @@ classifiers = [
 dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [
-    "datafusion>=43",  # adds parquet.schema_force_view_types
-    # datafusion requires it, and versions < 4 conflict with other stuff
+    # datafusion is an optional dependency of `read_parquet(engine="datafusion")`
+    # typing-extensions versions < 4 conflict with other stuff
     "typing-extensions>=4.5.0; python_version < '3.13'",
     "numpy>=2",
     # We use internal pd._libs.missing and experimental ArrowExtensionArray
@@ -42,6 +42,7 @@ dev = [
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
     "pytest-cov", # Used to report total code coverage
+    "datafusion", # Optional engine of read_parquet()
     "ruff", # Used for static linting of files
     "aiohttp",
     "requests",
