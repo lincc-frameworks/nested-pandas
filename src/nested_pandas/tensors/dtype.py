@@ -41,7 +41,7 @@ class TensorDtype(ExtensionDtype):
     Examples
     --------
     >>> import pyarrow as pa
-    >>> from nested_pandas.tensors.dtype import TensorDtype
+    >>> from nested_pandas import TensorDtype
 
     From pa.FixedShapeTensorType:
 
@@ -88,9 +88,11 @@ class TensorDtype(ExtensionDtype):
     @classmethod
     def construct_array_type(cls) -> Type[ExtensionArray]:
         """Corresponding array type, always TensorExtensionArray"""
-        from nested_pandas.tensors.ext_array import TensorExtensionArray
-
-        return TensorExtensionArray
+        # TODO: enable once TensorExtensionArray is merged
+        # from nested_pandas.tensors.ext_array import TensorExtensionArray
+        #
+        # return TensorExtensionArray
+        raise NotImplementedError("TensorExtensionArray is not implemented yet")
 
     @classmethod
     def construct_from_string(cls, string: str) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -126,14 +128,20 @@ class TensorDtype(ExtensionDtype):
         if match is None:
             raise TypeError(f"Cannot construct a '{cls.__name__}' from '{string}'")
 
-        # Reuse pandas' parsing of pyarrow type strings, aliases plus common temporal types
+        # Try pyarrow type aliases first, then reuse pandas' parsing of pyarrow type strings for
+        # common parametric types like timestamp[ns, tz=UTC]. Not the other way round, because
+        # pandas reserves "string[pyarrow]" for its StringDtype and refuses to parse it.
+        value_type_str = match["value_type"]
         try:
-            value_type = pd.ArrowDtype.construct_from_string(f"{match['value_type']}[pyarrow]").pyarrow_dtype
-        except (TypeError, NotImplementedError) as e:
-            raise TypeError(
-                f"Cannot parse tensor element type '{match['value_type']}'. "
-                "Please use TensorDtype(pa.fixed_shape_tensor(...)) instead."
-            ) from e
+            value_type = pa.type_for_alias(value_type_str)
+        except ValueError:
+            try:
+                value_type = pd.ArrowDtype.construct_from_string(f"{value_type_str}[pyarrow]").pyarrow_dtype
+            except (TypeError, NotImplementedError) as e:
+                raise TypeError(
+                    f"Cannot parse tensor element type '{value_type_str}'. "
+                    "Please use TensorDtype(pa.fixed_shape_tensor(...)) instead."
+                ) from e
 
         shape = [int(s) for s in match["shape"].split(",") if s.strip()]
         dim_names = None if match["dim_names"] is None else [s.strip() for s in match["dim_names"].split(",")]
@@ -158,9 +166,11 @@ class TensorDtype(ExtensionDtype):
         TensorExtensionArray
             The constructed TensorExtensionArray.
         """
-        from nested_pandas.tensors.ext_array import TensorExtensionArray
-
-        return TensorExtensionArray(array, dtype=self)
+        # TODO: enable once TensorExtensionArray is merged
+        # from nested_pandas.tensors.ext_array import TensorExtensionArray
+        #
+        # return TensorExtensionArray(array, dtype=self)
+        raise NotImplementedError("TensorExtensionArray is not implemented yet")
 
     # Additional methods and attributes #
 
