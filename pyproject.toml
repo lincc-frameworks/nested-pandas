@@ -39,6 +39,9 @@ dev = [
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
     "pytest-cov", # Used to report total code coverage
+    "datafusion>=43", # Optional engine of read_parquet()
+    # typing-extensions versions < 4 conflict with other stuff
+    "typing-extensions>=4.5.0; python_version < '3.13'",
     "ruff", # Used for static linting of files
     "aiohttp",
     "requests",
