@@ -10,6 +10,20 @@ from pandas.tests.extension import base
 from nested_pandas import TensorDtype
 
 
+class _NotATensorType(pa.ExtensionType):
+    """An arrow extension type that is not a tensor, to check we test for the specific type."""
+
+    def __init__(self):
+        super().__init__(pa.list_(pa.float64(), 6), "nested_pandas.test.not_a_tensor")
+
+    def __arrow_ext_serialize__(self):
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+        return cls()
+
+
 @pytest.mark.parametrize(
     "pyarrow_dtype",
     [
@@ -44,7 +58,8 @@ def test_init_from_pandas_arrow_dtype():
         pa.list_(pa.float64(), 6),
         pa.struct([pa.field("a", pa.list_(pa.int64()))]),
         pd.ArrowDtype(pa.list_(pa.float64(), 6)),
-        pa.uuid(),
+        # An extension type with the same storage as a tensor is still not a tensor
+        _NotATensorType(),
         "tensor[double, (2, 3)]",
         (2, 3),
         None,
