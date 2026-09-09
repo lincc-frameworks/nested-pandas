@@ -261,7 +261,6 @@ def _read_parquet_into_table(
     """
     if isinstance(data, str | Path | UPath) and not _is_local_path(path_to_data := UPath(data)):
         if engine == "datafusion":
-            # Raises ValueError
             return _datafusion_read_table(path_to_data, columns=columns, **kwargs)
 
         storage_options = _get_storage_options(path_to_data)
