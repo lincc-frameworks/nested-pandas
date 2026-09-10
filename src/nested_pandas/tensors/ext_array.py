@@ -579,6 +579,8 @@ class TensorExtensionArray(ExtensionArray):
             return type(self)(storage, dtype=self.dtype)
 
         if (indices_array < 0).any():
+            if indices_array.min() < -len(self):
+                raise IndexError("out of bounds value in 'indices'.")
             # Don't modify in-place
             indices_array = np.copy(indices_array)
             indices_array[indices_array < 0] += len(self)
@@ -645,6 +647,13 @@ class TensorExtensionArray(ExtensionArray):
     def __array__(self, dtype=None, copy=None):
         """Convert the extension array to a numpy object array of tensors."""
         return self.to_numpy(dtype=dtype, copy=bool(copy))
+
+    # Adopted from ArrowExtensionArray
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        combined = self._pa_array.combine_chunks()
+        state["_pa_array"] = pa.chunked_array([combined], type=self.dtype.pyarrow_dtype)
+        return state
 
     # End of Additional magic methods #
 
@@ -748,9 +757,12 @@ class TensorExtensionArray(ExtensionArray):
         """Convert the extension array to a single numpy array of shape ``(n, *shape)``
 
         Without missing values the result is a read-only zero-copy view over
-        the arrow buffers. With missing values the data is copied, the result
+        the arrow buffers. With missing tensors the data is copied, the result
         dtype is widened as needed to hold ``na_value``, and the missing
-        tensors are filled with it.
+        tensors are filled with it. Missing *elements* inside otherwise
+        present tensors, which arrow allows, become ``NaN`` (with integer
+        tensors upcast to float), as numpy and pandas do for missing numeric
+        data.
 
         Parameters
         ----------
@@ -773,10 +785,12 @@ class TensorExtensionArray(ExtensionArray):
         return result
 
     def _values_block(self) -> np.ndarray:
-        """Read-only numpy view of shape ``(n, *shape)`` over the arrow buffers.
+        """Numpy array of shape ``(n, *shape)`` with the values of every tensor.
 
-        Zero-copy for a single chunk. Null tensors are present in the block
-        but hold arbitrary values, so callers must consult :meth:`isna`.
+        A read-only zero-copy view for a single chunk without missing elements.
+        Null tensors are present in the block but hold arbitrary values, so
+        callers must consult :meth:`isna`. Missing elements inside tensors
+        become ``NaN``, which copies and upcasts integer tensors to float.
         """
         if len(self) == 0:
             return np.empty((0, *self.dtype.shape), dtype=_numpy_value_dtype(self.dtype))
@@ -786,7 +800,19 @@ class TensorExtensionArray(ExtensionArray):
             combined = cast(pa.FixedShapeTensorArray, self._pa_array.chunk(0))
         else:
             combined = cast(pa.FixedShapeTensorArray, self._pa_array.combine_chunks())
-        return combined.to_numpy_ndarray()
+
+        # The flat values of exactly our rows: .values ignores a slice offset and .flatten()
+        # drops null tensors, so take the window by hand.
+        storage = combined.storage
+        size = self.dtype.size
+        values = storage.values.slice(storage.offset * size, len(storage) * size)
+        if values.null_count == 0:
+            return combined.to_numpy_ndarray()
+
+        # to_numpy_ndarray() ignores the validity bitmap of the elements and would return
+        # arbitrary values for them. pyarrow's to_numpy() fills them with NaN instead, upcasting
+        # integers to float64, as numpy and pandas do for missing numeric data.
+        return values.to_numpy(zero_copy_only=False).reshape(len(storage), *self.dtype.shape)
 
     @classmethod
     def from_arrow_ext_array(cls, array: ArrowExtensionArray, *, dtype: TensorDtype | None = None) -> Self:  # type: ignore[name-defined] # noqa: F821
