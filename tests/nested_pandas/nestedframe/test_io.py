@@ -30,10 +30,10 @@ from nested_pandas.nestedframe.io import (
 )
 
 
-def test_read_parquet():
+def test_read_parquet(nested_parquet_path):
     """Test reading a parquet file with no columns specified"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet")
+    nf = read_parquet(nested_parquet_path)
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
@@ -46,11 +46,11 @@ def test_read_parquet():
     assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
-def test_read_parquet_list():
+def test_read_parquet_list(nested_parquet_path):
     """Test reading a parquet file with no columns specified"""
     # Load in the example files
-    single_file_nf = read_parquet("tests/test_data/nested.parquet")
-    nf = read_parquet(["tests/test_data/nested.parquet", "tests/test_data/nested.parquet"])
+    single_file_nf = read_parquet(nested_parquet_path)
+    nf = read_parquet([nested_parquet_path, nested_parquet_path])
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
@@ -66,10 +66,10 @@ def test_read_parquet_list():
     assert len(nf) == 2 * len(single_file_nf)
 
 
-def test_read_parquet_directory():
+def test_read_parquet_directory(nested_data_dir):
     """Test reading a parquet file with no columns specified"""
     # Load in the example file
-    nf = read_parquet("tests/test_data")
+    nf = read_parquet(nested_data_dir)
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
@@ -82,10 +82,10 @@ def test_read_parquet_directory():
     assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
-def test_read_parquet_directory_with_filesystem():
+def test_read_parquet_directory_with_filesystem(nested_data_dir):
     """Test reading a parquet file with no columns specified"""
     # Load in the example file
-    path = UPath("tests/test_data")
+    path = UPath(nested_data_dir)
     nf = read_parquet(path.path, filesystem=path.fs)
 
     # Check the columns
@@ -99,9 +99,9 @@ def test_read_parquet_directory_with_filesystem():
     assert nf.lincc.nest.columns == ["band", "frameworks"]
 
 
-def test_file_object_read_parquet():
+def test_file_object_read_parquet(nested_parquet_path):
     """Test reading parquet from a file-object"""
-    with open("tests/test_data/nested.parquet", "rb") as f:
+    with open(nested_parquet_path, "rb") as f:
         nf = read_parquet(f)
     # Check the columns
     assert nf.columns.tolist() == ["a", "flux", "nested", "lincc"]
@@ -122,10 +122,10 @@ def test_file_object_read_parquet():
         (["nested.band", "lincc.band"], ["nested", "lincc"]),
     ],
 )
-def test_read_parquet_column_selection(columns, expected_columns):
+def test_read_parquet_column_selection(columns, expected_columns, nested_parquet_path):
     """Test reading a parquet file with column selection"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet", columns=columns)
+    nf = read_parquet(nested_parquet_path, columns=columns)
 
     # Check the column expectations
     assert nf.columns.tolist() == expected_columns
@@ -139,10 +139,10 @@ def test_read_parquet_column_selection(columns, expected_columns):
 
 
 @pytest.mark.parametrize("reject", [["nested"], "nested"])
-def test_read_parquet_reject_nesting(reject):
+def test_read_parquet_reject_nesting(reject, nested_parquet_path):
     """Test reading a parquet file with column selection"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet", columns=["a", "nested"], reject_nesting=reject)
+    nf = read_parquet(nested_parquet_path, columns=["a", "nested"], reject_nesting=reject)
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "nested"]
@@ -153,27 +153,27 @@ def test_read_parquet_reject_nesting(reject):
     assert pa.types.is_struct(nf["nested"].dtype.pyarrow_dtype)
 
 
-def test_read_parquet_reject_nesting_partial_loading():
+def test_read_parquet_reject_nesting_partial_loading(nested_parquet_path):
     """Test reading a parquet file with column selection"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet", columns=["a", "nested.t"], reject_nesting=["nested"])
+    nf = read_parquet(nested_parquet_path, columns=["a", "nested.t"], reject_nesting=["nested"])
 
     # Check the columns
     assert nf.columns.tolist() == ["a", "t"]
 
 
-def test_read_parquet_catch_full_and_partial():
+def test_read_parquet_catch_full_and_partial(nested_parquet_path):
     """Test reading a parquet file with column selection"""
     # Load in the example file
     with pytest.raises(ValueError):
-        read_parquet("tests/test_data/nested.parquet", columns=["a", "nested.t", "nested"])
+        read_parquet(nested_parquet_path, columns=["a", "nested.t", "nested"])
 
 
-def test_read_parquet_catch_failed_cast():
+def test_read_parquet_catch_failed_cast(not_nestable_parquet_path):
     """Test reading a parquet file with column selection"""
     # Load in the example file
     with pytest.raises(ValueError):
-        read_parquet("tests/test_data/not_nestable.parquet")
+        read_parquet(not_nestable_parquet_path)
 
 
 def test_read_parquet_test_mixed_struct():
@@ -264,10 +264,10 @@ def test_from_pyarrow_test_mixed_struct():
     assert nf.nested_columns == ["struct_list"]
 
 
-def test_to_parquet():
+def test_to_parquet(nested_parquet_path):
     """Test writing a parquet file with no columns specified"""
     # Load in the example file
-    nf = read_parquet("tests/test_data/nested.parquet")
+    nf = read_parquet(nested_parquet_path)
 
     # Write to a temporary file
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -287,10 +287,10 @@ def test_to_parquet():
 
 
 @pytest.mark.parametrize("list_struct", [False, True])
-def test_to_pyarrow_list_struct_roundtrip(list_struct):
+def test_to_pyarrow_list_struct_roundtrip(list_struct, nested_parquet_path):
     """to_pyarrow / to_parquet support both nested layouts and round-trip."""
     # Source is already ArrowDtype-backed so flat-column dtypes round-trip too.
-    nf = read_parquet("tests/test_data/nested.parquet")
+    nf = read_parquet(nested_parquet_path)
     nested_col = nf.nested_columns[0]
 
     # The requested layout is reflected in the table schema.
@@ -420,14 +420,14 @@ def test_read_parquet_list_autocast():
         assert len(nf["d"].nest.to_flat()) == 9
 
 
-def test__transform_read_parquet_data_arg():
+def test__transform_read_parquet_data_arg(nested_data_dir, nested_parquet_path):
     """Testing _transform_read_parquet_data_arg"""
-    with open("tests/test_data/nested.parquet", "rb") as f:
+    with open(nested_parquet_path, "rb") as f:
         bytes = f.read()
     io_bytes = io.BytesIO(bytes)
     assert _transform_read_parquet_data_arg(io_bytes) == (io_bytes, None)
 
-    local_path = "tests/test_data/nested.parquet"
+    local_path = str(nested_parquet_path)
     with open(local_path, "rb") as f:
         assert _transform_read_parquet_data_arg(f) == (f, None)
     with open(Path(local_path), "rb") as f:
@@ -437,12 +437,22 @@ def test__transform_read_parquet_data_arg():
     with UPath(local_path).open("rb") as f:
         assert _transform_read_parquet_data_arg(f) == (f, None)
 
-    assert _transform_read_parquet_data_arg(local_path) == (local_path, None)
+    # An absolute local path is a valid URI for pyarrow, which resolves it to its local filesystem.
+    # pyarrow normalizes the separators to "/", so compare as paths rather than strings for Windows.
+    path, fs = _transform_read_parquet_data_arg(local_path)
+    assert Path(path) == Path(local_path)
+    assert isinstance(fs, pa.fs.LocalFileSystem)
+
+    # A relative path is not a URI, so it passes through untouched for fsspec to resolve
+    relative_path = "some/relative/nested.parquet"
+    assert _transform_read_parquet_data_arg(relative_path) == (relative_path, None)
 
     assert _transform_read_parquet_data_arg(Path(local_path)) == (Path(local_path), None)
 
     local_upath = UPath(local_path)
-    assert _transform_read_parquet_data_arg(local_upath) == (local_path, None)
+    path, fs = _transform_read_parquet_data_arg(local_upath)
+    assert Path(path) == Path(local_path)
+    assert fs is None
 
     s3_path = "s3://nasa-irsa-euclid-q1/contributed/q1/merged_objects/hats/euclid_q1_merged_objects-hats/dataset/Norder=3/Dir=0/Npix=334/part0.snappy.parquet"
     path, fs = _transform_read_parquet_data_arg(s3_path)
@@ -457,10 +467,10 @@ def test__transform_read_parquet_data_arg():
     with pytest.raises(TypeError):
         _transform_read_parquet_data_arg(123)
 
-    local_paths = list(Path("tests/test_data").glob("*.parquet"))
+    local_paths = list(nested_data_dir.glob("*.parquet"))
     assert _transform_read_parquet_data_arg(local_paths) == (local_paths, None)
 
-    local_upaths = list(UPath("tests/test_data").glob("*.parquet"))
+    local_upaths = list(UPath(nested_data_dir).glob("*.parquet"))
     paths, fs = _transform_read_parquet_data_arg(local_upaths)
     assert paths == [up.path for up in local_upaths]
     assert fs is None
@@ -468,16 +478,16 @@ def test__transform_read_parquet_data_arg():
     with pytest.raises(ValueError):
         _transform_read_parquet_data_arg(
             [
-                "tests/test_data",
+                str(nested_data_dir),
                 "https://data.lsdb.io/hats/gaia_dr3/gaia/dataset/Norder=2/Dir=0/Npix=0.parquet",
             ]
         )
 
 
-def test_read_parquet_with_fsspec_optimization():
+def test_read_parquet_with_fsspec_optimization(nested_parquet_path):
     """Test that read_parquet automatically uses fsspec optimization for remote files."""
     # Test with local file (should not use fsspec optimization)
-    local_path = "tests/test_data/nested.parquet"
+    local_path = str(nested_parquet_path)
 
     # Test basic reading - local files should work as before
     nf1 = read_parquet(local_path)
@@ -497,9 +507,9 @@ def test_docstring_includes_fsspec_notes():
     assert "remote" in docstring.lower()
 
 
-def test__get_storage_options():
+def test__get_storage_options(nested_parquet_path):
     """Test _get_storage_options function with various input types."""
-    local_path = "tests/test_data/nested.parquet"
+    local_path = str(nested_parquet_path)
 
     # Test with UPath objects (local files)
     local_upath = UPath(local_path)
@@ -529,30 +539,30 @@ def test__get_storage_options():
     assert storage_opts.get("block_size") != FSSPEC_BLOCK_SIZE
 
 
-def test__is_local_path():
+def test__is_local_path(nested_data_dir, nested_parquet_path):
     """Test the _is_local_path function with various scenarios."""
     from nested_pandas.nestedframe.io import _is_local_path
 
-    assert _is_local_path(UPath("tests/test_data")) is True
-    assert _is_local_path(UPath("tests/test_data/nested.parquet")) is True
+    assert _is_local_path(UPath(nested_data_dir)) is True
+    assert _is_local_path(UPath(nested_parquet_path)) is True
     assert _is_local_path(UPath("https://example.com/data.parquet")) is False
 
 
-def test__is_remote_dir():
+def test__is_remote_dir(nested_data_dir, nested_parquet_path):
     """Test the _is_remote_dir function with various scenarios."""
     from nested_pandas.nestedframe.io import _is_remote_dir
 
     # Local path that is a directory
-    local_dir = UPath("tests/test_data")
-    assert _is_remote_dir("tests/test_data", local_dir, is_dir=True) is True
-    assert _is_remote_dir("tests/test_data", local_dir, is_dir=False) is False
-    assert _is_remote_dir("tests/test_data", local_dir, is_dir=None) is True
+    local_dir = UPath(nested_data_dir)
+    assert _is_remote_dir(str(nested_data_dir), local_dir, is_dir=True) is True
+    assert _is_remote_dir(str(nested_data_dir), local_dir, is_dir=False) is False
+    assert _is_remote_dir(str(nested_data_dir), local_dir, is_dir=None) is True
 
     # Local path that is a file
-    local_file = UPath("tests/test_data/nested.parquet")
-    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=True) is True
-    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=False) is False
-    assert _is_remote_dir("tests/test_data/nested.parquet", local_file, is_dir=None) is False
+    local_file = UPath(nested_parquet_path)
+    assert _is_remote_dir(str(nested_parquet_path), local_file, is_dir=True) is True
+    assert _is_remote_dir(str(nested_parquet_path), local_file, is_dir=False) is False
+    assert _is_remote_dir(str(nested_parquet_path), local_file, is_dir=None) is False
 
     # Remote file path
     remote_path = UPath("https://example.com/data.parquet")
@@ -569,30 +579,30 @@ def test__is_remote_dir():
     assert _is_remote_dir("https://example.com/data/", remote_dir_path, is_dir=None) is False
 
 
-def test_list_struct_partial_loading_error():
+def test_list_struct_partial_loading_error(list_struct_parquet_path):
     """Test that attempting to partially load a list-struct raises an error."""
     # Load in the example file
     with pytest.raises(ValueError):
-        read_parquet("tests/list_struct_data/list_struct.parquet", columns=["lightcurve.hmjd"])
+        read_parquet(list_struct_parquet_path, columns=["lightcurve.hmjd"])
 
 
-def test_normal_loading_error():
+def test_normal_loading_error(nested_parquet_path):
     """Test that making a normal naming mistake raises the normal pyarrow error."""
     # Load in the example file
     with pytest.raises(ValueError, match="No match for*"):
-        read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"])
+        read_parquet(nested_parquet_path, columns=["not_a_column"])
 
 
-def test_read_parquet_with_fixed_length_struct_list():
+def test_read_parquet_with_fixed_length_struct_list(mmu_desi_parquet_path):
     """Test reading a parquet file with fixed-length struct-list columns"""
-    nf = read_parquet("tests/fixed_size_list_data/mmu-desi.parquet")
+    nf = read_parquet(mmu_desi_parquet_path)
     assert nf.shape == (2, 18)
     assert nf.nested_columns == ["spectrum"]
 
 
-def test_read_parquet_with_fixed_length_list_struct():
+def test_read_parquet_with_fixed_length_list_struct(fixed_size_list_struct_parquet_path):
     """Test reading a parquet file with fixed-length list-struct columns"""
-    nf = read_parquet("tests/fixed_size_list_data/fixed-size-list-struct.parquet")
+    nf = read_parquet(fixed_size_list_struct_parquet_path)
     assert nf.shape == (5, 3)
     assert nf.nested_columns == ["fixed_nested"]
 
@@ -744,9 +754,9 @@ DATAFUSION_READ_CASES = [
 
 
 @pytest.mark.parametrize("columns,filters", DATAFUSION_READ_CASES)
-def test_read_parquet_datafusion_matches_pyarrow(columns, filters):
+def test_read_parquet_datafusion_matches_pyarrow(columns, filters, nested_parquet_path):
     """The "datafusion" engine returns exactly what the "pyarrow" engine returns."""
-    path = "tests/test_data/nested.parquet"
+    path = nested_parquet_path
 
     pyarrow_nf = read_parquet(path, columns=columns, filters=filters, engine="pyarrow")
     datafusion_nf = read_parquet(path, columns=columns, filters=filters, engine="datafusion")
@@ -851,17 +861,17 @@ def test_read_parquet_datafusion_quoted_column_names():
     assert nf.nested.nest.columns == ["Sub"]
 
 
-def test_read_parquet_datafusion_list_struct_error():
+def test_read_parquet_datafusion_list_struct_error(list_struct_parquet_path):
     """Partially loading a list-of-structs column gives the pyarrow engine's error."""
-    path = "tests/list_struct_data/list_struct.parquet"
+    path = list_struct_parquet_path
     with pytest.raises(ValueError, match="not a struct"):
         read_parquet(path, columns=["lightcurve.hmjd"], engine="datafusion")
 
 
-def test_read_parquet_datafusion_missing_column_error():
+def test_read_parquet_datafusion_missing_column_error(nested_parquet_path):
     """A plain naming mistake still raises."""
     with pytest.raises(Exception, match="not_a_column"):
-        read_parquet("tests/test_data/nested.parquet", columns=["not_a_column"], engine="datafusion")
+        read_parquet(nested_parquet_path, columns=["not_a_column"], engine="datafusion")
 
 
 class _PointExtensionType(pa.ExtensionType):
@@ -1002,9 +1012,9 @@ def test_datafusion_supported_remote(data):
         ({"use_threads": False}, "use_threads=False"),
     ],
 )
-def test_datafusion_read_table_unsupported(kwargs, match):
+def test_datafusion_read_table_unsupported(kwargs, match, nested_parquet_path):
     """What datafusion cannot serve raises, and names the engine to use instead."""
-    kwargs = {"data": "tests/test_data/nested.parquet", **kwargs}
+    kwargs = {"data": str(nested_parquet_path), **kwargs}
     with pytest.raises(ValueError, match=match):
         _datafusion_read_table(**kwargs)
 
@@ -1111,9 +1121,9 @@ def test_datafusion_object_store_does_not_mutate_storage_options():
     }
 
 
-def test_datafusion_read_table_local_filesystem():
+def test_datafusion_read_table_local_filesystem(nested_parquet_path):
     """A local pyarrow filesystem is accepted, it is what datafusion would use anyway."""
-    path = UPath("tests/test_data/nested.parquet")
+    path = UPath(nested_parquet_path)
     actual = _datafusion_read_table(path.path, filesystem=pyarrow.fs.LocalFileSystem())
     assert actual.column_names == ["a", "flux", "nested", "lincc"]
 
