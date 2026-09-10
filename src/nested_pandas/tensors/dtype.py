@@ -36,7 +36,8 @@ class TensorDtype(ExtensionDtype):
     ----------
     pyarrow_dtype : pyarrow.FixedShapeTensorType or pd.ArrowDtype
         The pyarrow tensor type, or a ``pd.ArrowDtype`` wrapping one.
-        Types with a ``permutation`` are not supported.
+        An identity ``permutation`` is accepted and dropped; any other
+        ``permutation`` is not supported.
 
     Examples
     --------
@@ -126,7 +127,11 @@ class TensorDtype(ExtensionDtype):
             raise TypeError(f"'construct_from_string' expects a string, got {type(string)}")
         match = _NAME_PATTERN.match(string)
         if match is None:
-            raise TypeError(f"Cannot construct a '{cls.__name__}' from '{string}'")
+            raise TypeError(
+                f"Cannot construct a '{cls.__name__}' from '{string}'. Expected a string like "
+                "'tensor[<element type>, (<shape>)]', optionally followed by ', dim_names=[<names>]', "
+                "for example 'tensor[double, (2, 3)]' or 'tensor[int32, (4, 4), dim_names=[y, x]]'"
+            )
 
         # Try pyarrow type aliases first, then reuse pandas' parsing of pyarrow type strings for
         # common parametric types like timestamp[ns, tz=UTC]. Not the other way round, because
@@ -184,16 +189,27 @@ class TensorDtype(ExtensionDtype):
             raise TypeError(
                 f"TensorDtype can only be constructed with pa.FixedShapeTensorType, got {pyarrow_dtype!r}"
             )
-        # A permutation reorders the inner dimensions of each tensor in storage. Supporting it would
-        # require a permutation branch in every array method, and pyarrow would return non-contiguous
-        # transposed views, breaking the "every element has dtype.shape" invariant. Columns with a
-        # permutation can be normalized to C order (one copy) and rebuilt without it.
-        if pyarrow_dtype.permutation is not None:
-            raise NotImplementedError(
-                "TensorDtype does not support fixed_shape_tensor types with a permutation yet, "
-                f"got {pyarrow_dtype}. Convert the tensors to C order with numpy and rebuild the column "
-                "from a fixed_shape_tensor type without a permutation."
-            )
+        permutation = pyarrow_dtype.permutation
+        if permutation is not None:
+            if list(permutation) == list(range(len(pyarrow_dtype.shape))):
+                # An identity permutation is the same layout as no permutation, and pyarrow's own
+                # FixedShapeTensorArray.from_numpy_ndarray() always sets one for C-ordered input.
+                # pyarrow compares the two types equal but hashes them differently, so normalize
+                # to the permutation-free type to keep TensorDtype equality and hashing consistent.
+                pyarrow_dtype = pa.fixed_shape_tensor(
+                    pyarrow_dtype.value_type, pyarrow_dtype.shape, dim_names=pyarrow_dtype.dim_names
+                )
+            else:
+                # A permutation reorders the inner dimensions of each tensor in storage. Supporting it
+                # would require a permutation branch in every array method, and pyarrow would return
+                # non-contiguous transposed views, breaking the "every element has dtype.shape"
+                # invariant. Columns with a permutation can be normalized to C order (one copy) and
+                # rebuilt without it.
+                raise NotImplementedError(
+                    "TensorDtype does not support fixed_shape_tensor types with a non-trivial permutation "
+                    f"yet, got {pyarrow_dtype}. Convert the tensors to C order with numpy and rebuild the "
+                    "column from a fixed_shape_tensor type without a permutation."
+                )
         self.pyarrow_dtype = pyarrow_dtype
 
     @property

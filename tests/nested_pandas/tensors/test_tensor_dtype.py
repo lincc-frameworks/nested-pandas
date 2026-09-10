@@ -72,10 +72,52 @@ def test_from_pyarrow_dtype_raises(pyarrow_dtype):
 
 
 def test_permutation_raises():
-    """Test that tensor types with a permutation are rejected."""
+    """Test that tensor types with a non-trivial permutation are rejected."""
     pyarrow_dtype = pa.fixed_shape_tensor(pa.float64(), [2, 3], permutation=[1, 0])
     with pytest.raises(NotImplementedError):
         TensorDtype(pyarrow_dtype)
+
+
+@pytest.mark.parametrize(
+    "shape,dim_names",
+    [
+        ([5], None),
+        ([2, 3], None),
+        ([2, 3, 4], ["z", "y", "x"]),
+    ],
+)
+def test_identity_permutation_is_normalized(shape, dim_names):
+    """Test that an identity permutation is accepted and dropped, so the dtype equals and hashes as if
+    it had none."""
+    permutation = list(range(len(shape)))
+    with_permutation = pa.fixed_shape_tensor(
+        pa.float64(), shape, dim_names=dim_names, permutation=permutation
+    )
+    without_permutation = pa.fixed_shape_tensor(pa.float64(), shape, dim_names=dim_names)
+    # pyarrow itself compares these equal but hashes them differently
+    assert with_permutation == without_permutation
+    assert hash(with_permutation) != hash(without_permutation)
+
+    dtype = TensorDtype(with_permutation)
+    expected = TensorDtype(without_permutation)
+    assert dtype.pyarrow_dtype == without_permutation
+    assert dtype.pyarrow_dtype.permutation is None
+    assert dtype.dim_names == expected.dim_names
+    assert dtype == expected
+    assert hash(dtype) == hash(expected)
+    assert dtype.name == expected.name
+
+
+def test_from_numpy_ndarray_type():
+    """Test that the type pyarrow assigns to a tensor array built from a C-ordered numpy array is accepted.
+
+    pyarrow sets an identity permutation on these, so this is the type of any tensor column written
+    through pyarrow's own numpy conversion.
+    """
+    array = pa.FixedShapeTensorArray.from_numpy_ndarray(np.zeros((4, 2, 3)))
+    assert array.type.permutation is not None
+    dtype = TensorDtype(array.type)
+    assert dtype == TensorDtype(pa.fixed_shape_tensor(pa.float64(), [2, 3]))
 
 
 def test_properties():
@@ -215,6 +257,15 @@ def test_construct_from_string_raises(string):
     """Test that invalid strings raise TypeError, so pandas can try the next registered dtype."""
     with pytest.raises(TypeError):
         TensorDtype.construct_from_string(string)
+
+
+def test_construct_from_string_error_explains_format():
+    """Test that the error for an unrecognized string names the offending string and shows the format."""
+    match = r"Cannot construct a 'TensorDtype' from 'tensor\[double\]'"
+    with pytest.raises(TypeError, match=match) as excinfo:
+        TensorDtype.construct_from_string("tensor[double]")
+    assert "tensor[<element type>, (<shape>)]" in str(excinfo.value)
+    assert "tensor[double, (2, 3)]" in str(excinfo.value)
 
 
 @pytest.mark.parametrize("not_a_string", [0, None, pa.fixed_shape_tensor(pa.float64(), [2]), ["tensor"]])
