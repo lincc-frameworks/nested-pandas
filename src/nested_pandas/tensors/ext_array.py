@@ -53,7 +53,7 @@ from pandas.core.indexers import (  # type: ignore[attr-defined]
     validate_indices,
 )
 
-from nested_pandas.series.ext_array import replace_with_mask
+from nested_pandas.series.utils import replace_with_mask
 from nested_pandas.tensors.dtype import TensorDtype
 
 __all__ = ["TensorExtensionArray"]

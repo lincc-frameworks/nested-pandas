@@ -70,6 +70,7 @@ from nested_pandas.series.utils import (
     normalize_list_array,
     normalize_struct_list_type,
     rechunk,
+    replace_with_mask,
     safe_cast,
     scalars_to_pa_array,
     struct_field_names,
@@ -179,22 +180,6 @@ def to_pyarrow_dtype(
     if isinstance(dtype, pa.DataType):
         return dtype
     return None
-
-
-def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array) -> pa.ChunkedArray:
-    """Replace the elements of the array with the value where the mask is True"""
-    # TODO: performance optimization
-    # https://github.com/lincc-frameworks/nested-pandas/issues/52
-
-    # If mask is [False, True, False, True], mask_cumsum will be [0, 1, 1, 2]
-    # So we put value items to the right positions in broadcast_value, while duplicate some other items for
-    # the positions where mask is False.
-    mask_cumsum = pa.compute.cumulative_sum(mask.cast(pa.int64()))
-    value_index = pa.compute.subtract(mask_cumsum, 1)
-    value_index = pa.compute.if_else(pa.compute.less(value_index, 0), 0, value_index)
-
-    broadcast_value = value.take(value_index)
-    return pa.compute.if_else(mask, broadcast_value, array)
 
 
 def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) -> pa.Scalar:
