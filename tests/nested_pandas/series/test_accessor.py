@@ -1173,9 +1173,9 @@ def test_to_flatten_inner_empty_inner():
     _actual = nnf["outer"].nest.to_flatten_inner("inner")
 
 
-def test_to_flatten_inner_none_nested(nested_data_dir):
+def test_to_flatten_inner_none_nested(vsx_ztf_parquet_path):
     """Test .nest.to_flatten_inner with vsx-x-ztfdr22_lc-m31.parquet file"""
-    nnf = read_parquet(nested_data_dir / "vsx-x-ztfdr22_lc-m31.parquet")
+    nnf = read_parquet(vsx_ztf_parquet_path)
     _actual = nnf["ztf"].nest.to_flatten_inner("lc")
 
 
