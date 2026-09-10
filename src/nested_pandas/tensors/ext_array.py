@@ -362,6 +362,50 @@ class TensorExtensionArray(ExtensionArray):
         for scalar in self._pa_array:
             yield self._scalar_to_numpy(scalar)
 
+    def __eq__(self, other):  # type: ignore[override]
+        """Elementwise equality with another array of tensors, or with a single tensor.
+
+        Two tensors are equal when they have the same dtype and all their values
+        are equal, with numpy's semantics for the values (so NaN != NaN). The
+        result is NA where either side is missing. Comparing to anything that
+        cannot be interpreted as tensors of this dtype, including an array of a
+        different tensor dtype, gives False everywhere.
+
+        Returns
+        -------
+        pd.arrays.BooleanArray
+        """
+        # Let pandas unbox these and dispatch back to us with the underlying array
+        if isinstance(other, pd.Series | pd.Index | pd.DataFrame):
+            return NotImplemented
+
+        self_mask = self.isna()
+        other_array = self._coerce_comparison_operand(other)
+        if other_array is None:
+            return pd.arrays.BooleanArray(np.zeros(len(self), dtype=bool), self_mask)
+        if len(other_array) not in (1, len(self)):
+            raise ValueError("Lengths must match to compare")
+
+        # Compare the flat values row by row; a length-1 operand broadcasts
+        left = self._values_block().reshape(len(self), self.dtype.size)
+        right = other_array._values_block().reshape(len(other_array), self.dtype.size)
+        equal = np.all(left == right, axis=1)
+        mask = self_mask | other_array.isna()
+        return pd.arrays.BooleanArray(equal, mask)
+
+    def _coerce_comparison_operand(self, other: Any) -> Self | None:  # type: ignore[name-defined] # noqa: F821
+        """Convert the other side of a comparison to an array of this dtype, or None if impossible."""
+        if _is_na(other):
+            return type(self)._from_sequence([None], dtype=self.dtype)
+        if isinstance(other, TensorExtensionArray):
+            return other if other.dtype == self.dtype else None
+        if isinstance(other, np.ndarray) and other.shape == self.dtype.shape:
+            other = [other]
+        try:
+            return type(self)._from_sequence(other, dtype=self.dtype)
+        except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
+            return None
+
     def to_numpy(
         self,
         dtype: DTypeLike | None = None,
@@ -718,6 +762,22 @@ class TensorExtensionArray(ExtensionArray):
         np.ndarray
             Array of shape ``(len(self), *self.dtype.shape)``.
         """
+        stack = self._values_block()
+        if not self._hasna:
+            return stack
+
+        # The block holds arbitrary values for null tensors, so fill them here
+        result_dtype = np.result_type(stack.dtype, np.min_scalar_type(na_value))
+        result = np.array(stack, dtype=result_dtype)
+        result[self.isna()] = na_value
+        return result
+
+    def _values_block(self) -> np.ndarray:
+        """Read-only numpy view of shape ``(n, *shape)`` over the arrow buffers.
+
+        Zero-copy for a single chunk. Null tensors are present in the block
+        but hold arbitrary values, so callers must consult :meth:`isna`.
+        """
         if len(self) == 0:
             return np.empty((0, *self.dtype.shape), dtype=_numpy_value_dtype(self.dtype))
 
@@ -726,15 +786,7 @@ class TensorExtensionArray(ExtensionArray):
             combined = cast(pa.FixedShapeTensorArray, self._pa_array.chunk(0))
         else:
             combined = cast(pa.FixedShapeTensorArray, self._pa_array.combine_chunks())
-        stack = combined.to_numpy_ndarray()
-        if combined.null_count == 0:
-            return stack
-
-        # to_numpy_ndarray() silently returns garbage for null tensors, so fill them here
-        result_dtype = np.result_type(stack.dtype, np.min_scalar_type(na_value))
-        result = np.array(stack, dtype=result_dtype)
-        result[self.isna()] = na_value
-        return result
+        return combined.to_numpy_ndarray()
 
     @classmethod
     def from_arrow_ext_array(cls, array: ArrowExtensionArray, *, dtype: TensorDtype | None = None) -> Self:  # type: ignore[name-defined] # noqa: F821
