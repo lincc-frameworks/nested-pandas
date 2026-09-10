@@ -437,9 +437,10 @@ def test__transform_read_parquet_data_arg(nested_data_dir, nested_parquet_path):
     with UPath(local_path).open("rb") as f:
         assert _transform_read_parquet_data_arg(f) == (f, None)
 
-    # An absolute local path is a valid URI for pyarrow, which resolves it to its local filesystem
+    # An absolute local path is a valid URI for pyarrow, which resolves it to its local filesystem.
+    # pyarrow normalizes the separators to "/", so compare as paths rather than strings for Windows.
     path, fs = _transform_read_parquet_data_arg(local_path)
-    assert path == local_path
+    assert Path(path) == Path(local_path)
     assert isinstance(fs, pa.fs.LocalFileSystem)
 
     # A relative path is not a URI, so it passes through untouched for fsspec to resolve
@@ -449,7 +450,9 @@ def test__transform_read_parquet_data_arg(nested_data_dir, nested_parquet_path):
     assert _transform_read_parquet_data_arg(Path(local_path)) == (Path(local_path), None)
 
     local_upath = UPath(local_path)
-    assert _transform_read_parquet_data_arg(local_upath) == (local_path, None)
+    path, fs = _transform_read_parquet_data_arg(local_upath)
+    assert Path(path) == Path(local_path)
+    assert fs is None
 
     s3_path = "s3://nasa-irsa-euclid-q1/contributed/q1/merged_objects/hats/euclid_q1_merged_objects-hats/dataset/Norder=3/Dir=0/Npix=334/part0.snappy.parquet"
     path, fs = _transform_read_parquet_data_arg(s3_path)
