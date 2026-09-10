@@ -115,10 +115,30 @@ def _storage_of(array: pa.ChunkedArray) -> pa.ChunkedArray:
     return pa.chunked_array([chunk.storage for chunk in array.iterchunks()], type=pa_type.storage_type)
 
 
+def _is_tensor_scalar(value: Any) -> bool:
+    """Whether a value is a pyarrow scalar of a fixed_shape_tensor type.
+
+    We check the type rather than ``isinstance(value, pa.FixedShapeTensorScalar)``
+    because that class is not exported by pyarrow before version 17.
+    """
+    return isinstance(value, pa.ExtensionScalar) and isinstance(value.type, pa.FixedShapeTensorType)
+
+
+def _tensor_scalar_to_numpy(scalar: pa.ExtensionScalar) -> np.ndarray:
+    """Read-only zero-copy numpy view of a valid fixed_shape_tensor scalar.
+
+    ``scalar.value`` is the fixed_size_list storage scalar, whose ``values``
+    are a slice of the flat child array. This is what
+    ``FixedShapeTensorScalar.to_numpy()`` does, but that method only exists
+    since pyarrow 17.
+    """
+    return np.asarray(scalar.value.values).reshape(tuple(scalar.type.shape))
+
+
 def _tensor_to_flat(value: Any, dtype: TensorDtype) -> np.ndarray:
     """Validate a single tensor against the dtype and return its values flattened in C order."""
-    if isinstance(value, pa.FixedShapeTensorScalar):
-        array = value.to_numpy()
+    if _is_tensor_scalar(value):
+        array = _tensor_scalar_to_numpy(value)
     elif isinstance(value, pa.Scalar):
         array = np.asarray(value.as_py())
         # A fixed_size_list scalar comes back flat
@@ -241,8 +261,8 @@ class TensorExtensionArray(ExtensionArray):
             first = next((value for value, na in zip(scalars, mask, strict=True) if not na), None)
             if first is None:
                 raise ValueError("Cannot infer TensorDtype from a sequence without non-missing values")
-            if isinstance(first, pa.FixedShapeTensorScalar):
-                first = first.to_numpy()
+            if _is_tensor_scalar(first):
+                first = _tensor_scalar_to_numpy(first)
             first = np.asarray(first)
             dtype = TensorDtype(pa.fixed_shape_tensor(pa.from_numpy_dtype(first.dtype), list(first.shape)))
 
@@ -589,7 +609,7 @@ class TensorExtensionArray(ExtensionArray):
         """Convert a tensor scalar to a read-only numpy view, or to na_value if it is null."""
         if not scalar.is_valid:
             return na_value
-        return cast(pa.FixedShapeTensorScalar, scalar).to_numpy()
+        return _tensor_scalar_to_numpy(scalar)
 
     def _is_scalar_value(self, value: Any) -> bool:
         """Whether a value passed to __setitem__ is a single tensor rather than a sequence of them."""

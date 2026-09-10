@@ -8,6 +8,7 @@ from pandas.core.dtypes.cast import find_common_type
 from pandas.tests.extension import base
 
 from nested_pandas import TensorDtype
+from nested_pandas.tensors.ext_array import TensorExtensionArray
 
 
 class _NotATensorType(pa.ExtensionType):
@@ -341,20 +342,17 @@ class TestPandasBaseDtype(base.BaseDtypeTests):
         """The dtype instance the pandas suite is run against."""
         return TensorDtype(pa.fixed_shape_tensor(pa.float64(), [2, 3]))
 
-    # TODO: remove these overrides and provide the ``data`` and ``data_missing`` fixtures
-    # once TensorExtensionArray is merged.
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_array_type(self):
-        """Skipped until the extension array exists."""
+    @pytest.fixture
+    def data(self, dtype):
+        """Length-100 array without missing values, as the pandas suite expects."""
+        return TensorExtensionArray.from_stack(np.arange(600.0).reshape(100, 2, 3), dtype=dtype)
 
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_check_dtype(self):
-        """Skipped until the extension array exists."""
+    @pytest.fixture
+    def data_missing(self, dtype):
+        """Length-2 array of [missing, valid], as the pandas suite expects."""
+        return TensorExtensionArray.from_sequence([None, np.ones((2, 3))], dtype=dtype)
 
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_infer_dtype(self):
-        """Skipped until the extension array exists."""
-
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_is_dtype_unboxes_dtype(self):
-        """Skipped until the extension array exists."""
+    @pytest.fixture(params=[True, False])
+    def skipna(self, request):
+        """Provided by pandas' own conftest, so replicated here."""
+        return request.param
