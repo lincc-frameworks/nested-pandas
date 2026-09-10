@@ -252,7 +252,12 @@ class TensorExtensionArray(ExtensionArray):
         if isinstance(scalars, pa.Array | pa.ChunkedArray):
             return cls(scalars, dtype=dtype)
         if isinstance(scalars, np.ndarray) and scalars.dtype != np.object_ and scalars.ndim >= 2:
-            return cls.from_stack(scalars, dtype=dtype)
+            if dtype is not None and scalars.ndim == dtype.ndim:
+                # A single tensor (possibly of the wrong shape, which is reported below), e.g. pandas
+                # broadcasting a "scalar", rather than a stack of them
+                scalars = [scalars]
+            else:
+                return cls.from_stack(scalars, dtype=dtype)
 
         scalars = list(scalars)
         mask = np.array([_is_na(value) for value in scalars], dtype=bool)
@@ -284,16 +289,15 @@ class TensorExtensionArray(ExtensionArray):
 
         if isinstance(item, np.ndarray):
             if len(item) == 0:
-                return type(self)(pa.chunked_array([], type=self.dtype.pyarrow_dtype), dtype=self.dtype)
-            pa_item = pa.array(item)
-            if item.dtype.kind in "iu":
-                return type(self)(self._pa_array.take(pa_item), dtype=self.dtype)
-            if item.dtype.kind == "b":
-                return type(self)(self._pa_array.filter(pa_item), dtype=self.dtype)
-            # It should be covered by check_array_indexer above
-            raise IndexError(
-                "Only integers, slices and integer or boolean arrays are valid indices."
-            )  # pragma: no cover
+                pa_array = pa.chunked_array([], type=self.dtype.pyarrow_dtype)
+            elif item.dtype.kind in "iu":
+                pa_array = self._pa_array.take(pa.array(item))
+            elif item.dtype.kind == "b":
+                pa_array = self._pa_array.filter(pa.array(item))
+            else:  # pragma: no cover
+                # It should be covered by check_array_indexer above
+                raise IndexError("Only integers, slices and integer or boolean arrays are valid indices.")
+            return self._wrap_result(pa_array)
 
         if isinstance(item, tuple):
             item = unpack_tuple_and_ellipses(item)
@@ -301,13 +305,28 @@ class TensorExtensionArray(ExtensionArray):
         if item is Ellipsis:
             item = slice(None)
 
+        if not isinstance(item, int | np.integer | slice):
+            raise IndexError(
+                "only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and integer or "
+                "boolean arrays are valid indices"
+            )
+
         scalar_or_array = self._pa_array[item]
         if isinstance(scalar_or_array, pa.Scalar):
             return self._scalar_to_numpy(scalar_or_array)
         # Logically, it must be a pa.ChunkedArray if it is not a scalar
-        return type(self)(cast(pa.ChunkedArray, scalar_or_array), dtype=self.dtype)
+        return self._wrap_result(cast(pa.ChunkedArray, scalar_or_array))
+
+    def _wrap_result(self, pa_array: pa.ChunkedArray) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Wrap a selection from this array, carrying over the dtype and the read-only flag."""
+        result = type(self)(pa_array, dtype=self.dtype)
+        result._readonly = self._readonly
+        return result
 
     def __setitem__(self, key, value) -> None:
+        if self._readonly:
+            raise ValueError("Cannot modify read-only array")
+
         key = check_array_indexer(self, key)
 
         if isinstance(key, tuple):
@@ -321,19 +340,25 @@ class TensorExtensionArray(ExtensionArray):
         if len(key) == 0:
             return
 
-        argsort: np.ndarray | None = None
+        # For integer keys, `value_index` maps each set position (in mask order) to the element
+        # of a sequence `value` to take, so that duplicate keys follow numpy: the last one wins.
+        value_index: np.ndarray | None = None
         if key.dtype.kind in "iu":
-            _, argsort = np.unique(key, return_index=True)
+            key = np.where(key < 0, key + len(self), key)
+            if key.min() < 0 or key.max() >= len(self):
+                raise IndexError("index out of bounds")
+            _, last_reversed = np.unique(key[::-1], return_index=True)
+            value_index = len(key) - 1 - last_reversed
             np_mask = np.zeros(len(self), dtype=np.bool_)
             np_mask[key] = True
             pa_mask = pa.array(np_mask)
+            n_values = len(key)
         elif key.dtype.kind == "b":
             pa_mask = pa.array(key)
+            n_values = int(key.sum())
         # Should be covered by check_array_indexer
         else:  # pragma: no cover
-            raise IndexError(
-                "Only integers, slices and integer or boolean arrays are valid indices."
-            )  # pragma: no cover
+            raise IndexError("Only integers, slices and integer or boolean arrays are valid indices.")
 
         n_set = pc.sum(pa_mask).as_py() or 0
 
@@ -343,12 +368,12 @@ class TensorExtensionArray(ExtensionArray):
             value_storage: pa.Array | pa.ChunkedArray = pa.repeat(scalar, n_set)
         else:
             value_storage = type(self)._from_sequence(value, dtype=self.dtype).storage
-            if len(value_storage) != n_set:
+            if len(value_storage) != n_values:
                 raise ValueError(
-                    f"Cannot set {n_set} elements from a sequence of length {len(value_storage)}"
+                    f"Cannot set {n_values} elements from a sequence of length {len(value_storage)}"
                 )
-            if argsort is not None:
-                value_storage = value_storage.take(argsort)
+            if value_index is not None:
+                value_storage = value_storage.take(value_index)
 
         # pa.compute.replace_with_mask() and if_else() have no kernels for the extension type,
         # so we work on the fixed_size_list storage and wrap it back.
@@ -628,6 +653,31 @@ class TensorExtensionArray(ExtensionArray):
         """Return a new ExtensionArray with missing tensors removed."""
         return type(self)(pc.drop_null(self._pa_array), dtype=self.dtype)
 
+    def shift(self, periods: int = 1, fill_value: Any = None) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Shift values by the desired number, filling with a tensor or with missing values.
+
+        The base class implementation checks ``isna(fill_value)``, which is
+        ambiguous for an ndarray fill value, so it is reimplemented here.
+
+        Parameters
+        ----------
+        periods : int, default 1
+            The number of periods to shift. Negative values shift towards the start.
+        fill_value : np.ndarray, None or pd.NA, default None
+            The tensor to fill the vacated positions with, or missing if None or pd.NA.
+
+        Returns
+        -------
+        TensorExtensionArray
+        """
+        if not len(self) or periods == 0:
+            return self.copy()
+
+        n_fill = min(abs(periods), len(self))
+        fill = type(self)._from_sequence([fill_value] * n_fill, dtype=self.dtype)
+        parts = [fill, self[: len(self) - n_fill]] if periods > 0 else [self[n_fill:], fill]
+        return self._concat_same_type(parts)
+
     # End of ExtensionArray overrides #
 
     # Additional magic methods #
@@ -646,6 +696,9 @@ class TensorExtensionArray(ExtensionArray):
 
     def __array__(self, dtype=None, copy=None):
         """Convert the extension array to a numpy object array of tensors."""
+        if copy is False:
+            # The object array is always newly built, so a no-copy conversion cannot be honored
+            raise ValueError("Unable to avoid copy while creating an array as requested.")
         return self.to_numpy(dtype=dtype, copy=bool(copy))
 
     # Adopted from ArrowExtensionArray

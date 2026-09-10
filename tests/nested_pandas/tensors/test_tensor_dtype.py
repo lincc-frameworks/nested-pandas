@@ -8,7 +8,6 @@ from pandas.core.dtypes.cast import find_common_type
 from pandas.tests.extension import base
 
 from nested_pandas import TensorDtype
-from nested_pandas.tensors.ext_array import TensorExtensionArray
 
 
 class _NotATensorType(pa.ExtensionType):
@@ -335,24 +334,8 @@ def test_pickle():
 
 
 class TestPandasBaseDtype(base.BaseDtypeTests):
-    """Run pandas' extension dtype conformance suite against TensorDtype."""
+    """Run pandas' extension dtype conformance suite against TensorDtype.
 
-    @pytest.fixture
-    def dtype(self):
-        """The dtype instance the pandas suite is run against."""
-        return TensorDtype(pa.fixed_shape_tensor(pa.float64(), [2, 3]))
-
-    @pytest.fixture
-    def data(self, dtype):
-        """Length-100 array without missing values, as the pandas suite expects."""
-        return TensorExtensionArray.from_stack(np.arange(600.0).reshape(100, 2, 3), dtype=dtype)
-
-    @pytest.fixture
-    def data_missing(self, dtype):
-        """Length-2 array of [missing, valid], as the pandas suite expects."""
-        return TensorExtensionArray.from_sequence([None, np.ones((2, 3))], dtype=dtype)
-
-    @pytest.fixture(params=[True, False])
-    def skipna(self, request):
-        """Provided by pandas' own conftest, so replicated here."""
-        return request.param
+    The ``dtype``, ``data``, ``data_missing`` and ``skipna`` fixtures it uses
+    come from ``conftest.py``.
+    """
