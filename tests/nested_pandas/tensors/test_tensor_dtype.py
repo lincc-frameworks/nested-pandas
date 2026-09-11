@@ -94,9 +94,8 @@ def test_identity_permutation_is_normalized(shape, dim_names):
         pa.float64(), shape, dim_names=dim_names, permutation=permutation
     )
     without_permutation = pa.fixed_shape_tensor(pa.float64(), shape, dim_names=dim_names)
-    # pyarrow itself compares these equal but hashes them differently
+    # pyarrow compares these equal (but, at least in 16-19, hashes them differently)
     assert with_permutation == without_permutation
-    assert hash(with_permutation) != hash(without_permutation)
 
     dtype = TensorDtype(with_permutation)
     expected = TensorDtype(without_permutation)
@@ -334,27 +333,8 @@ def test_pickle():
 
 
 class TestPandasBaseDtype(base.BaseDtypeTests):
-    """Run pandas' extension dtype conformance suite against TensorDtype."""
+    """Run pandas' extension dtype conformance suite against TensorDtype.
 
-    @pytest.fixture
-    def dtype(self):
-        """The dtype instance the pandas suite is run against."""
-        return TensorDtype(pa.fixed_shape_tensor(pa.float64(), [2, 3]))
-
-    # TODO: remove these overrides and provide the ``data`` and ``data_missing`` fixtures
-    # once TensorExtensionArray is merged.
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_array_type(self):
-        """Skipped until the extension array exists."""
-
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_check_dtype(self):
-        """Skipped until the extension array exists."""
-
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_infer_dtype(self):
-        """Skipped until the extension array exists."""
-
-    @pytest.mark.skip(reason="Requires TensorExtensionArray")
-    def test_is_dtype_unboxes_dtype(self):
-        """Skipped until the extension array exists."""
+    The ``dtype``, ``data``, ``data_missing`` and ``skipna`` fixtures it uses
+    come from ``conftest.py``.
+    """

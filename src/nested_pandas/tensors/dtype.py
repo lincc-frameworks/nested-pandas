@@ -89,11 +89,9 @@ class TensorDtype(ExtensionDtype):
     @classmethod
     def construct_array_type(cls) -> Type[ExtensionArray]:
         """Corresponding array type, always TensorExtensionArray"""
-        # TODO: enable once TensorExtensionArray is merged
-        # from nested_pandas.tensors.ext_array import TensorExtensionArray
-        #
-        # return TensorExtensionArray
-        raise NotImplementedError("TensorExtensionArray is not implemented yet")
+        from nested_pandas.tensors.ext_array import TensorExtensionArray
+
+        return TensorExtensionArray
 
     @classmethod
     def construct_from_string(cls, string: str) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -171,11 +169,9 @@ class TensorDtype(ExtensionDtype):
         TensorExtensionArray
             The constructed TensorExtensionArray.
         """
-        # TODO: enable once TensorExtensionArray is merged
-        # from nested_pandas.tensors.ext_array import TensorExtensionArray
-        #
-        # return TensorExtensionArray(array, dtype=self)
-        raise NotImplementedError("TensorExtensionArray is not implemented yet")
+        from nested_pandas.tensors.ext_array import TensorExtensionArray
+
+        return TensorExtensionArray(array, dtype=self)
 
     # Additional methods and attributes #
 
