@@ -110,6 +110,11 @@ class TestGetitem(base.BaseGetitemTests):
         with pytest.raises(ValueError, match=msg):
             s.item()
 
+    # ExtensionArray.item() and its suite tests were added in a pandas 3.0 patch release, so these
+    # two overrides are only run where the base suite defines them.
+    @pytest.mark.skipif(
+        not hasattr(base.BaseGetitemTests, "test_array_item"), reason="ExtensionArray.item not in this pandas"
+    )
     def test_array_item(self, data):
         """Array.item on a length-1 array."""
         arr = data[:1]
@@ -121,6 +126,10 @@ class TestGetitem(base.BaseGetitemTests):
         with pytest.raises(ValueError, match=msg):
             data[:0].item()
 
+    @pytest.mark.skipif(
+        not hasattr(base.BaseGetitemTests, "test_array_item_with_index"),
+        reason="ExtensionArray.item not in this pandas",
+    )
     def test_array_item_with_index(self, data):
         """Array.item with an index."""
         assert_tensor_equal(data.item(0), data[0])

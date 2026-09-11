@@ -910,8 +910,8 @@ def test_table_from_pandas_and_parquet_round_trip(array_with_missing, dtype, sta
     table = pa.Table.from_pandas(df)
     assert table.schema.field("t").type == dtype.pyarrow_dtype
 
-    # The parquet round trip is only checked without missing values: writing a nullable
-    # fixed_size_list is a pyarrow limitation fixed after 19.0 (see the array docstring)
+    # The parquet round trip is only checked without missing values: a nullable fixed_size_list
+    # does not round-trip parquet before pyarrow 26 (apache/arrow#35692, apache/arrow#35697)
     table = pa.Table.from_pandas(pd.DataFrame({"t": array_with_missing.dropna()}))
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
