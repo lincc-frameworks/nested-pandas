@@ -94,9 +94,8 @@ def test_identity_permutation_is_normalized(shape, dim_names):
         pa.float64(), shape, dim_names=dim_names, permutation=permutation
     )
     without_permutation = pa.fixed_shape_tensor(pa.float64(), shape, dim_names=dim_names)
-    # pyarrow itself compares these equal but hashes them differently
+    # pyarrow compares these equal (but, at least in 16-19, hashes them differently)
     assert with_permutation == without_permutation
-    assert hash(with_permutation) != hash(without_permutation)
 
     dtype = TensorDtype(with_permutation)
     expected = TensorDtype(without_permutation)

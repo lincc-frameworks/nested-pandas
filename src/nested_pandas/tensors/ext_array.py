@@ -194,7 +194,9 @@ class TensorExtensionArray(ExtensionArray):
         if isinstance(values.type, pa.FixedShapeTensorType):
             if dtype is None:
                 dtype = TensorDtype(values.type)
-            elif dtype.pyarrow_dtype != values.type:
+            # pyarrow compares tensor types with and without an identity permutation equal, but we
+            # want the stored array to have exactly the dtype's type, so check the permutation too
+            if dtype.pyarrow_dtype != values.type or values.type.permutation is not None:
                 values = self._wrap_storage(_storage_of(values), dtype)
         elif pa.types.is_fixed_size_list(values.type):
             if dtype is None:
@@ -362,9 +364,13 @@ class TensorExtensionArray(ExtensionArray):
 
         n_set = pc.sum(pa_mask).as_py() or 0
 
+        # When nothing is selected, e.g. by an empty slice or an all-False mask, we still validate
+        # the value, but return before pa.repeat() and replace_with_mask(), which need elements.
         if self._is_scalar_value(value):
             # Our replace_with_mask implementation doesn't work with scalars, so broadcast
             scalar = self._scalar_storage(value)
+            if n_set == 0:
+                return
             value_storage: pa.Array | pa.ChunkedArray = pa.repeat(scalar, n_set)
         else:
             value_storage = type(self)._from_sequence(value, dtype=self.dtype).storage
@@ -372,6 +378,8 @@ class TensorExtensionArray(ExtensionArray):
                 raise ValueError(
                     f"Cannot set {n_values} elements from a sequence of length {len(value_storage)}"
                 )
+            if n_set == 0:
+                return
             if value_index is not None:
                 value_storage = value_storage.take(value_index)
 

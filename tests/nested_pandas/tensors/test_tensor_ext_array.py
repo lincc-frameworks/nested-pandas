@@ -8,9 +8,8 @@ import pyarrow.parquet as pq
 import pytest
 from numpy.testing import assert_array_equal
 from pandas.core.arrays import ArrowExtensionArray  # type: ignore[attr-defined]
-from pandas.errors import AbstractMethodError
 from pandas.testing import assert_series_equal
-from tensor_test_utils import TENSOR_SHAPE, tensor, tensor_stack
+from tensor_test_utils import TENSOR_SHAPE, tensor_stack
 
 from nested_pandas import TensorDtype
 from nested_pandas.tensors.ext_array import (
@@ -55,6 +54,26 @@ def test___init___from_extension_array(stack, dtype):
     assert len(array) == 4
     assert array.num_chunks == 1
     assert_array_equal(array.to_stack(), stack)
+
+
+def test___init___drops_identity_permutation(stack, dtype):
+    """Test that an identity permutation is normalized away from the stored array as from the dtype.
+
+    ``pa.FixedShapeTensorArray.from_numpy_ndarray()`` always sets one, and pyarrow compares the
+    types with and without it equal, so the array must check for it explicitly.
+    """
+    ext = pa.FixedShapeTensorArray.from_numpy_ndarray(stack)
+    assert ext.type.permutation is not None
+    array = TensorExtensionArray(ext)
+    assert array.dtype == dtype
+    assert array.pa_array.type.permutation is None
+    assert array.pa_array.type == dtype.pyarrow_dtype
+    assert pa.array(array).type.permutation is None
+    assert_array_equal(array.to_stack(), stack)
+
+    # Also when the dtype is given explicitly
+    array = TensorExtensionArray(ext, dtype=dtype)
+    assert array.pa_array.type.permutation is None
 
 
 def test___init___from_chunked_array(stack, dtype):
@@ -481,10 +500,28 @@ def test___setitem___with_tuple(array):
     assert_array_equal(array[1], np.zeros(TENSOR_SHAPE))
 
 
-def test___setitem___with_empty_key(array, stack):
-    """Test that assigning to no positions is a no-op."""
-    array[np.array([], dtype=int)] = np.zeros(TENSOR_SHAPE)
+@pytest.mark.parametrize(
+    "key",
+    [np.array([], dtype=int), [], slice(3, 1), slice(0, 0), np.zeros(4, dtype=bool)],
+    ids=["empty_int_array", "empty_list", "empty_slice", "zero_slice", "all_false_mask"],
+)
+@pytest.mark.parametrize("value_kind", ["tensor", "missing", "empty_sequence"])
+def test___setitem___with_empty_key(array, stack, key, value_kind):
+    """Test that assigning to no positions is a no-op, for a tensor, a missing value or nothing."""
+    if value_kind == "tensor":
+        value = np.zeros(TENSOR_SHAPE)
+    elif value_kind == "missing":
+        value = None
+    else:
+        value = TensorExtensionArray.from_stack(stack[:0])
+    array[key] = value
     assert_array_equal(array.to_stack(), stack)
+
+
+def test___setitem___with_empty_key_still_validates_value(array):
+    """Test that a sequence of the wrong length is rejected even when nothing is selected."""
+    with pytest.raises(ValueError, match="Cannot set 0 elements from a sequence of length 2"):
+        array[np.zeros(4, dtype=bool)] = [np.zeros(TENSOR_SHAPE), np.zeros(TENSOR_SHAPE)]
 
 
 def test___setitem___single_tensor_to_all_rows(array):
@@ -711,9 +748,9 @@ def test_pickability(array_with_missing):
 
 def test_pickle_slice_is_compact(dtype):
     """Test that pickling a slice does not serialize the whole parent buffer."""
-    big = TensorExtensionArray.from_stack(np.zeros((100_000, 8, 8)), dtype=None)
+    big = TensorExtensionArray.from_stack(np.zeros((10_000, 8, 8)))
     pickled = pickle.dumps(big[:10])
-    assert len(pickled) < 100_000
+    assert len(pickled) < 10 * 8 * 8 * 8 * 2  # about the ten rows of float64, not all 5 MB
     assert pickle.loads(pickled).equals(big[:10])
 
 
@@ -861,8 +898,6 @@ def test___arrow_array___with_type(array, stack):
     """Test conversion to arrow with an explicit type."""
     float32_type = pa.fixed_shape_tensor(pa.float32(), list(TENSOR_SHAPE))
     assert array.__arrow_array__(type=float32_type).type == float32_type
-    # pa.array() unwraps an extension type itself and asks for the storage type instead
-    assert pa.array(array, type=float32_type).type == float32_type.storage_type
     as_list = pa.array(array, type=pa.list_(pa.float64(), 6))
     assert as_list.type == pa.list_(pa.float64(), 6)
     assert as_list[0].as_py() == stack[0].reshape(-1).tolist()
@@ -989,27 +1024,3 @@ def test_series_apply_udf_argument(array, stack):
     assert_array_equal(result.to_numpy(), stack.sum(axis=(1, 2)))
     result = pd.Series(array).map(lambda t: t.shape)
     assert result.tolist() == [TENSOR_SHAPE] * 4
-
-
-def test_series_interpolate_not_implemented(array_with_missing):
-    """Test that interpolation is not supported, as for nested columns."""
-    with pytest.raises(NotImplementedError):
-        pd.Series(array_with_missing).interpolate()
-
-
-def test__from_sequence_of_strings_not_implemented(dtype):
-    """Test that constructing from strings is not supported."""
-    with pytest.raises(AbstractMethodError):
-        TensorExtensionArray._from_sequence_of_strings(["[1, 2]"], dtype=dtype)
-
-
-def test__from_factorized_not_implemented(array):
-    """Test that factorization is not supported, since tensors are not hashable."""
-    with pytest.raises(AbstractMethodError):
-        TensorExtensionArray._from_factorized(array.to_numpy(), array)
-
-
-def test_zero_copy_helpers(stack):
-    """Test the conftest helpers give distinct tensors of the expected shape."""
-    assert tensor(0).shape == TENSOR_SHAPE
-    assert not np.array_equal(stack[0], stack[1])

@@ -190,20 +190,6 @@ def box_in_series(request):
     return request.param
 
 
-@pytest.fixture(
-    params=[
-        lambda x: 1,
-        lambda x: [1] * len(x),
-        lambda x: pd.Series([1] * len(x)),
-        lambda x: x,
-    ],
-    ids=["scalar", "list", "series", "object"],
-)
-def groupby_apply_op(request):
-    """Functions to test groupby.apply()."""
-    return request.param
-
-
 @pytest.fixture(params=[True, False])
 def as_frame(request):
     """Whether to convert to a DataFrame."""
@@ -280,22 +266,9 @@ def comparison_op(request):
 
 
 @pytest.fixture
-def using_infer_string() -> bool:
-    """Whether pandas infers the string dtype for object data."""
-    return pd.options.future.infer_string is True
-
-
-@pytest.fixture
 def using_nan_is_na() -> bool:
     """Whether pandas treats NaN as missing for nullable dtypes."""
     try:
         return bool(pd.get_option("mode.nan_is_na"))
     except (pd.errors.OptionError, KeyError):
         return True
-
-
-@pytest.fixture(params=[True, False])
-def performance_warning(request):
-    """Whether PerformanceWarnings are enabled, yielding the warning class or False."""
-    with pd.option_context("mode.performance_warnings", request.param):
-        yield pd.errors.PerformanceWarning if request.param else False
