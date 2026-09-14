@@ -18,6 +18,7 @@ from upath import UPath
 from ..series.ext_array import NestedExtensionArray
 from ..series.packer import pack_lists
 from ..series.utils import is_pa_type_a_list, table_to_struct_array
+from ..tensors.dtype import TensorDtype
 from .core import NestedFrame
 
 # Use smaller block size for these FSSPEC filesystems.
@@ -830,6 +831,29 @@ def _transform_read_parquet_data_arg(data):
     return upath.path, upath.fs
 
 
+def npd_types_mapper(pyarrow_dtype: pa.DataType) -> TensorDtype | pd.ArrowDtype:
+    """Type mapper for ``pa.Table.to_pandas(types_mapper=...)``.
+
+    Maps ``pa.FixedShapeTensorType`` columns to :class:`TensorDtype`, so they
+    are loaded as :class:`~nested_pandas.tensors.TensorExtensionArray`, and
+    every other type to the corresponding ``pd.ArrowDtype``. Struct columns
+    are converted to nested columns afterwards, see :func:`from_pyarrow`.
+
+    Parameters
+    ----------
+    pyarrow_dtype : pa.DataType
+        The pyarrow type of a column.
+
+    Returns
+    -------
+    TensorDtype or pd.ArrowDtype
+        The pandas extension dtype to load the column as.
+    """
+    if isinstance(pyarrow_dtype, pa.FixedShapeTensorType):
+        return TensorDtype(pyarrow_dtype)
+    return pd.ArrowDtype(pyarrow_dtype)
+
+
 def from_pyarrow(
     table: pa.Table,
     reject_nesting: list[str] | str | None = None,
@@ -886,13 +910,13 @@ def from_pyarrow(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # Convert to a NestedFrame. With types_mapper=pd.ArrowDtype every column is
-    # backed by the table's Arrow buffers, so this is zero-copy and there is no
-    # need for the self_destruct memory optimization (which only helps the
-    # NumPy-conversion path).
+    # Convert to a NestedFrame. The types mapper gives every column an
+    # arrow-backed dtype (pd.ArrowDtype, or TensorDtype for fixed-shape tensor
+    # columns), so this is zero-copy and there is no need for the self_destruct
+    # memory optimization (which only helps the NumPy-conversion path).
     df = NestedFrame(
         table.to_pandas(
-            types_mapper=pd.ArrowDtype,
+            types_mapper=npd_types_mapper,
             split_blocks=True,
             ignore_metadata=not use_pandas_metadata,
         )
