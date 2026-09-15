@@ -92,7 +92,7 @@ def test_pyarrow_44881_to_pandas_arrowdtype_null_field():
     relies on. pyarrow truncates the null field's values buffer during the
     conversion.
 
-    Workaround: ``nestedframe/io.py::_cast_struct_cols_to_nested`` (branch
+    Workaround: ``nestedframe/io.py::_cast_cols_to_extension_arrays`` (branch
     ``fix-507-null-nested-parquet``, PR #507) builds nested columns straight
     from the source pyarrow ``Table`` instead of from the corrupted
     ``pd.ArrowDtype`` column that ``Table.to_pandas`` produced. If this test

@@ -18,7 +18,7 @@ from upath import UPath
 from ..series.ext_array import NestedExtensionArray
 from ..series.packer import pack_lists
 from ..series.utils import is_pa_type_a_list, table_to_struct_array
-from ..tensors.dtype import TensorDtype
+from ..tensors.ext_array import TensorExtensionArray
 from .core import NestedFrame
 
 # Use smaller block size for these FSSPEC filesystems.
@@ -831,29 +831,6 @@ def _transform_read_parquet_data_arg(data):
     return upath.path, upath.fs
 
 
-def npd_types_mapper(pyarrow_dtype: pa.DataType) -> TensorDtype | pd.ArrowDtype:
-    """Type mapper for ``pa.Table.to_pandas(types_mapper=...)``.
-
-    Maps ``pa.FixedShapeTensorType`` columns to :class:`TensorDtype`, so they
-    are loaded as :class:`~nested_pandas.tensors.TensorExtensionArray`, and
-    every other type to the corresponding ``pd.ArrowDtype``. Struct columns
-    are converted to nested columns afterwards, see :func:`from_pyarrow`.
-
-    Parameters
-    ----------
-    pyarrow_dtype : pa.DataType
-        The pyarrow type of a column.
-
-    Returns
-    -------
-    TensorDtype or pd.ArrowDtype
-        The pandas extension dtype to load the column as.
-    """
-    if isinstance(pyarrow_dtype, pa.FixedShapeTensorType):
-        return TensorDtype(pyarrow_dtype)
-    return pd.ArrowDtype(pyarrow_dtype)
-
-
 def from_pyarrow(
     table: pa.Table,
     reject_nesting: list[str] | str | None = None,
@@ -910,19 +887,20 @@ def from_pyarrow(
     elif isinstance(reject_nesting, str):
         reject_nesting = [reject_nesting]
 
-    # Convert to a NestedFrame. The types mapper gives every column an
-    # arrow-backed dtype (pd.ArrowDtype, or TensorDtype for fixed-shape tensor
-    # columns), so this is zero-copy and there is no need for the self_destruct
-    # memory optimization (which only helps the NumPy-conversion path).
+    # Convert to a NestedFrame. With types_mapper=pd.ArrowDtype every column is
+    # backed by the table's Arrow buffers, so this is zero-copy and there is no
+    # need for the self_destruct memory optimization (which only helps the
+    # NumPy-conversion path).
     df = NestedFrame(
         table.to_pandas(
-            types_mapper=npd_types_mapper,
+            types_mapper=pd.ArrowDtype,
             split_blocks=True,
             ignore_metadata=not use_pandas_metadata,
         )
     )
-    # Replace struct columns with NestedExtensionArrays built from the table.
-    df = _cast_struct_cols_to_nested(df, reject_nesting, table)
+    # Replace struct columns with NestedExtensionArrays and fixed-shape tensor
+    # columns with TensorExtensionArrays, both built from the table.
+    df = _cast_cols_to_extension_arrays(df, reject_nesting, table)
 
     # If autocast_list is True, cast list columns to NestedDTypes
     if autocast_list:
@@ -931,16 +909,38 @@ def from_pyarrow(
     return df
 
 
-def _cast_struct_cols_to_nested(df: NestedFrame, reject_nesting: list[str], table: pa.Table) -> NestedFrame:
-    """Replace struct columns of ``df`` with nested columns built from ``table``.
+def _cast_cols_to_extension_arrays(
+    df: NestedFrame, reject_nesting: list[str], table: pa.Table
+) -> NestedFrame:
+    """Replace struct and fixed-shape tensor columns of ``df`` with nested-pandas' extension arrays.
 
-    The nested columns are constructed straight from the pyarrow ``table``
-    rather than from the ``df`` columns produced by ``Table.to_pandas``.
-    Converting a struct column that holds a ``null``-typed (all-null) field via
-    ``types_mapper=pd.ArrowDtype`` corrupts it
-    (https://github.com/apache/arrow/issues/44881).
+    Struct columns become nested columns and ``pa.FixedShapeTensorType``
+    columns become tensor columns, both built straight from the pyarrow
+    ``table`` rather than from the ``df`` columns produced by
+    ``Table.to_pandas``. Converting a struct column that holds a
+    ``null``-typed (all-null) field via ``types_mapper=pd.ArrowDtype``
+    corrupts it (https://github.com/apache/arrow/issues/44881).
     """
     for field in table.schema:
+        if isinstance(field.type, pa.FixedShapeTensorType):
+            try:
+                df[field.name] = TensorExtensionArray(table.column(field.name))
+            except NotImplementedError as err:
+                # TensorDtype rejects non-trivial permutations, add the column and a way out
+                name = field.name
+                raise NotImplementedError(
+                    f"Column '{name}' has a fixed_shape_tensor type with a non-trivial permutation "
+                    f"{list(field.type.permutation)}, which nested-pandas does not support: {field.type}. "
+                    "To load it, read the data with pyarrow, convert the column to a C-ordered numpy "
+                    "array, which applies the permutation, rebuild the column without one and pass the "
+                    "table to from_pyarrow():\n"
+                    f"    ndarray = table.column('{name}').combine_chunks().to_numpy_ndarray()\n"
+                    "    tensors = pa.FixedShapeTensorArray.from_numpy_ndarray("
+                    "np.ascontiguousarray(ndarray))\n"
+                    f"    table = table.set_column(table.schema.get_field_index('{name}'), '{name}', tensors)"
+                ) from err
+            continue
+
         if field.name in reject_nesting:
             continue
 
