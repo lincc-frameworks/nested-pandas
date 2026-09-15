@@ -27,7 +27,6 @@ from nested_pandas.nestedframe.io import (
     _pyarrow_read_table,
     _transform_read_parquet_data_arg,
     from_pyarrow,
-    npd_types_mapper,
 )
 from nested_pandas.tensors import TensorExtensionArray
 
@@ -1197,15 +1196,6 @@ def _assert_tensor_column(nf: NestedFrame) -> None:
     np.testing.assert_array_equal(nf["tensor"].array.to_stack(), TENSOR_STACK)
 
 
-def test_npd_types_mapper():
-    """Fixed-shape tensor types map to TensorDtype, everything else to pd.ArrowDtype."""
-    tensor_type = pa.fixed_shape_tensor(pa.int32(), [2, 2])
-    assert npd_types_mapper(tensor_type) == TensorDtype(tensor_type)
-
-    for pa_type in [pa.int64(), pa.list_(pa.float64()), pa.list_(pa.float64(), 4), tensor_type.storage_type]:
-        assert npd_types_mapper(pa_type) == pd.ArrowDtype(pa_type)
-
-
 def test_from_pyarrow_tensor_column():
     """from_pyarrow loads a fixed-shape tensor column as a TensorExtensionArray."""
     nf = from_pyarrow(_tensor_table())
@@ -1282,14 +1272,32 @@ def test_to_parquet_tensor_column_roundtrip(engine):
 
 
 def test_read_parquet_tensor_column_permutation():
-    """A tensor type with a non-trivial permutation is not supported by TensorDtype.
+    """A tensor column with a non-trivial permutation is rejected, naming the column.
 
-    TensorDtype only normalises the identity permutation away, so such a column
-    cannot be loaded and read_parquet surfaces the dtype's error.
+    The error explains how to rebuild the column without the permutation, and
+    that recipe must work.
     """
+    match = "Column 'tensor' has a fixed_shape_tensor type with a non-trivial permutation \\[1, 0\\]"
+    table = _tensor_table(permutation=[1, 0])
+
+    with pytest.raises(NotImplementedError, match=match):
+        from_pyarrow(table)
+
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "tensor.parquet")
-        pq.write_table(_tensor_table(permutation=[1, 0]), path)
+        pq.write_table(table, path)
+        for engine in ["pyarrow", "datafusion"]:
+            with pytest.raises(NotImplementedError, match=match):
+                read_parquet(path, engine=engine)
+        # Other columns are still readable
+        assert read_parquet(path, columns=["a", "nested.t"]).columns.tolist() == ["a", "nested"]
 
-        with pytest.raises(NotImplementedError, match="non-trivial permutation"):
-            read_parquet(path)
+    # The recipe from the error message: the permutation is applied by pyarrow when converting
+    # to numpy, so the rebuilt column holds the transposed tensors
+    ndarray = table.column("tensor").combine_chunks().to_numpy_ndarray()
+    tensors = pa.FixedShapeTensorArray.from_numpy_ndarray(np.ascontiguousarray(ndarray))
+    table = table.set_column(table.schema.get_field_index("tensor"), "tensor", tensors)
+    nf = from_pyarrow(table)
+
+    assert nf["tensor"].dtype == TensorDtype(pa.fixed_shape_tensor(pa.float64(), [3, 2]))
+    np.testing.assert_array_equal(nf["tensor"].array.to_stack(), TENSOR_STACK.transpose(0, 2, 1))
