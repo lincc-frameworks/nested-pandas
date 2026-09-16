@@ -44,6 +44,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 from numpy.typing import DTypeLike
+from pandas import Index
+from pandas._typing import InterpolateOptions
 from pandas.api.extensions import no_default
 from pandas.api.types import pandas_dtype
 from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
@@ -109,35 +111,34 @@ def _normalize_dtype(dtype: Any) -> TensorDtype | None:
     )
 
 
-def _storage_of(array: pa.ChunkedArray) -> pa.ChunkedArray:
-    """Fixed-size-list storage of a tensor-typed chunked array."""
-    pa_type = cast(pa.FixedShapeTensorType, array.type)
-    return pa.chunked_array([chunk.storage for chunk in array.iterchunks()], type=pa_type.storage_type)
+def _wrap_storage(storage: pa.ChunkedArray, dtype: TensorDtype) -> pa.ChunkedArray:
+    """Cast fixed_size_list storage to the dtype's storage type and wrap it as the tensor type."""
+    if storage.type != dtype.storage_type:
+        if storage.type.list_size != dtype.size:
+            raise ValueError(
+                f"Cannot convert tensors of {storage.type.list_size} elements to {dtype}, "
+                f"which has {dtype.size} elements"
+            )
+        storage = storage.cast(dtype.storage_type)
+    pa_type = dtype.pyarrow_dtype
+    chunks = [pa.ExtensionArray.from_storage(pa_type, chunk) for chunk in storage.iterchunks()]
+    return pa.chunked_array(chunks, type=pa_type)
 
 
-def _is_tensor_scalar(value: Any) -> bool:
-    """Whether a value is a pyarrow scalar of a fixed_shape_tensor type.
-
-    We check the type rather than ``isinstance(value, pa.FixedShapeTensorScalar)``
-    because that class is not exported by pyarrow before version 17.
-    """
-    return isinstance(value, pa.ExtensionScalar) and isinstance(value.type, pa.FixedShapeTensorType)
-
-
-def _tensor_scalar_to_numpy(scalar: pa.ExtensionScalar) -> np.ndarray:
+def _tensor_scalar_to_numpy(scalar: pa.FixedShapeTensorScalar) -> np.ndarray:
     """Read-only zero-copy numpy view of a valid fixed_shape_tensor scalar.
 
     ``scalar.value`` is the fixed_size_list storage scalar, whose ``values``
-    are a slice of the flat child array. This is what
-    ``FixedShapeTensorScalar.to_numpy()`` does, but that method only exists
-    since pyarrow 17.
+    are a slice of the flat child array. Unlike ``scalar.to_numpy()``, which
+    raises for tensors with missing elements, this gives them as NaN, as
+    :meth:`TensorExtensionArray._values_block` does.
     """
     return np.asarray(scalar.value.values).reshape(tuple(scalar.type.shape))
 
 
 def _tensor_to_flat(value: Any, dtype: TensorDtype) -> np.ndarray:
     """Validate a single tensor against the dtype and return its values flattened in C order."""
-    if _is_tensor_scalar(value):
+    if isinstance(value, pa.FixedShapeTensorScalar):
         array = _tensor_scalar_to_numpy(value)
     elif isinstance(value, pa.Scalar):
         array = np.asarray(value.as_py())
@@ -197,11 +198,11 @@ class TensorExtensionArray(ExtensionArray):
             # pyarrow compares tensor types with and without an identity permutation equal, but we
             # want the stored array to have exactly the dtype's type, so check the permutation too
             if dtype.pyarrow_dtype != values.type or values.type.permutation is not None:
-                values = self._wrap_storage(_storage_of(values), dtype)
+                values = _wrap_storage(values.cast(values.type.storage_type), dtype)
         elif pa.types.is_fixed_size_list(values.type):
             if dtype is None:
                 raise ValueError("dtype is required when constructing from a fixed_size_list storage array")
-            values = self._wrap_storage(values, dtype)
+            values = _wrap_storage(values, dtype)
         else:
             raise ValueError(
                 f"values must be a fixed_shape_tensor or fixed_size_list array, got type {values.type}"
@@ -209,20 +210,6 @@ class TensorExtensionArray(ExtensionArray):
 
         self._pa_array = values
         self._dtype = dtype
-
-    @staticmethod
-    def _wrap_storage(storage: pa.ChunkedArray, dtype: TensorDtype) -> pa.ChunkedArray:
-        """Cast fixed_size_list storage to the dtype's storage type and wrap it as the tensor type."""
-        if storage.type != dtype.storage_type:
-            if storage.type.list_size != dtype.size:
-                raise ValueError(
-                    f"Cannot convert tensors of {storage.type.list_size} elements to {dtype}, "
-                    f"which has {dtype.size} elements"
-                )
-            storage = storage.cast(dtype.storage_type)
-        pa_type = dtype.pyarrow_dtype
-        chunks = [pa.ExtensionArray.from_storage(pa_type, chunk) for chunk in storage.iterchunks()]
-        return pa.chunked_array(chunks, type=pa_type)
 
     # End of Constructor and initialized attributes #
 
@@ -268,7 +255,7 @@ class TensorExtensionArray(ExtensionArray):
             first = next((value for value, na in zip(scalars, mask, strict=True) if not na), None)
             if first is None:
                 raise ValueError("Cannot infer TensorDtype from a sequence without non-missing values")
-            if _is_tensor_scalar(first):
+            if isinstance(first, pa.FixedShapeTensorScalar):
                 first = _tensor_scalar_to_numpy(first)
             first = np.asarray(first)
             dtype = TensorDtype(pa.fixed_shape_tensor(pa.from_numpy_dtype(first.dtype), list(first.shape)))
@@ -285,6 +272,16 @@ class TensorExtensionArray(ExtensionArray):
             mask=pa.array(mask) if mask.any() else None,
         )
         return cls(storage, dtype=dtype)
+
+    # Tricky to implement but required by things like pd.read_csv
+    @classmethod
+    def _from_sequence_of_strings(cls, strings, dtype, *, copy: bool = False) -> Self:  # type: ignore[name-defined, misc] # noqa: F821
+        return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)  # type: ignore[misc]
+
+    # We do not implement it, tensors are not hashable so they cannot be factorized
+    @classmethod
+    def _from_factorized(cls, values, original):
+        return super()._from_factorized(values, original)
 
     def __getitem__(self, item: ScalarIndexer) -> Self | np.ndarray:  # type: ignore[name-defined, override] # noqa: F821
         item = check_array_indexer(self, item)
@@ -386,7 +383,7 @@ class TensorExtensionArray(ExtensionArray):
         # pa.compute.replace_with_mask() and if_else() have no kernels for the extension type,
         # so we work on the fixed_size_list storage and wrap it back.
         storage = replace_with_mask(self.storage, pa_mask, value_storage)
-        self._pa_array = self._wrap_storage(storage, self.dtype)
+        self._pa_array = _wrap_storage(storage, self.dtype)
 
     def __len__(self) -> int:
         return len(self._pa_array)
@@ -395,49 +392,10 @@ class TensorExtensionArray(ExtensionArray):
         for scalar in self._pa_array:
             yield self._scalar_to_numpy(scalar)
 
+    # We do not implement it yet: pyarrow has no equality kernel for the fixed_shape_tensor type, and
+    # ArrowExtensionArray does not implement it for its fixed_size_list storage either
     def __eq__(self, other):  # type: ignore[override]
-        """Elementwise equality with another array of tensors, or with a single tensor.
-
-        Two tensors are equal when they have the same dtype and all their values
-        are equal, with numpy's semantics for the values (so NaN != NaN). The
-        result is NA where either side is missing. Comparing to anything that
-        cannot be interpreted as tensors of this dtype, including an array of a
-        different tensor dtype, gives False everywhere.
-
-        Returns
-        -------
-        pd.arrays.BooleanArray
-        """
-        # Let pandas unbox these and dispatch back to us with the underlying array
-        if isinstance(other, pd.Series | pd.Index | pd.DataFrame):
-            return NotImplemented
-
-        self_mask = self.isna()
-        other_array = self._coerce_comparison_operand(other)
-        if other_array is None:
-            return pd.arrays.BooleanArray(np.zeros(len(self), dtype=bool), self_mask)
-        if len(other_array) not in (1, len(self)):
-            raise ValueError("Lengths must match to compare")
-
-        # Compare the flat values row by row; a length-1 operand broadcasts
-        left = self._values_block().reshape(len(self), self.dtype.size)
-        right = other_array._values_block().reshape(len(other_array), self.dtype.size)
-        equal = np.all(left == right, axis=1)
-        mask = self_mask | other_array.isna()
-        return pd.arrays.BooleanArray(equal, mask)
-
-    def _coerce_comparison_operand(self, other: Any) -> Self | None:  # type: ignore[name-defined] # noqa: F821
-        """Convert the other side of a comparison to an array of this dtype, or None if impossible."""
-        if _is_na(other):
-            return type(self)._from_sequence([None], dtype=self.dtype)
-        if isinstance(other, TensorExtensionArray):
-            return other if other.dtype == self.dtype else None
-        if isinstance(other, np.ndarray) and other.shape == self.dtype.shape:
-            other = [other]
-        try:
-            return type(self)._from_sequence(other, dtype=self.dtype)
-        except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
-            return None
+        return super().__eq__(other)
 
     def to_numpy(
         self,
@@ -542,6 +500,31 @@ class TensorExtensionArray(ExtensionArray):
             return ArrowExtensionArray(self.storage.cast(pa_type))
 
         return super().astype(dtype, copy=copy)
+
+    # We do not implement it yet, neither ArrowExtensionArray does for list arrays
+    def interpolate(
+        self,
+        *,
+        method: InterpolateOptions,
+        axis: int,
+        index: Index,
+        limit,
+        limit_direction,
+        limit_area,
+        copy: bool,
+        **kwargs,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Interpolate missing values, not implemented yet."""
+        return super().interpolate(  # type: ignore[misc]
+            method=method,
+            axis=axis,
+            index=index,
+            limit=limit,
+            limit_direction=limit_direction,
+            limit_area=limit_area,
+            copy=copy,
+            **kwargs,
+        )
 
     def take(
         self,
@@ -699,7 +682,7 @@ class TensorExtensionArray(ExtensionArray):
         if type is None or type == self.dtype.pyarrow_dtype:
             return self._pa_array
         if isinstance(type, pa.FixedShapeTensorType):
-            return self._wrap_storage(self.storage, TensorDtype(type))
+            return _wrap_storage(self.storage, TensorDtype(type))
         return self.storage.cast(type)
 
     def __array__(self, dtype=None, copy=None):
@@ -743,7 +726,7 @@ class TensorExtensionArray(ExtensionArray):
     @property
     def storage(self) -> pa.ChunkedArray:
         """Pyarrow chunked array of the ``fixed_size_list`` storage type."""
-        return _storage_of(self._pa_array)
+        return self._pa_array.cast(self.dtype.storage_type)
 
     @property
     def num_chunks(self) -> int:

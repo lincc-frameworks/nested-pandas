@@ -2,9 +2,9 @@
 
 The suites live in ``pandas.tests.extension.base`` and are driven by the
 fixtures in ``conftest.py``. Suites that make no sense for tensors are left
-out entirely: arithmetic (for now), reductions and accumulations (tensors are not
-numeric scalars), groupby (tensors are not hashable), parsing (tensors are
-not read from CSV) and unary ufuncs.
+out entirely: arithmetic and comparison (for now), reductions and accumulations
+(tensors are not numeric scalars), groupby (tensors are not hashable), parsing
+(tensors are not read from CSV) and unary ufuncs.
 
 Within the included suites, tests whose assertions compare elements with
 ``==`` are overridden below with the same logic using ``np.array_equal``,
@@ -14,8 +14,6 @@ which lists the reasons: pandas treating an ndarray value as a sequence
 rather than a scalar, elements not being hashable, and arrow arrays not
 supporting numpy-style views.
 """
-
-import operator
 
 import numpy as np
 import pandas as pd
@@ -303,22 +301,3 @@ class TestCasting(base.BaseCastingTests):
 
 class TestIndex(base.BaseIndexTests):
     """Holding the array in an Index."""
-
-
-class TestComparisonOps(base.BaseComparisonOpsTests):
-    """== and != against scalars and arrays."""
-
-    def _compare_other(self, ser: pd.Series, data, op, other):
-        """Check the vectorized comparison against a pointwise np.array_equal.
-
-        The base implementation builds the expectation with ``Series.combine``,
-        which applies the operator to pairs of ndarrays and gets elementwise
-        results rather than one boolean per row.
-        """
-        result = op(ser, other)
-        others = list(other) if isinstance(other, pd.Series | pd.Index) else [other] * len(ser)
-        equal = [np.array_equal(left, right) for left, right in zip(ser, others, strict=True)]
-        if op is operator.ne:
-            equal = [not value for value in equal]
-        expected = pd.Series(equal, dtype="boolean", index=ser.index, name=ser.name)
-        tm.assert_series_equal(result, expected)

@@ -344,8 +344,6 @@ def test_element_null_becomes_nan(element_null_array, stack):
     assert np.isnan(element_null_array.to_numpy()[0][0, 1])
     assert_array_equal(element_null_array[2], stack[2])
     assert_array_equal(element_null_array[1:][1:].to_stack()[0], stack[2])
-    # nan != nan
-    assert (element_null_array == element_null_array).tolist() == [False, pd.NA, True, True]
 
 
 def test_element_null_int_upcast():
@@ -941,65 +939,37 @@ def test_dtype___from_arrow__(array, dtype, stack):
     assert_array_equal(dtype.__from_arrow__(storage_array(stack)).to_stack(), stack)
 
 
-# __eq__ #
+# Methods inherited from ExtensionArray that are not implemented yet #
 
 
-def test___eq___same_values(array, stack):
-    """Test elementwise equality with another array, a single tensor, a list and a stack."""
-    result = array == array.copy()
-    assert isinstance(result, pd.arrays.BooleanArray)
-    assert result.all() and not result.isna().any()
-    assert (array == array.take([1, 2, 3, 0])).tolist() == [False] * 4
-    assert (array == stack[0]).tolist() == [True, False, False, False]
-    assert (array == [stack[0], stack[1], stack[0], stack[3]]).tolist() == [True, True, False, True]
-    assert (array == array.to_stack()).all()
-    assert (array != array.copy()).sum() == 0
+def test___eq__(array):
+    """Test that == is not implemented yet."""
+    with pytest.raises(NotImplementedError):
+        array == array  # noqa: B015
 
 
-def test___eq___with_missing(array, array_with_missing):
-    """Test that missing values give NA."""
-    result = array == array_with_missing
-    assert result.isna().tolist() == [False, True, True, False]
-    assert bool(result[0]) and bool(result[3])
-    assert (array == pd.NA).isna().all()
-    assert (array == None).isna().all()  # noqa: E711
+def test_series___eq__(array):
+    """Test that == on a Series is not implemented yet."""
+    with pytest.raises(NotImplementedError):
+        pd.Series(array) == pd.Series(array)  # noqa: B015
 
 
-def test___eq___incomparable(array):
-    """Test that anything not interpretable as tensors of this dtype compares False."""
-    assert (array == 5).tolist() == [False] * 4
-    assert (array == "abc").tolist() == [False] * 4
-    assert (array == np.zeros((3, 2))).tolist() == [False] * 4
-    float32_dtype = TensorDtype(pa.fixed_shape_tensor(pa.float32(), list(TENSOR_SHAPE)))
-    assert (array == array.astype(float32_dtype)).tolist() == [False] * 4
+def test__from_sequence_of_strings(dtype):
+    """We do not support _from_sequence_of_strings(), which would be applied by things like pd.read_csv()."""
+    with pytest.raises(NotImplementedError):
+        TensorExtensionArray._from_sequence_of_strings(["[[1, 2, 3], [4, 5, 6]]"], dtype=dtype)
 
 
-def test___eq___raises_for_length_mismatch(array):
-    """Test that arrays of different lengths cannot be compared."""
-    with pytest.raises(ValueError, match="Lengths must match"):
-        array == array[:2]  # noqa: B015
+def test__from_factorized(array):
+    """We do not support _from_factorized(), which would be applied by pd.factorize()."""
+    with pytest.raises(NotImplementedError):
+        TensorExtensionArray._from_factorized([0], array)
 
 
-def test___eq___nan(dtype):
-    """Test nan != nan, as in numpy."""
-    array = TensorExtensionArray.from_sequence([np.full(TENSOR_SHAPE, np.nan)], dtype=dtype)
-    assert (array == array).tolist() == [False]
-    assert (array[:0] == array[:0]).tolist() == []
-
-
-def test_series___eq__(array, array_with_missing, stack):
-    """Test comparison through pandas Series."""
-    result = pd.Series(array) == pd.Series(array_with_missing)
-    assert str(result.dtype) == "boolean"
-    assert result.isna().tolist() == [False, True, True, False]
-    others = [stack[0], stack[1], stack[0], stack[3]]
-    assert (pd.Series(array) == others).tolist() == [True, True, False, True]
-    df = pd.DataFrame({"t": array})
-    assert (df["t"] != df["t"]).sum() == 0
-    # With a Series on the right, the array defers to pandas, which dispatches back with the values
-    result = array == pd.Series(array_with_missing)
-    assert isinstance(result, pd.Series)
-    assert result.isna().tolist() == [False, True, True, False]
+def test_series_interpolate(array_with_missing):
+    """We do not support interpolate()."""
+    with pytest.raises(NotImplementedError):
+        pd.Series(array_with_missing).interpolate()
 
 
 # Pandas integration #

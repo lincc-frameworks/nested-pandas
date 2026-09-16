@@ -26,6 +26,7 @@ NO_VIEWS = (
     "an arrow-backed array cannot share buffers with a view (pandas' ArrowExtensionArray xfails this too)"
 )
 NO_ORDERING = "tensors have no ordering"
+NO_EQ = "== is not implemented yet"
 
 XFAIL_STRICT = {
     # Series/DataFrame __setitem__ and fillna inspect an ndarray value themselves and reject it,
@@ -62,6 +63,10 @@ XFAIL_STRICT = {
     "test_merge_on_extension_array_duplicates": NOT_HASHABLE,
     # Ordering
     "test_combine_le": NO_ORDERING,
+    # __contains__ and the assertions of these setitem tests compare with ==
+    "test_contains": NO_EQ,
+    "test_setitem_2d_values": NO_EQ,
+    "test_setitem_mask_boolean_array_with_na": NO_EQ,
 }
 """Suite tests that must fail, by test function name."""
 
@@ -79,7 +84,6 @@ XFAIL_FOR_PARAM = {
     "test_setitem_sequence_broadcasts": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
     "test_setitem_integer_array": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
     "test_setitem_mask": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
-    "test_setitem_mask_boolean_array_with_na": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
     "test_setitem_slice": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
     # value_counts only hashes when there is more than one distinct element
     "test_value_counts": ("all_data", "data", NOT_HASHABLE),
@@ -256,12 +260,6 @@ def na_action(request):
 @pytest.fixture(params=[None, lambda x: x])
 def sort_by_key(request):
     """Key parameter for sort_values."""
-    return request.param
-
-
-@pytest.fixture(params=[operator.eq, operator.ne], ids=["eq", "ne"])
-def comparison_op(request):
-    """Comparison operators the tensor array supports; ordering comparisons are not defined."""
     return request.param
 
 
