@@ -47,7 +47,7 @@ from numpy.typing import DTypeLike
 from pandas import Index
 from pandas._typing import InterpolateOptions
 from pandas.api.extensions import no_default
-from pandas.api.types import pandas_dtype
+from pandas.api.types import is_scalar, pandas_dtype
 from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
 from pandas.core.indexers import (  # type: ignore[attr-defined]
     check_array_indexer,
@@ -86,8 +86,14 @@ def _format_tensor(value: Any) -> str:
 
 
 def _is_na(value: Any) -> bool:
-    """Whether a scalar value represents a missing tensor."""
-    return value is None or value is pd.NA or (isinstance(value, float) and np.isnan(value))
+    """Whether a value represents a missing tensor: a missing scalar such as None or pd.NA, or a null
+    pyarrow scalar.
+
+    A tensor is an ndarray, for which ``pd.isna()`` is elementwise, so only scalars are asked.
+    """
+    if isinstance(value, pa.Scalar):
+        return not value.is_valid
+    return is_scalar(value) and bool(pd.isna(value))
 
 
 def _numpy_value_dtype(dtype: TensorDtype) -> np.dtype:
@@ -137,16 +143,23 @@ def _tensor_scalar_to_numpy(scalar: pa.FixedShapeTensorScalar) -> np.ndarray:
 
 
 def _tensor_to_flat(value: Any, dtype: TensorDtype) -> np.ndarray:
-    """Validate a single tensor against the dtype and return its values flattened in C order."""
+    """Validate a single tensor against the dtype and return its values flattened in C order.
+
+    ``value`` is a ``fixed_shape_tensor`` scalar, its ``fixed_size_list``
+    storage scalar, or anything ``np.asarray()`` accepts. The pyarrow scalars
+    already hold their values flat, so those are viewed without a copy.
+    """
     if isinstance(value, pa.FixedShapeTensorScalar):
-        array = _tensor_scalar_to_numpy(value)
-    elif isinstance(value, pa.Scalar):
-        array = np.asarray(value.as_py())
-        # A fixed_size_list scalar comes back flat
-        if array.shape != dtype.shape and array.size == dtype.size:
-            array = array.reshape(dtype.shape)
-    else:
-        array = np.asarray(value)
+        if tuple(value.type.shape) != dtype.shape:
+            raise ValueError(f"Expected a tensor of shape {dtype.shape}, got shape {tuple(value.type.shape)}")
+        return np.asarray(value.value.values)
+    if isinstance(value, pa.FixedSizeListScalar):
+        if value.type.list_size != dtype.size:
+            raise ValueError(
+                f"Expected a tensor of {dtype.size} elements, got a list of {value.type.list_size}"
+            )
+        return np.asarray(value.values)
+    array = np.asarray(value)
     if array.shape != dtype.shape:
         raise ValueError(f"Expected a tensor of shape {dtype.shape}, got shape {array.shape}")
     return np.ascontiguousarray(array).reshape(-1)

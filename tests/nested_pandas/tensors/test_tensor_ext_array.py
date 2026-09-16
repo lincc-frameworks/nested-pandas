@@ -16,6 +16,7 @@ from nested_pandas.tensors.ext_array import (
     TENSOR_FORMATTING_MAX_ELEMENTS,
     TensorExtensionArray,
     _format_tensor,
+    _is_na,
 )
 
 
@@ -218,6 +219,56 @@ def test_from_sequence_dtype_spellings(stack, dtype, dtype_spec):
     """Test that the dtype may be given as a string, a pyarrow type or a pd.ArrowDtype."""
     array = TensorExtensionArray.from_sequence(list(stack), dtype=dtype_spec)
     assert array.dtype == dtype
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (None, True),
+        (pd.NA, True),
+        (np.nan, True),
+        (np.float64("nan"), True),
+        (pa.scalar(None, type=pa.fixed_shape_tensor(pa.float64(), [2])), True),
+        (pa.scalar(None, type=pa.list_(pa.float64(), 2)), True),
+        (pa.scalar([1.0, 2.0], type=pa.list_(pa.float64(), 2)), False),
+        (np.zeros((2, 3)), False),
+        (np.array(np.nan), False),
+        ([np.nan, np.nan], False),
+        (0.0, False),
+    ],
+    ids=str,
+)
+def test__is_na(value, expected):
+    """Test which values count as a missing tensor: missing scalars and null pyarrow scalars only."""
+    assert _is_na(value) is expected
+
+
+def test_from_sequence_pyarrow_scalars(array, array_with_missing, stack, dtype):
+    """Test tensor scalars, their fixed_size_list storage scalars and null scalars as elements, in any mix."""
+    tensor_scalars = list(array.pa_array)
+    storage_scalars = list(array.storage)
+    null_scalar = array_with_missing.pa_array[1]
+    assert not null_scalar.is_valid
+    result = TensorExtensionArray.from_sequence(
+        [tensor_scalars[0], storage_scalars[1], stack[2], None, null_scalar], dtype=dtype
+    )
+    assert_array_equal(result[0], stack[0])
+    assert_array_equal(result[1], stack[1])
+    assert_array_equal(result[2], stack[2])
+    assert result[3] is pd.NA
+    assert result[4] is pd.NA
+    # The dtype is inferred from a tensor scalar
+    assert TensorExtensionArray.from_sequence(tensor_scalars).dtype == dtype
+
+
+def test_from_sequence_raises_for_wrong_shape_pyarrow_scalars(array, dtype):
+    """Test that pyarrow scalars of another shape or size are rejected."""
+    transposed = TensorExtensionArray.from_stack(array.to_stack().transpose(0, 2, 1))
+    with pytest.raises(ValueError, match="Expected a tensor of shape"):
+        TensorExtensionArray.from_sequence([transposed.pa_array[0]], dtype=dtype)
+    bigger = TensorExtensionArray.from_stack(np.zeros((1, 2, 4)))
+    with pytest.raises(ValueError, match="Expected a tensor of 6 elements, got a list of 8"):
+        TensorExtensionArray.from_sequence([bigger.storage[0]], dtype=dtype)
 
 
 def test_from_sequence_raises_for_wrong_shape(dtype):
@@ -576,6 +627,16 @@ def test___setitem___missing(array):
     array[np.array([False, False, True, False])] = pd.NA
     assert array.isna().tolist() == [True, False, True, False]
     assert array[0] is pd.NA
+
+
+def test___setitem___pyarrow_scalar(array, array_with_missing, stack):
+    """Test assigning a tensor scalar, a storage scalar and a null scalar."""
+    array[0] = array.pa_array[3]
+    array[1] = array.storage[2]
+    array[2] = array_with_missing.pa_array[1]
+    assert_array_equal(array[0], stack[3])
+    assert_array_equal(array[1], stack[2])
+    assert array[2] is pd.NA
 
 
 def test___setitem___raises_for_wrong_shape(array):

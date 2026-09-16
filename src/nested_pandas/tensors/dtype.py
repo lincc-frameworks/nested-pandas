@@ -203,8 +203,9 @@ class TensorDtype(ExtensionDtype):
                 # rebuilt without it.
                 raise NotImplementedError(
                     "TensorDtype does not support fixed_shape_tensor types with a non-trivial permutation "
-                    f"yet, got {pyarrow_dtype}. Convert the tensors to C order with numpy and rebuild the "
-                    "column from a fixed_shape_tensor type without a permutation."
+                    f"yet, got {pyarrow_dtype}. Please open an issue on the nested-pandas github if you need "
+                    f"this feature. As a workaround, you can convert the tensors to C order with numpy and "
+                    f"rebuild the column from a fixed_shape_tensor type without a permutation."
                 )
         self.pyarrow_dtype = pyarrow_dtype
 
