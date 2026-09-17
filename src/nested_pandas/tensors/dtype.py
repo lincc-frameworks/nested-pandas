@@ -89,11 +89,9 @@ class TensorDtype(ExtensionDtype):
     @classmethod
     def construct_array_type(cls) -> Type[ExtensionArray]:
         """Corresponding array type, always TensorExtensionArray"""
-        # TODO: enable once TensorExtensionArray is merged
-        # from nested_pandas.tensors.ext_array import TensorExtensionArray
-        #
-        # return TensorExtensionArray
-        raise NotImplementedError("TensorExtensionArray is not implemented yet")
+        from nested_pandas.tensors.ext_array import TensorExtensionArray
+
+        return TensorExtensionArray
 
     @classmethod
     def construct_from_string(cls, string: str) -> Self:  # type: ignore[name-defined] # noqa: F821
@@ -171,11 +169,9 @@ class TensorDtype(ExtensionDtype):
         TensorExtensionArray
             The constructed TensorExtensionArray.
         """
-        # TODO: enable once TensorExtensionArray is merged
-        # from nested_pandas.tensors.ext_array import TensorExtensionArray
-        #
-        # return TensorExtensionArray(array, dtype=self)
-        raise NotImplementedError("TensorExtensionArray is not implemented yet")
+        from nested_pandas.tensors.ext_array import TensorExtensionArray
+
+        return TensorExtensionArray(array, dtype=self)
 
     # Additional methods and attributes #
 
@@ -207,8 +203,9 @@ class TensorDtype(ExtensionDtype):
                 # rebuilt without it.
                 raise NotImplementedError(
                     "TensorDtype does not support fixed_shape_tensor types with a non-trivial permutation "
-                    f"yet, got {pyarrow_dtype}. Convert the tensors to C order with numpy and rebuild the "
-                    "column from a fixed_shape_tensor type without a permutation."
+                    f"yet, got {pyarrow_dtype}. Please open an issue on the nested-pandas github if you need "
+                    f"this feature. As a workaround, you can convert the tensors to C order with numpy and "
+                    f"rebuild the column from a fixed_shape_tensor type without a permutation."
                 )
         self.pyarrow_dtype = pyarrow_dtype
 

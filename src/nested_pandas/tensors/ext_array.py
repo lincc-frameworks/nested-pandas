@@ -1,0 +1,941 @@
+# This code is massively adopted from pandas' ArrowExtensionArray. Pandas license is required for this code:
+#
+# BSD 3-Clause License
+#
+# Copyright (c) 2008-2011, AQR Capital Management, LLC, Lambda Foundry, Inc. and PyData Development Team
+# All rights reserved.
+#
+# Copyright (c) 2011-2024, Open source contributors.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+# * Neither the name of the copyright holder nor the names of its
+#   contributors may be used to endorse or promote products derived from
+#   this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+"""Pandas extension array for fixed-shape tensor columns."""
+
+from __future__ import annotations  # Self in Python 3.10
+
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any, cast
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
+from numpy.typing import DTypeLike
+from pandas import Index
+from pandas._typing import InterpolateOptions
+from pandas.api.extensions import no_default
+from pandas.api.types import is_scalar, pandas_dtype
+from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
+from pandas.core.indexers import (  # type: ignore[attr-defined]
+    check_array_indexer,
+    unpack_tuple_and_ellipses,
+    validate_indices,
+)
+
+from nested_pandas.series.utils import replace_with_mask
+from nested_pandas.tensors.dtype import TensorDtype
+
+__all__ = ["TensorExtensionArray"]
+
+
+TENSOR_FORMATTING_MAX_ELEMENTS = 12
+"""Tensors with more elements than this show a shape/dtype descriptor instead of their values in reprs"""
+
+
+def _tensor_descriptor(value: np.ndarray) -> str:
+    """Short description of a tensor for reprs, e.g. '[64×64] float32'."""
+    return f"[{'×'.join(str(size) for size in value.shape)}] {value.dtype}"
+
+
+def _format_tensor(value: Any) -> str:
+    """Format a single tensor (or missing value) for Series and DataFrame text reprs.
+
+    Small tensors show all their values, larger ones only a shape and dtype
+    descriptor. Values are formatted via ``tolist()`` rather than
+    ``np.array2string`` so that every row of a column uses the same style,
+    with no alignment padding or per-tensor switching to scientific notation.
+    """
+    if _is_na(value):
+        return str(pd.NA)
+    if value.size > TENSOR_FORMATTING_MAX_ELEMENTS:
+        return _tensor_descriptor(value)
+    return str(value.tolist())
+
+
+def _is_na(value: Any) -> bool:
+    """Whether a value represents a missing tensor: a missing scalar such as None or pd.NA, or a null
+    pyarrow scalar.
+
+    A tensor is an ndarray, for which ``pd.isna()`` is elementwise, so only scalars are asked.
+    """
+    if isinstance(value, pa.Scalar):
+        return not value.is_valid
+    return is_scalar(value) and bool(pd.isna(value))
+
+
+def _numpy_value_dtype(dtype: TensorDtype) -> np.dtype:
+    """Numpy dtype of the tensor elements."""
+    return np.dtype(dtype.value_type.to_pandas_dtype())
+
+
+def _normalize_dtype(dtype: Any) -> TensorDtype | None:
+    """Convert the supported dtype spellings to TensorDtype, passing None through."""
+    if dtype is None or isinstance(dtype, TensorDtype):
+        return dtype
+    if isinstance(dtype, pa.FixedShapeTensorType | pd.ArrowDtype):
+        return TensorDtype(dtype)
+    if isinstance(dtype, str):
+        pd_dtype = pandas_dtype(dtype)
+        if isinstance(pd_dtype, TensorDtype):
+            return pd_dtype
+    raise TypeError(
+        "Expected TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype of a tensor type or a tensor dtype "
+        f"string, got {dtype!r}"
+    )
+
+
+def _wrap_storage(storage: pa.ChunkedArray, dtype: TensorDtype) -> pa.ChunkedArray:
+    """Cast fixed_size_list storage to the dtype's storage type and wrap it as the tensor type."""
+    if storage.type != dtype.storage_type:
+        if storage.type.list_size != dtype.size:
+            raise ValueError(
+                f"Cannot convert tensors of {storage.type.list_size} elements to {dtype}, "
+                f"which has {dtype.size} elements"
+            )
+        storage = storage.cast(dtype.storage_type)
+    pa_type = dtype.pyarrow_dtype
+    chunks = [pa.ExtensionArray.from_storage(pa_type, chunk) for chunk in storage.iterchunks()]
+    return pa.chunked_array(chunks, type=pa_type)
+
+
+def _check_no_missing_elements(array: pa.ChunkedArray, dtype: TensorDtype) -> None:
+    """Reject missing elements inside present tensors, unless the tensors are floating point.
+
+    Only arrow input can carry them. Float tensors read them as NaN, but no
+    other value type has a missing value, and silently widening to float
+    would change the dtype. Elements under missing tensors are ignored,
+    since pyarrow leaves nulls there when building from Python lists.
+    """
+    if pa.types.is_floating(dtype.value_type):
+        return
+    for chunk in array.iterchunks():
+        storage = chunk.storage
+        # .values is the whole child array, whose null count arrow caches, so this is free when there
+        # are no nulls at all. .flatten() is the elements of the present tensors only, but copies.
+        if storage.values.null_count > 0 and storage.flatten().null_count > 0:
+            raise ValueError(
+                f"Tensors of {dtype} cannot have missing elements, only whole tensors can be missing. "
+                "Use a floating point value type to read missing elements as NaN."
+            )
+
+
+def _tensor_scalar_to_numpy(scalar: pa.FixedShapeTensorScalar) -> np.ndarray:
+    """Read-only zero-copy numpy view of a valid fixed_shape_tensor scalar.
+
+    ``scalar.value`` is the fixed_size_list storage scalar, whose ``values``
+    are a slice of the flat child array. Unlike ``scalar.to_numpy()``, which
+    raises for tensors with missing elements, this gives them as NaN. Only
+    float tensors can have them, see ``_check_no_missing_elements``.
+    """
+    return np.asarray(scalar.value.values).reshape(tuple(scalar.type.shape))
+
+
+def _tensor_to_flat(value: Any, dtype: TensorDtype) -> np.ndarray:
+    """Validate a single tensor against the dtype and return its values flattened in C order.
+
+    ``value`` is a ``fixed_shape_tensor`` scalar, its ``fixed_size_list``
+    storage scalar, or anything ``np.asarray()`` accepts. The pyarrow scalars
+    already hold their values flat, so those are viewed without a copy.
+    """
+    if isinstance(value, pa.FixedShapeTensorScalar):
+        if tuple(value.type.shape) != dtype.shape:
+            raise ValueError(f"Expected a tensor of shape {dtype.shape}, got shape {tuple(value.type.shape)}")
+        return np.asarray(value.value.values)
+    if isinstance(value, pa.FixedSizeListScalar):
+        if value.type.list_size != dtype.size:
+            raise ValueError(
+                f"Expected a tensor of {dtype.size} elements, got a list of {value.type.list_size}"
+            )
+        return np.asarray(value.values)
+    array = np.asarray(value)
+    if array.shape != dtype.shape:
+        raise ValueError(f"Expected a tensor of shape {dtype.shape}, got shape {array.shape}")
+    return np.ascontiguousarray(array).reshape(-1)
+
+
+class TensorExtensionArray(ExtensionArray):
+    """Pandas extension array for fixed-shape tensors
+
+    Every element is a numpy array of the same shape and element type, stored
+    as a pyarrow ``fixed_shape_tensor`` extension array. Scalar access and
+    :meth:`to_stack` return read-only numpy views over the arrow buffers
+    whenever possible, so no data is copied.
+
+    Parameters
+    ----------
+    values : pyarrow.Array or pyarrow.ChunkedArray
+        The array to be wrapped. Either a ``fixed_shape_tensor`` extension
+        array, or its ``fixed_size_list`` storage array, in which case
+        ``dtype`` is required.
+    dtype : TensorDtype, optional
+        The dtype of the array. Required when ``values`` is a storage array,
+        which is cast to it. For a tensor array it must match ``values.type``
+        if given; use :meth:`astype` to cast.
+
+    Raises
+    ------
+    TypeError
+        If ``values`` is not a pyarrow array.
+    ValueError
+        If ``values`` is neither a tensor nor a fixed_size_list array, if it
+        is a fixed_size_list array and ``dtype`` is not given, if it is a
+        tensor array and ``dtype`` does not match its type, or if tensors of
+        a non-floating value type have missing elements.
+    """
+
+    # Constructor and initialized attributes #
+
+    _pa_array: pa.ChunkedArray
+    _dtype: TensorDtype
+
+    def __init__(self, values: pa.Array | pa.ChunkedArray, *, dtype: TensorDtype | None = None) -> None:
+        if isinstance(values, pa.Array):
+            values = pa.chunked_array([values])
+        if not isinstance(values, pa.ChunkedArray):
+            raise TypeError(f"values must be a pyarrow Array or ChunkedArray, got {type(values)}")
+        dtype = _normalize_dtype(dtype)
+
+        if isinstance(values.type, pa.FixedShapeTensorType):
+            # Rejects non-identity permutations
+            values_dtype = TensorDtype(values.type)
+            if dtype is None:
+                dtype = values_dtype
+            elif dtype != values_dtype:
+                raise ValueError(
+                    f"dtype {dtype} does not match the type of values, {values_dtype}. Use astype() to "
+                    "cast, or construct from the fixed_size_list storage array with the dtype."
+                )
+            # pyarrow compares tensor types with and without an identity permutation equal, but we
+            # want the stored array to have exactly the dtype's type, so drop the permutation
+            if values.type.permutation is not None:
+                values = _wrap_storage(values.cast(values.type.storage_type), dtype)
+        elif pa.types.is_fixed_size_list(values.type):
+            if dtype is None:
+                raise ValueError("dtype is required when constructing from a fixed_size_list storage array")
+            values = _wrap_storage(values, dtype)
+        else:
+            raise ValueError(
+                f"values must be a fixed_shape_tensor or fixed_size_list array, got type {values.type}"
+            )
+
+        _check_no_missing_elements(values, dtype)
+        self._pa_array = values
+        self._dtype = dtype
+
+    # End of Constructor and initialized attributes #
+
+    # ExtensionArray overrides #
+
+    @classmethod
+    def _from_sequence(cls, scalars, *, dtype=None, copy: bool = False) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Construct a TensorExtensionArray from a sequence of scalars.
+
+        Parameters
+        ----------
+        scalars : Sequence
+            The sequence of scalars: numpy arrays (or anything convertible to
+            them) of the tensor shape, None, pd.NA, or pyarrow scalars. A
+            numpy array of shape ``(n, *shape)`` is accepted as a stack.
+        dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
+            dtype of the resulting array. Inferred from the first non-missing
+            element if not given.
+        copy : bool, default False
+            Whether to copy a numpy stack, see :meth:`from_stack`. Any other
+            input is either converted into new arrow memory or already arrow.
+        """
+        dtype = _normalize_dtype(dtype)
+
+        if isinstance(scalars, cls):
+            if dtype is None or dtype == scalars.dtype:
+                return scalars
+            return scalars.astype(dtype)
+        if isinstance(scalars, pa.Array | pa.ChunkedArray):
+            return cls(scalars, dtype=dtype)
+        if isinstance(scalars, np.ndarray) and scalars.dtype != np.object_ and scalars.ndim >= 2:
+            if dtype is not None and scalars.ndim == dtype.ndim:
+                # A single tensor (possibly of the wrong shape, which is reported below), e.g. pandas
+                # broadcasting a "scalar", rather than a stack of them
+                scalars = [scalars]
+            else:
+                return cls.from_stack(scalars, dtype=dtype, copy=copy)
+
+        scalars = list(scalars)
+        mask = np.array([_is_na(value) for value in scalars], dtype=bool)
+
+        if dtype is None:
+            first = next((value for value, na in zip(scalars, mask, strict=True) if not na), None)
+            if first is None:
+                raise ValueError("Cannot infer TensorDtype from a sequence without non-missing values")
+            if isinstance(first, pa.FixedShapeTensorScalar):
+                first = _tensor_scalar_to_numpy(first)
+            first = np.asarray(first)
+            dtype = TensorDtype(pa.fixed_shape_tensor(pa.from_numpy_dtype(first.dtype), list(first.shape)))
+
+        np_value_dtype = _numpy_value_dtype(dtype)
+        flats = [
+            np.zeros(dtype.size, dtype=np_value_dtype) if na else _tensor_to_flat(value, dtype)
+            for value, na in zip(scalars, mask, strict=True)
+        ]
+        values = np.concatenate(flats) if flats else np.empty(0, dtype=np_value_dtype)
+        storage = pa.FixedSizeListArray.from_arrays(
+            pa.array(values, type=dtype.value_type),
+            dtype.size,
+            mask=pa.array(mask) if mask.any() else None,
+        )
+        return cls(storage, dtype=dtype)
+
+    # Tricky to implement but required by things like pd.read_csv
+    @classmethod
+    def _from_sequence_of_strings(cls, strings, dtype, *, copy: bool = False) -> Self:  # type: ignore[name-defined, misc] # noqa: F821
+        return super()._from_sequence_of_strings(strings, dtype=dtype, copy=copy)  # type: ignore[misc]
+
+    # We do not implement it, tensors are not hashable so they cannot be factorized
+    @classmethod
+    def _from_factorized(cls, values, original):
+        return super()._from_factorized(values, original)
+
+    def __getitem__(self, item: ScalarIndexer) -> Self | np.ndarray:  # type: ignore[name-defined, override] # noqa: F821
+        item = check_array_indexer(self, item)
+
+        if isinstance(item, np.ndarray):
+            if len(item) == 0:
+                pa_array = pa.chunked_array([], type=self.dtype.pyarrow_dtype)
+            elif item.dtype.kind in "iu":
+                pa_array = self._pa_array.take(pa.array(item))
+            elif item.dtype.kind == "b":
+                pa_array = self._pa_array.filter(pa.array(item))
+            else:  # pragma: no cover
+                # It should be covered by check_array_indexer above
+                raise IndexError("Only integers, slices and integer or boolean arrays are valid indices.")
+            return self._wrap_result(pa_array)
+
+        if isinstance(item, tuple):
+            item = unpack_tuple_and_ellipses(item)
+
+        if item is Ellipsis:
+            item = slice(None)
+
+        if not isinstance(item, int | np.integer | slice):
+            raise IndexError(
+                "only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and integer or "
+                "boolean arrays are valid indices"
+            )
+
+        scalar_or_array = self._pa_array[item]
+        if isinstance(scalar_or_array, pa.Scalar):
+            return self._scalar_to_numpy(scalar_or_array)
+        # Logically, it must be a pa.ChunkedArray if it is not a scalar
+        return self._wrap_result(cast(pa.ChunkedArray, scalar_or_array))
+
+    def _wrap_result(self, pa_array: pa.ChunkedArray) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Wrap a selection from this array, carrying over the dtype and the read-only flag."""
+        result = type(self)(pa_array, dtype=self.dtype)
+        result._readonly = self._readonly
+        return result
+
+    def __setitem__(self, key, value) -> None:
+        if self._readonly:
+            raise ValueError("Cannot modify read-only array")
+
+        key = check_array_indexer(self, key)
+
+        if isinstance(key, tuple):
+            key = unpack_tuple_and_ellipses(key)
+
+        if not isinstance(key, np.ndarray):
+            np_mask = np.zeros(len(self), dtype=np.bool_)
+            np_mask[key] = True
+            key = np_mask
+
+        if len(key) == 0:
+            return
+
+        # For integer keys, `value_index` maps each set position (in mask order) to the element
+        # of a sequence `value` to take, so that duplicate keys follow numpy: the last one wins.
+        value_index: np.ndarray | None = None
+        if key.dtype.kind in "iu":
+            key = np.where(key < 0, key + len(self), key)
+            if key.min() < 0 or key.max() >= len(self):
+                raise IndexError("index out of bounds")
+            _, last_reversed = np.unique(key[::-1], return_index=True)
+            value_index = len(key) - 1 - last_reversed
+            np_mask = np.zeros(len(self), dtype=np.bool_)
+            np_mask[key] = True
+            pa_mask = pa.array(np_mask)
+            n_values = len(key)
+        elif key.dtype.kind == "b":
+            pa_mask = pa.array(key)
+            n_values = int(key.sum())
+        # Should be covered by check_array_indexer
+        else:  # pragma: no cover
+            raise IndexError("Only integers, slices and integer or boolean arrays are valid indices.")
+
+        n_set = pc.sum(pa_mask).as_py() or 0
+
+        # When nothing is selected, e.g. by an empty slice or an all-False mask, we still validate
+        # the value, but return before pa.repeat() and replace_with_mask(), which need elements.
+        if self._is_scalar_value(value):
+            # Our replace_with_mask implementation doesn't work with scalars, so broadcast
+            scalar = self._scalar_storage(value)
+            if n_set == 0:
+                return
+            value_storage: pa.Array | pa.ChunkedArray = pa.repeat(scalar, n_set)
+        else:
+            value_storage = type(self)._from_sequence(value, dtype=self.dtype).storage
+            if len(value_storage) != n_values:
+                raise ValueError(
+                    f"Cannot set {n_values} elements from a sequence of length {len(value_storage)}"
+                )
+            if n_set == 0:
+                return
+            if value_index is not None:
+                value_storage = value_storage.take(value_index)
+
+        # pa.compute.replace_with_mask() and if_else() have no kernels for the extension type,
+        # so we work on the fixed_size_list storage and wrap it back.
+        storage = replace_with_mask(self.storage, pa_mask, value_storage)
+        self._pa_array = _wrap_storage(storage, self.dtype)
+
+    def __len__(self) -> int:
+        return len(self._pa_array)
+
+    def __iter__(self) -> Iterator[np.ndarray | Any]:
+        for scalar in self._pa_array:
+            yield self._scalar_to_numpy(scalar)
+
+    # We do not implement it yet: pyarrow has no equality kernel for the fixed_shape_tensor type, and
+    # ArrowExtensionArray does not implement it for its fixed_size_list storage either
+    def __eq__(self, other):  # type: ignore[override]
+        return super().__eq__(other)
+
+    def to_numpy(
+        self,
+        dtype: DTypeLike | None = None,
+        copy: bool = False,
+        na_value: Any = no_default,
+    ) -> np.ndarray:
+        """Convert the extension array to a numpy object array of tensors.
+
+        Use :meth:`to_stack` to get a single ``(n, *shape)`` numpy array instead.
+
+        Parameters
+        ----------
+        dtype : None
+            This parameter is left for compatibility with the base class
+            method, but it is not used. dtype of the returned array is
+            always an object.
+        copy : bool, default False
+            Whether to copy the tensors. If False, the tensors are read-only
+            views over the arrow buffers.
+        na_value : Any, optional
+            The value to use for missing values. If not provided, pd.NA
+            will be used.
+
+        Returns
+        -------
+        np.ndarray
+            The numpy array of np.ndarray objects.
+        """
+        del dtype
+        if na_value is no_default:
+            na_value = pd.NA
+
+        # Hack with np.empty is the only way to force numpy to create a 1-d array of objects
+        result = np.empty(shape=len(self), dtype=object)
+
+        for i, scalar in enumerate(self._pa_array):
+            value = self._scalar_to_numpy(scalar, na_value=na_value)
+            if copy and isinstance(value, np.ndarray):
+                value = value.copy()
+            result[i] = value
+
+        return result
+
+    @property
+    def dtype(self) -> TensorDtype:
+        """ExtensionArray dtype"""
+        return self._dtype
+
+    @property
+    def nbytes(self) -> int:
+        """Number of bytes consumed by the data in memory."""
+        return self._pa_array.nbytes
+
+    def isna(self) -> np.ndarray:
+        """Boolean NumPy array indicating if each value is missing."""
+        # Fast paths adopted from ArrowExtensionArray
+        null_count = self._pa_array.null_count
+        if null_count == 0:
+            return np.zeros(len(self), dtype=bool)
+        if null_count == len(self):
+            return np.ones(len(self), dtype=bool)
+
+        return self._pa_array.is_null().to_numpy()
+
+    @property
+    def _hasna(self) -> bool:
+        return self._pa_array.null_count > 0
+
+    def astype(self, dtype, copy: bool = True):
+        """Cast to a NumPy array or ExtensionArray with 'dtype'.
+
+        Casting to another TensorDtype casts the storage, so the element type
+        may change, and the shape may change as long as the number of
+        elements is the same. Casting to pd.ArrowDtype gives an
+        ArrowExtensionArray of the tensor type or of any type the storage can
+        be cast to.
+
+        Parameters
+        ----------
+        dtype : dtype or str
+            Typecode or data-type to which the array is cast.
+        copy : bool, default True
+            Whether to copy the data, even if not necessary.
+
+        Returns
+        -------
+        np.ndarray or ExtensionArray
+        """
+        dtype = pandas_dtype(dtype)
+
+        if dtype == self.dtype:
+            return self.copy() if copy else self
+
+        if isinstance(dtype, TensorDtype):
+            return type(self)(self.storage, dtype=dtype)
+
+        if isinstance(dtype, pd.ArrowDtype):
+            pa_type = dtype.pyarrow_dtype
+            if pa_type == self.dtype.pyarrow_dtype:
+                return ArrowExtensionArray(self._pa_array)
+            return ArrowExtensionArray(self.storage.cast(pa_type))
+
+        return super().astype(dtype, copy=copy)
+
+    # We do not implement it yet, neither ArrowExtensionArray does for list arrays
+    def interpolate(
+        self,
+        *,
+        method: InterpolateOptions,
+        axis: int,
+        index: Index,
+        limit,
+        limit_direction,
+        limit_area,
+        copy: bool,
+        **kwargs,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Interpolate missing values, not implemented yet."""
+        return super().interpolate(  # type: ignore[misc]
+            method=method,
+            axis=axis,
+            index=index,
+            limit=limit,
+            limit_direction=limit_direction,
+            limit_area=limit_area,
+            copy=copy,
+            **kwargs,
+        )
+
+    def take(
+        self,
+        indices,
+        *,
+        allow_fill: bool = False,
+        fill_value: Any = None,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """
+        Take elements from an array.
+
+        Parameters
+        ----------
+        indices : sequence of int or one-dimensional np.ndarray of int
+            Indices to be taken.
+        allow_fill : bool, default False
+            How to handle negative values in `indices`.
+
+            * False: negative values in `indices` indicate positional indices
+              from the right (the default). This is similar to
+              :func:`numpy.take`.
+
+            * True: negative values in `indices` indicate
+              missing values. These values are set to `fill_value`. Any other
+              negative values raise a ``ValueError``.
+
+        fill_value : any, optional
+            Fill value to use for NA-indices when `allow_fill` is True.
+            This may be ``None``, in which case pd.NA is used.
+
+        Returns
+        -------
+        TensorExtensionArray
+
+        Raises
+        ------
+        IndexError
+            When the indices are out of bounds for the array.
+        ValueError
+            When `indices` contains negative values other than ``-1``
+            and `allow_fill` is True.
+        """
+        # Massively adopted from ArrowExtensionArray
+
+        indices_array = np.asanyarray(indices)
+        if indices_array.dtype.kind not in "iu":
+            # E.g. an empty list gives a float array
+            indices_array = indices_array.astype(np.int64)
+
+        if len(self) == 0 and (indices_array >= 0).any():
+            raise IndexError("cannot do a non-empty take from the empty array")
+        if indices_array.size > 0 and indices_array.max() >= len(self):
+            raise IndexError("out of bounds value in 'indices'.")
+
+        if allow_fill:
+            fill_mask = indices_array < 0
+            if not fill_mask.any():
+                # Nothing to fill
+                return type(self)(self._pa_array.take(pa.array(indices_array)), dtype=self.dtype)
+            validate_indices(indices_array, len(self))
+            pa_indices = pa.array(indices_array, mask=fill_mask)
+
+            # Null indices give null elements
+            storage = self.storage.take(pa_indices)
+            if not _is_na(fill_value):
+                fill_storage = pa.repeat(self._scalar_storage(fill_value), int(fill_mask.sum()))
+                storage = replace_with_mask(storage, pa.array(fill_mask), fill_storage)
+            return type(self)(storage, dtype=self.dtype)
+
+        if (indices_array < 0).any():
+            if indices_array.min() < -len(self):
+                raise IndexError("out of bounds value in 'indices'.")
+            # Don't modify in-place
+            indices_array = np.copy(indices_array)
+            indices_array[indices_array < 0] += len(self)
+        return type(self)(self._pa_array.take(pa.array(indices_array)), dtype=self.dtype)
+
+    def copy(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Return a copy of the extension array.
+
+        This implementation returns a shallow copy of the extension array,
+        because the underlying PyArrow array is immutable.
+        """
+        return type(self)(self._pa_array, dtype=self.dtype)
+
+    def _formatter(self, boxed: bool = False) -> Callable[[Any], str | None]:
+        if boxed:
+            return _format_tensor
+        return repr
+
+    @classmethod
+    def _concat_same_type(cls, to_concat: Sequence[Self]) -> Self:  # type: ignore[name-defined] # noqa: F821
+        to_concat = list(to_concat)
+        dtype = to_concat[0].dtype
+        chunks = [chunk for ext_array in to_concat for chunk in ext_array._pa_array.iterchunks()]
+        return cls(pa.chunked_array(chunks, type=dtype.pyarrow_dtype), dtype=dtype)
+
+    def equals(self, other) -> bool:
+        """
+        Check equality with another TensorExtensionArray.
+
+        Parameters
+        ----------
+        other : TensorExtensionArray
+            The other TensorExtensionArray to compare with.
+
+        Returns
+        -------
+        bool
+            Whether the two arrays have the same dtype and the same values.
+        """
+        if not isinstance(other, type(self)):
+            return False
+        return self.dtype == other.dtype and self.storage.equals(other.storage)
+
+    def dropna(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Return a new ExtensionArray with missing tensors removed."""
+        return type(self)(pc.drop_null(self._pa_array), dtype=self.dtype)
+
+    def shift(self, periods: int = 1, fill_value: Any = None) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Shift values by the desired number, filling with a tensor or with missing values.
+
+        The base class implementation checks ``isna(fill_value)``, which is
+        ambiguous for an ndarray fill value, so it is reimplemented here.
+
+        Parameters
+        ----------
+        periods : int, default 1
+            The number of periods to shift. Negative values shift towards the start.
+        fill_value : np.ndarray, None or pd.NA, default None
+            The tensor to fill the vacated positions with, or missing if None or pd.NA.
+
+        Returns
+        -------
+        TensorExtensionArray
+        """
+        if not len(self) or periods == 0:
+            return self.copy()
+
+        n_fill = min(abs(periods), len(self))
+        fill = type(self)._from_sequence([fill_value] * n_fill, dtype=self.dtype)
+        parts = [fill, self[: len(self) - n_fill]] if periods > 0 else [self[n_fill:], fill]
+        return self._concat_same_type(parts)
+
+    # End of ExtensionArray overrides #
+
+    # Additional magic methods #
+
+    def __arrow_array__(self, type=None):  # noqa: A002
+        """Convert the extension array to a PyArrow array.
+
+        With no ``type`` this is the ``fixed_shape_tensor`` extension array,
+        so ``pa.Table.from_pandas`` and Parquet preserve the tensor type.
+        """
+        if type is None or type == self.dtype.pyarrow_dtype:
+            return self._pa_array
+        if isinstance(type, pa.FixedShapeTensorType):
+            return _wrap_storage(self.storage, TensorDtype(type))
+        return self.storage.cast(type)
+
+    def __array__(self, dtype=None, copy=None):
+        """Convert the extension array to a numpy object array of tensors."""
+        if copy is False:
+            # The object array is always newly built, so a no-copy conversion cannot be honored
+            raise ValueError("Unable to avoid copy while creating an array as requested.")
+        return self.to_numpy(dtype=dtype, copy=bool(copy))
+
+    # Adopted from ArrowExtensionArray
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        combined = self._pa_array.combine_chunks()
+        state["_pa_array"] = pa.chunked_array([combined], type=self.dtype.pyarrow_dtype)
+        return state
+
+    # End of Additional magic methods #
+
+    @staticmethod
+    def _scalar_to_numpy(scalar: pa.Scalar, na_value: Any = pd.NA) -> np.ndarray | Any:
+        """Convert a tensor scalar to a read-only numpy view, or to na_value if it is null."""
+        if not scalar.is_valid:
+            return na_value
+        return _tensor_scalar_to_numpy(scalar)
+
+    def _is_scalar_value(self, value: Any) -> bool:
+        """Whether a value passed to __setitem__ is a single tensor rather than a sequence of them."""
+        if _is_na(value) or isinstance(value, pa.Scalar):
+            return True
+        return isinstance(value, np.ndarray) and value.shape == self.dtype.shape
+
+    def _scalar_storage(self, value: Any) -> pa.Scalar:
+        """Convert a single tensor (or missing value) to a fixed_size_list storage scalar."""
+        return type(self)._from_sequence([value], dtype=self.dtype).storage[0]
+
+    @property
+    def pa_array(self) -> pa.ChunkedArray:
+        """Pyarrow chunked array of the ``fixed_shape_tensor`` extension type."""
+        return self._pa_array
+
+    @property
+    def storage(self) -> pa.ChunkedArray:
+        """Pyarrow chunked array of the ``fixed_size_list`` storage type."""
+        return self._pa_array.cast(self.dtype.storage_type)
+
+    @property
+    def num_chunks(self) -> int:
+        """Number of chunks in the underlying pyarrow.ChunkedArray"""
+        return self._pa_array.num_chunks
+
+    @classmethod
+    def from_sequence(
+        cls,
+        scalars,
+        *,
+        dtype: TensorDtype | pa.FixedShapeTensorType | pd.ArrowDtype | str | None = None,
+        copy: bool = False,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Construct a TensorExtensionArray from a sequence of tensors
+
+        Parameters
+        ----------
+        scalars : Sequence
+            The sequence of items: numpy arrays (or anything convertible to
+            them) of the tensor shape, None, pd.NA, or pyarrow scalars. A
+            numpy array of shape ``(n, *shape)`` is accepted as a stack, see
+            :meth:`from_stack`.
+        dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
+            dtype of the resulting array. Inferred from the first non-missing
+            element if not given.
+        copy : bool, default False
+            Whether to copy a numpy stack, which is otherwise wrapped without
+            copying, see the warning in :meth:`from_stack`. Any other input
+            is either converted into new arrow memory or already arrow.
+
+        Returns
+        -------
+        TensorExtensionArray
+            The constructed extension array.
+        """
+        return cls._from_sequence(scalars, dtype=dtype, copy=copy)
+
+    @classmethod
+    def from_stack(
+        cls,
+        stack: np.ndarray,
+        *,
+        dtype: TensorDtype | pa.FixedShapeTensorType | pd.ArrowDtype | str | None = None,
+        copy: bool = False,
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Construct a TensorExtensionArray from a numpy array of shape ``(n, *shape)``
+
+        .. warning::
+
+            By default a C-contiguous ``stack`` is wrapped without copying,
+            so the array, and any copies and slices of it, alias its memory:
+            modifying ``stack`` afterwards modifies them all. Pass
+            ``copy=True`` if ``stack`` will be modified later.
+
+        Parameters
+        ----------
+        stack : np.ndarray
+            Array whose first axis enumerates the tensors.
+        dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
+            dtype of the resulting array. Inferred from the numpy dtype and
+            ``stack.shape[1:]`` if not given.
+        copy : bool, default False
+            Whether to copy ``stack``, see the warning above. Layouts other
+            than C-contiguous are always copied into C order.
+
+        Returns
+        -------
+        TensorExtensionArray
+            The constructed extension array.
+        """
+        stack = np.asarray(stack)
+        if stack.ndim < 2:
+            raise ValueError(f"stack must have shape (n, *shape), at least two dimensions, got {stack.shape}")
+
+        dtype = _normalize_dtype(dtype)
+        if dtype is None:
+            value_type = pa.from_numpy_dtype(stack.dtype)
+            dtype = TensorDtype(pa.fixed_shape_tensor(value_type, list(stack.shape[1:])))
+        elif stack.shape[1:] != dtype.shape:
+            raise ValueError(f"Expected a stack of tensors of shape {dtype.shape}, got {stack.shape[1:]}")
+
+        flat = (np.array(stack, order="C") if copy else np.ascontiguousarray(stack)).reshape(-1)
+        storage = pa.FixedSizeListArray.from_arrays(pa.array(flat, type=dtype.value_type), dtype.size)
+        return cls(storage, dtype=dtype)
+
+    def to_stack(self, na_value: Any = np.nan) -> np.ndarray:
+        """Convert the extension array to a single numpy array of shape ``(n, *shape)``
+
+        Without missing values the result is a read-only zero-copy view over
+        the arrow buffers. With missing tensors the data is copied, the result
+        dtype is widened as needed to hold ``na_value``, and the missing
+        tensors are filled with it. Missing *elements* inside otherwise
+        present tensors, which arrow allows for float tensors only, are
+        always ``NaN``.
+
+        Parameters
+        ----------
+        na_value : Any, default np.nan
+            Value to fill missing tensors with.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape ``(len(self), *self.dtype.shape)``.
+        """
+        stack = self._values_block()
+        if not self._hasna:
+            return stack
+
+        # The block holds arbitrary values for null tensors, so fill them here
+        result_dtype = np.result_type(stack.dtype, np.min_scalar_type(na_value))
+        result = np.array(stack, dtype=result_dtype)
+        result[self.isna()] = na_value
+        return result
+
+    def _values_block(self) -> np.ndarray:
+        """Numpy array of shape ``(n, *shape)`` with the values of every tensor.
+
+        A read-only zero-copy view for a single chunk without missing elements.
+        Null tensors are present in the block but hold arbitrary values, so
+        callers must consult :meth:`isna`. Missing elements inside float
+        tensors, the only ones that can have them, become ``NaN``, which copies.
+        """
+        if len(self) == 0:
+            return np.empty((0, *self.dtype.shape), dtype=_numpy_value_dtype(self.dtype))
+
+        # combine_chunks() copies even for a single chunk, so avoid it when we can
+        if self._pa_array.num_chunks == 1:
+            combined = cast(pa.FixedShapeTensorArray, self._pa_array.chunk(0))
+        else:
+            combined = cast(pa.FixedShapeTensorArray, self._pa_array.combine_chunks())
+
+        # The flat values of exactly our rows: .values ignores a slice offset and .flatten()
+        # drops null tensors, so take the window by hand.
+        storage = combined.storage
+        size = self.dtype.size
+        values = storage.values.slice(storage.offset * size, len(storage) * size)
+        if values.null_count == 0:
+            return combined.to_numpy_ndarray()
+
+        # to_numpy_ndarray() ignores the validity bitmap of the elements and would return
+        # arbitrary values for them. pyarrow's to_numpy() fills them with NaN instead.
+        return values.to_numpy(zero_copy_only=False).reshape(len(storage), *self.dtype.shape)
+
+    @classmethod
+    def from_arrow_ext_array(cls, array: ArrowExtensionArray, *, dtype: TensorDtype | None = None) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Create a TensorExtensionArray from pandas' ArrowExtensionArray
+
+        Parameters
+        ----------
+        array : ArrowExtensionArray
+            Array of the tensor type or of its fixed_size_list storage type.
+        dtype : TensorDtype, optional
+            Required when ``array`` is of the storage type.
+        """
+        return cls(array._pa_array, dtype=dtype)
+
+    def to_arrow_ext_array(self, storage: bool = False) -> ArrowExtensionArray:
+        """Convert the extension array to pandas' ArrowExtensionArray
+
+        Parameters
+        ----------
+        storage : bool, default False
+            If False (default), wrap the ``fixed_shape_tensor`` extension array,
+            otherwise wrap its ``fixed_size_list`` storage array.
+        """
+        return ArrowExtensionArray(self.storage if storage else self._pa_array)

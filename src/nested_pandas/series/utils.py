@@ -839,3 +839,39 @@ def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> p
         return list_cls.from_arrays(offsets_array, values, mask=mask)
 
     return pa.array(scalars, type=pa_type)
+
+
+def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.Array) -> pa.ChunkedArray:
+    """Replace the elements of the array with the value where the mask is True
+
+    A stand-in for ``pa.compute.replace_with_mask``, which has no kernels for
+    nested types such as struct and fixed_size_list arrays
+    (https://github.com/apache/arrow/issues/29558). Built from ``take`` and
+    ``if_else``, which do support them.
+
+    Parameters
+    ----------
+    array : pa.ChunkedArray
+        The array to replace elements in.
+    mask : pa.BooleanArray
+        Where True, take the element from ``value`` instead of ``array``.
+    value : pa.Array
+        Replacement elements, one per True in ``mask``, in order.
+
+    Returns
+    -------
+    pa.ChunkedArray
+        The array with the masked elements replaced.
+    """
+    # TODO: performance optimization
+    # https://github.com/lincc-frameworks/nested-pandas/issues/52
+
+    # If mask is [False, True, False, True], mask_cumsum will be [0, 1, 1, 2]
+    # So we put value items to the right positions in broadcast_value, while duplicate some other items for
+    # the positions where mask is False.
+    mask_cumsum = pa.compute.cumulative_sum(mask.cast(pa.int64()))
+    value_index = pa.compute.subtract(mask_cumsum, 1)
+    value_index = pa.compute.if_else(pa.compute.less(value_index, 0), 0, value_index)
+
+    broadcast_value = value.take(value_index)
+    return pa.compute.if_else(mask, broadcast_value, array)
