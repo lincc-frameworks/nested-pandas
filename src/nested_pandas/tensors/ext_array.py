@@ -131,13 +131,34 @@ def _wrap_storage(storage: pa.ChunkedArray, dtype: TensorDtype) -> pa.ChunkedArr
     return pa.chunked_array(chunks, type=pa_type)
 
 
+def _check_no_missing_elements(array: pa.ChunkedArray, dtype: TensorDtype) -> None:
+    """Reject missing elements inside present tensors, unless the tensors are floating point.
+
+    Only arrow input can carry them. Float tensors read them as NaN, but no
+    other value type has a missing value, and silently widening to float
+    would change the dtype. Elements under missing tensors are ignored,
+    since pyarrow leaves nulls there when building from Python lists.
+    """
+    if pa.types.is_floating(dtype.value_type):
+        return
+    for chunk in array.iterchunks():
+        storage = chunk.storage
+        # .values is the whole child array, whose null count arrow caches, so this is free when there
+        # are no nulls at all. .flatten() is the elements of the present tensors only, but copies.
+        if storage.values.null_count > 0 and storage.flatten().null_count > 0:
+            raise ValueError(
+                f"Tensors of {dtype} cannot have missing elements, only whole tensors can be missing. "
+                "Use a floating point value type to read missing elements as NaN."
+            )
+
+
 def _tensor_scalar_to_numpy(scalar: pa.FixedShapeTensorScalar) -> np.ndarray:
     """Read-only zero-copy numpy view of a valid fixed_shape_tensor scalar.
 
     ``scalar.value`` is the fixed_size_list storage scalar, whose ``values``
     are a slice of the flat child array. Unlike ``scalar.to_numpy()``, which
-    raises for tensors with missing elements, this gives them as NaN, as
-    :meth:`TensorExtensionArray._values_block` does.
+    raises for tensors with missing elements, this gives them as NaN. Only
+    float tensors can have them, see ``_check_no_missing_elements``.
     """
     return np.asarray(scalar.value.values).reshape(tuple(scalar.type.shape))
 
@@ -181,16 +202,18 @@ class TensorExtensionArray(ExtensionArray):
         ``dtype`` is required.
     dtype : TensorDtype, optional
         The dtype of the array. Required when ``values`` is a storage array,
-        otherwise inferred from ``values.type``. If given and different from
-        the type of ``values``, the storage is cast to the dtype.
+        which is cast to it. For a tensor array it must match ``values.type``
+        if given; use :meth:`astype` to cast.
 
     Raises
     ------
     TypeError
         If ``values`` is not a pyarrow array.
     ValueError
-        If ``values`` is neither a tensor nor a fixed_size_list array, or if it
-        is a fixed_size_list array and ``dtype`` is not given.
+        If ``values`` is neither a tensor nor a fixed_size_list array, if it
+        is a fixed_size_list array and ``dtype`` is not given, if it is a
+        tensor array and ``dtype`` does not match its type, or if tensors of
+        a non-floating value type have missing elements.
     """
 
     # Constructor and initialized attributes #
@@ -206,11 +229,18 @@ class TensorExtensionArray(ExtensionArray):
         dtype = _normalize_dtype(dtype)
 
         if isinstance(values.type, pa.FixedShapeTensorType):
+            # Rejects non-identity permutations
+            values_dtype = TensorDtype(values.type)
             if dtype is None:
-                dtype = TensorDtype(values.type)
+                dtype = values_dtype
+            elif dtype != values_dtype:
+                raise ValueError(
+                    f"dtype {dtype} does not match the type of values, {values_dtype}. Use astype() to "
+                    "cast, or construct from the fixed_size_list storage array with the dtype."
+                )
             # pyarrow compares tensor types with and without an identity permutation equal, but we
-            # want the stored array to have exactly the dtype's type, so check the permutation too
-            if dtype.pyarrow_dtype != values.type or values.type.permutation is not None:
+            # want the stored array to have exactly the dtype's type, so drop the permutation
+            if values.type.permutation is not None:
                 values = _wrap_storage(values.cast(values.type.storage_type), dtype)
         elif pa.types.is_fixed_size_list(values.type):
             if dtype is None:
@@ -221,6 +251,7 @@ class TensorExtensionArray(ExtensionArray):
                 f"values must be a fixed_shape_tensor or fixed_size_list array, got type {values.type}"
             )
 
+        _check_no_missing_elements(values, dtype)
         self._pa_array = values
         self._dtype = dtype
 
@@ -241,10 +272,10 @@ class TensorExtensionArray(ExtensionArray):
         dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
             dtype of the resulting array. Inferred from the first non-missing
             element if not given.
-        copy : bool
-            Ignored, because PyArrow arrays are immutable.
+        copy : bool, default False
+            Whether to copy a numpy stack, see :meth:`from_stack`. Any other
+            input is either converted into new arrow memory or already arrow.
         """
-        del copy
         dtype = _normalize_dtype(dtype)
 
         if isinstance(scalars, cls):
@@ -259,7 +290,7 @@ class TensorExtensionArray(ExtensionArray):
                 # broadcasting a "scalar", rather than a stack of them
                 scalars = [scalars]
             else:
-                return cls.from_stack(scalars, dtype=dtype)
+                return cls.from_stack(scalars, dtype=dtype, copy=copy)
 
         scalars = list(scalars)
         mask = np.array([_is_na(value) for value in scalars], dtype=bool)
@@ -748,7 +779,11 @@ class TensorExtensionArray(ExtensionArray):
 
     @classmethod
     def from_sequence(
-        cls, scalars, *, dtype: TensorDtype | pa.FixedShapeTensorType | pd.ArrowDtype | str | None = None
+        cls,
+        scalars,
+        *,
+        dtype: TensorDtype | pa.FixedShapeTensorType | pd.ArrowDtype | str | None = None,
+        copy: bool = False,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Construct a TensorExtensionArray from a sequence of tensors
 
@@ -762,13 +797,17 @@ class TensorExtensionArray(ExtensionArray):
         dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
             dtype of the resulting array. Inferred from the first non-missing
             element if not given.
+        copy : bool, default False
+            Whether to copy a numpy stack, which is otherwise wrapped without
+            copying, see the warning in :meth:`from_stack`. Any other input
+            is either converted into new arrow memory or already arrow.
 
         Returns
         -------
         TensorExtensionArray
             The constructed extension array.
         """
-        return cls._from_sequence(scalars, dtype=dtype)
+        return cls._from_sequence(scalars, dtype=dtype, copy=copy)
 
     @classmethod
     def from_stack(
@@ -776,11 +815,16 @@ class TensorExtensionArray(ExtensionArray):
         stack: np.ndarray,
         *,
         dtype: TensorDtype | pa.FixedShapeTensorType | pd.ArrowDtype | str | None = None,
+        copy: bool = False,
     ) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Construct a TensorExtensionArray from a numpy array of shape ``(n, *shape)``
 
-        The construction is zero-copy for C-contiguous input; other layouts
-        are copied into C order first.
+        .. warning::
+
+            By default a C-contiguous ``stack`` is wrapped without copying,
+            so the array, and any copies and slices of it, alias its memory:
+            modifying ``stack`` afterwards modifies them all. Pass
+            ``copy=True`` if ``stack`` will be modified later.
 
         Parameters
         ----------
@@ -789,6 +833,9 @@ class TensorExtensionArray(ExtensionArray):
         dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
             dtype of the resulting array. Inferred from the numpy dtype and
             ``stack.shape[1:]`` if not given.
+        copy : bool, default False
+            Whether to copy ``stack``, see the warning above. Layouts other
+            than C-contiguous are always copied into C order.
 
         Returns
         -------
@@ -806,7 +853,7 @@ class TensorExtensionArray(ExtensionArray):
         elif stack.shape[1:] != dtype.shape:
             raise ValueError(f"Expected a stack of tensors of shape {dtype.shape}, got {stack.shape[1:]}")
 
-        flat = np.ascontiguousarray(stack).reshape(-1)
+        flat = (np.array(stack, order="C") if copy else np.ascontiguousarray(stack)).reshape(-1)
         storage = pa.FixedSizeListArray.from_arrays(pa.array(flat, type=dtype.value_type), dtype.size)
         return cls(storage, dtype=dtype)
 
@@ -817,9 +864,8 @@ class TensorExtensionArray(ExtensionArray):
         the arrow buffers. With missing tensors the data is copied, the result
         dtype is widened as needed to hold ``na_value``, and the missing
         tensors are filled with it. Missing *elements* inside otherwise
-        present tensors, which arrow allows, become ``NaN`` (with integer
-        tensors upcast to float), as numpy and pandas do for missing numeric
-        data.
+        present tensors, which arrow allows for float tensors only, are
+        always ``NaN``.
 
         Parameters
         ----------
@@ -846,8 +892,8 @@ class TensorExtensionArray(ExtensionArray):
 
         A read-only zero-copy view for a single chunk without missing elements.
         Null tensors are present in the block but hold arbitrary values, so
-        callers must consult :meth:`isna`. Missing elements inside tensors
-        become ``NaN``, which copies and upcasts integer tensors to float.
+        callers must consult :meth:`isna`. Missing elements inside float
+        tensors, the only ones that can have them, become ``NaN``, which copies.
         """
         if len(self) == 0:
             return np.empty((0, *self.dtype.shape), dtype=_numpy_value_dtype(self.dtype))
@@ -867,8 +913,7 @@ class TensorExtensionArray(ExtensionArray):
             return combined.to_numpy_ndarray()
 
         # to_numpy_ndarray() ignores the validity bitmap of the elements and would return
-        # arbitrary values for them. pyarrow's to_numpy() fills them with NaN instead, upcasting
-        # integers to float64, as numpy and pandas do for missing numeric data.
+        # arbitrary values for them. pyarrow's to_numpy() fills them with NaN instead.
         return values.to_numpy(zero_copy_only=False).reshape(len(storage), *self.dtype.shape)
 
     @classmethod

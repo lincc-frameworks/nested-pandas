@@ -108,9 +108,23 @@ def test___init___casts_storage_to_dtype(stack, dtype):
     assert array.to_stack().dtype == np.float32
     assert_array_equal(array.to_stack(), stack.astype(np.float32))
 
-    # Also from an extension array of another tensor type
-    array = TensorExtensionArray(TensorExtensionArray.from_stack(stack).pa_array, dtype=float32_dtype)
-    assert array.dtype == float32_dtype
+
+def test___init___raises_for_dtype_mismatch(stack, dtype):
+    """Test that a tensor array is not cast: the dtype must match its type, if given."""
+    float32_dtype = TensorDtype(pa.fixed_shape_tensor(pa.float32(), list(TENSOR_SHAPE)))
+    pa_array = TensorExtensionArray.from_stack(stack).pa_array
+    with pytest.raises(ValueError, match="does not match the type of values"):
+        TensorExtensionArray(pa_array, dtype=float32_dtype)
+    assert TensorExtensionArray(pa_array, dtype=dtype).dtype == dtype
+
+
+def test___init___raises_for_permutation_with_dtype(stack, dtype):
+    """Test that a non-identity permutation is rejected even when a dtype is given, rather than
+    reinterpreting the permuted storage in C order."""
+    permuted_type = pa.fixed_shape_tensor(pa.float64(), list(TENSOR_SHAPE), permutation=[1, 0])
+    pa_array = pa.ExtensionArray.from_storage(permuted_type, storage_array(stack))
+    with pytest.raises(NotImplementedError, match="permutation"):
+        TensorExtensionArray(pa_array, dtype=dtype)
 
 
 def test___init___raises_for_size_mismatch(stack):
@@ -291,10 +305,27 @@ def test_from_sequence_raises_for_bad_dtype(stack):
 
 
 def test_from_stack(stack, dtype):
-    """Test from_stack infers the dtype and is zero-copy for C-ordered input."""
+    """Test from_stack infers the dtype and, by default, wraps C-ordered input without copying, so the
+    array aliases it."""
     array = TensorExtensionArray.from_stack(stack)
     assert array.dtype == dtype
     assert np.shares_memory(array.to_stack(), stack)
+    stack[0] = -1
+    assert_array_equal(array[0], np.full(TENSOR_SHAPE, -1.0))
+    assert np.shares_memory(TensorExtensionArray.from_sequence(stack).to_stack(), stack)
+
+
+def test_from_stack_copy(stack):
+    """Test that copy=True copies the input, so it can be modified after."""
+    original = stack.copy()
+    array = TensorExtensionArray.from_stack(stack, copy=True)
+    assert not np.shares_memory(array.to_stack(), stack)
+    array_copy = array.copy()
+    stack[0] = -1
+    assert_array_equal(array.to_stack(), original)
+    assert_array_equal(array_copy.to_stack(), original)
+    # from_sequence passes copy through
+    assert not np.shares_memory(TensorExtensionArray.from_sequence(stack, copy=True).to_stack(), stack)
 
 
 def test_from_stack_with_dtype(stack):
@@ -328,7 +359,7 @@ def test_to_stack_zero_copy(array, stack):
     """Test that to_stack is a read-only view for a single chunk without missing values."""
     result = array.to_stack()
     assert_array_equal(result, stack)
-    assert np.shares_memory(result, stack)
+    assert np.shares_memory(result, np.asarray(array.storage.chunk(0).values))
     assert not result.flags.writeable
 
 
@@ -397,15 +428,37 @@ def test_element_null_becomes_nan(element_null_array, stack):
     assert_array_equal(element_null_array[1:][1:].to_stack()[0], stack[2])
 
 
-def test_element_null_int_upcast():
-    """Test that integer tensors with a missing element are read as float."""
-    dtype = TensorDtype(pa.fixed_shape_tensor(pa.int64(), [2, 3]))
-    values = pa.array([0, None, 2, 3, 4, 5], type=pa.int64())
-    storage = pa.FixedSizeListArray.from_arrays(values, 6)
-    array = TensorExtensionArray(pa.ExtensionArray.from_storage(dtype.pyarrow_dtype, storage), dtype=dtype)
-    assert array.to_stack().dtype == np.float64
-    assert array[0].dtype == np.float64
-    assert np.isnan(array[0][0, 1])
+@pytest.mark.parametrize("value_type", [pa.int64(), pa.uint8(), pa.bool_()], ids=str)
+def test_element_null_non_float_raises(value_type):
+    """Test that a missing element in a tensor of a non-float type is rejected on construction."""
+    dtype = TensorDtype(pa.fixed_shape_tensor(value_type, [2]))
+    values = pa.array([False, None, True, True]).cast(value_type)
+    storage = pa.FixedSizeListArray.from_arrays(values, 2)
+    with pytest.raises(ValueError, match="cannot have missing elements"):
+        TensorExtensionArray(storage, dtype=dtype)
+    with pytest.raises(ValueError, match="cannot have missing elements"):
+        TensorExtensionArray(pa.ExtensionArray.from_storage(dtype.pyarrow_dtype, storage))
+    # The offending element is outside the window of a slice, so the slice is fine
+    array = TensorExtensionArray(storage[1:], dtype=dtype)
+    assert len(array) == 1
+    # Casting the storage to float on the way in is fine too
+    float_dtype = TensorDtype(pa.fixed_shape_tensor(pa.float64(), [2]))
+    assert np.isnan(TensorExtensionArray(storage, dtype=float_dtype)[0][1])
+
+
+def test_element_null_under_missing_tensor_is_fine():
+    """Test that null elements under a missing tensor, which pyarrow leaves when building from
+    Python lists, are not missing elements."""
+    dtype = TensorDtype(pa.fixed_shape_tensor(pa.int64(), [2]))
+    storage = pa.array([[0, 1], None, [2, 3]], type=dtype.storage_type)
+    assert storage.values.null_count == 2
+    array = TensorExtensionArray(storage, dtype=dtype)
+    assert array.isna().tolist() == [False, True, False]
+    assert array.to_stack(na_value=-1).tolist() == [[0, 1], [-1, -1], [2, 3]]
+    # And every derived array, which goes through the same check, is fine too
+    assert len(array[1:]) == 2
+    assert array.take([0, -1], allow_fill=True).isna().tolist() == [False, True]
+    assert len(array.dropna()) == 2
 
 
 # dtype and Series construction #
@@ -450,7 +503,7 @@ def test___getitem___with_integer(array, stack):
     assert isinstance(result, np.ndarray)
     assert result.shape == TENSOR_SHAPE
     assert_array_equal(result, stack[1])
-    assert np.shares_memory(result, stack)
+    assert np.shares_memory(result, np.asarray(array.storage.chunk(0).values))
     assert not result.flags.writeable
     assert_array_equal(array[-1], stack[-1])
 
