@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
+from packaging.version import Version
 from pandas.testing import assert_frame_equal
 from upath import UPath
 
@@ -1269,6 +1270,28 @@ def test_to_parquet_tensor_column_roundtrip(engine):
     assert_frame_equal(actual, nf)
     assert isinstance(actual["tensor"].array, TensorExtensionArray)
     np.testing.assert_array_equal(actual["tensor"].array.to_stack(), TENSOR_STACK * 2)
+
+
+@pytest.mark.xfail(
+    Version(pa.__version__) < Version("26"),
+    reason="nullable fixed-size lists do not round-trip parquet before pyarrow 26 "
+    "(apache/arrow#35692, apache/arrow#35697)",
+    raises=pa.ArrowNotImplementedError,
+    strict=True,
+)
+def test_to_parquet_tensor_column_with_missing_roundtrip():
+    """A NestedFrame with a missing tensor survives to_parquet/read_parquet from pyarrow 26 on."""
+    nf = from_pyarrow(_tensor_table())
+    nf["tensor"] = TensorExtensionArray.from_sequence([TENSOR_STACK[0], None, TENSOR_STACK[2], None])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tensor.parquet")
+        nf.to_parquet(path)
+        actual = read_parquet(path)
+
+    assert isinstance(actual["tensor"].array, TensorExtensionArray)
+    assert actual["tensor"].isna().tolist() == [False, True, False, True]
+    assert actual["tensor"].array.dropna().equals(nf["tensor"].array.dropna())
 
 
 def test_read_parquet_tensor_column_permutation():

@@ -50,7 +50,8 @@ def read_parquet(
     As a specialization of the ``pandas.read_parquet`` function, this
     function loads the data via existing ``pyarrow`` or
     ``fsspec.parquet`` methods, and then converts the data to a
-    NestedFrame.
+    NestedFrame. Struct-of-list columns become nested columns and
+    ``fixed_shape_tensor`` columns become tensor columns (``TensorDtype``).
 
     Parameters
     ----------
@@ -839,6 +840,10 @@ def from_pyarrow(
 ) -> NestedFrame:
     """
     Load a pyarrow Table object into a NestedFrame.
+
+    Struct-of-list columns become nested columns and ``fixed_shape_tensor``
+    columns become tensor columns (``TensorDtype``); everything else gets
+    the corresponding ``pandas.ArrowDtype``.
 
     Parameters
     ----------
