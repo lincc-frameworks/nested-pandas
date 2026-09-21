@@ -29,6 +29,8 @@ from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 from nested_pandas.series.utils import is_pa_type_a_list
+from nested_pandas.tensors.display import tensor_cell_html
+from nested_pandas.tensors.dtype import TensorDtype
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -111,8 +113,11 @@ class NestedFrame(pd.DataFrame):
     def _repr_html_(self) -> str | None:
         """Override html representation"""
 
-        # Without nested columns (or empty), just do representation as normal
-        if len(self.nested_columns) == 0 or len(self) == 0:
+        # Tensor columns are rendered as thumbnails, see nested_pandas.tensors.display
+        tensor_columns = [col for col in self.columns if isinstance(self.dtypes[col], TensorDtype)]
+
+        # Without nested or tensor columns (or empty), just do representation as normal
+        if (len(self.nested_columns) == 0 and len(tensor_columns) == 0) or len(self) == 0:
             # This mimics pandas behavior
             if pd.get_option("display.max_rows") is None:
                 # If max_rows is None, just show the header
@@ -172,7 +177,9 @@ class NestedFrame(pd.DataFrame):
         # replace index to ensure proper behavior for duplicate index values
         index_values = html_df.index
         html_df = html_df.reset_index(drop=True)
-        repr = html_df.style.format({col: repack_row for col in self.nested_columns})
+        formatters: dict[Hashable, Callable] = {col: repack_row for col in self.nested_columns}
+        formatters.update({col: tensor_cell_html for col in tensor_columns})
+        repr = html_df.style.format(formatters)
 
         # Create a mapping function to retrieve original index
         def map_true_index(index):

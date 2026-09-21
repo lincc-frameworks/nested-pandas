@@ -1086,6 +1086,34 @@ def test_series_interpolate(array_with_missing):
         pd.Series(array_with_missing).interpolate()
 
 
+def test_astype_from_arrow_dtype(array, stack, dtype):
+    """Test Series.astype(TensorDtype) from an ArrowDtype of the tensor type and of its storage type,
+    which is how tensor columns come back from tools that read parquet with pd.ArrowDtype."""
+    tensor_typed = pd.Series(ArrowExtensionArray(array.pa_array))
+    assert isinstance(tensor_typed.dtype, pd.ArrowDtype)
+    result = tensor_typed.astype(dtype)
+    assert result.dtype == dtype
+    assert_array_equal(result.array.to_stack(), stack)
+    assert tensor_typed.astype("tensor[double, (2, 3)]").array.equals(array)
+
+    storage_typed = pd.Series(ArrowExtensionArray(array.storage))
+    assert storage_typed.astype(dtype).array.equals(array)
+    float32_dtype = TensorDtype(pa.fixed_shape_tensor(pa.float32(), list(TENSOR_SHAPE)))
+    assert storage_typed.astype(float32_dtype).dtype == float32_dtype
+
+
+def test_astype_from_null_arrow_dtype(dtype):
+    """Test astype(TensorDtype) from an arrow null column, which is what an all-missing or empty column
+    without a type looks like, e.g. in a dask meta."""
+    null_typed = pd.Series(pd.array([None, None], dtype=pd.ArrowDtype(pa.null())))
+    result = null_typed.astype(dtype)
+    assert result.dtype == dtype
+    assert result.isna().all() and len(result) == 2
+    assert len(null_typed.iloc[:0].astype(dtype)) == 0
+    with pytest.raises(ValueError, match="Cannot infer TensorDtype"):
+        TensorExtensionArray.from_sequence(pa.nulls(2))
+
+
 # Pandas integration #
 
 

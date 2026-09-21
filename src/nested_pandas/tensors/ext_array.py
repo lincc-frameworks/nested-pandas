@@ -268,7 +268,9 @@ class TensorExtensionArray(ExtensionArray):
         scalars : Sequence
             The sequence of scalars: numpy arrays (or anything convertible to
             them) of the tensor shape, None, pd.NA, or pyarrow scalars. A
-            numpy array of shape ``(n, *shape)`` is accepted as a stack.
+            numpy array of shape ``(n, *shape)`` is accepted as a stack, and
+            a pyarrow or pandas arrow array of the tensor or storage type is
+            wrapped directly.
         dtype : TensorDtype, pa.FixedShapeTensorType, pd.ArrowDtype or str, optional
             dtype of the resulting array. Inferred from the first non-missing
             element if not given.
@@ -282,8 +284,15 @@ class TensorExtensionArray(ExtensionArray):
             if dtype is None or dtype == scalars.dtype:
                 return scalars
             return scalars.astype(dtype)
+        if isinstance(scalars, ArrowExtensionArray):
+            # E.g. Series.astype(TensorDtype) from an ArrowDtype of the tensor or its storage type
+            scalars = scalars._pa_array
         if isinstance(scalars, pa.Array | pa.ChunkedArray):
-            return cls(scalars, dtype=dtype)
+            if pa.types.is_null(scalars.type):
+                # An all-missing column of no particular type, e.g. an empty dask meta
+                scalars = [None] * len(scalars)
+            else:
+                return cls(scalars, dtype=dtype)
         if isinstance(scalars, np.ndarray) and scalars.dtype != np.object_ and scalars.ndim >= 2:
             if dtype is not None and scalars.ndim == dtype.ndim:
                 # A single tensor (possibly of the wrong shape, which is reported below), e.g. pandas
