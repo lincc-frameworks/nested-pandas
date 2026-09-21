@@ -1274,9 +1274,10 @@ def test_to_parquet_tensor_column_roundtrip(engine):
 
 @pytest.mark.xfail(
     Version(pa.__version__) < Version("26"),
-    reason="nullable fixed-size lists do not round-trip parquet before pyarrow 26 "
-    "(apache/arrow#35692, apache/arrow#35697)",
-    raises=pa.ArrowNotImplementedError,
+    reason="nullable fixed-size lists do not round-trip parquet before pyarrow 26: older writers reject "
+    "them (apache/arrow#35692) and newer ones write the null slots with length zero, which fails to "
+    "read back (apache/arrow#35697)",
+    raises=(pa.ArrowNotImplementedError, pa.ArrowInvalid),
     strict=True,
 )
 def test_to_parquet_tensor_column_with_missing_roundtrip():
