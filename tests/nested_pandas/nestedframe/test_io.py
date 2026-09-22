@@ -11,10 +11,11 @@ import pyarrow.compute as pc
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
+from packaging.version import Version
 from pandas.testing import assert_frame_equal
 from upath import UPath
 
-from nested_pandas import NestedFrame, read_parquet
+from nested_pandas import NestedFrame, TensorDtype, read_parquet
 from nested_pandas.datasets import generate_data
 from nested_pandas.nestedframe.io import (
     FSSPEC_BLOCK_SIZE,
@@ -28,6 +29,7 @@ from nested_pandas.nestedframe.io import (
     _transform_read_parquet_data_arg,
     from_pyarrow,
 )
+from nested_pandas.tensors import TensorExtensionArray
 
 
 def test_read_parquet(nested_parquet_path):
@@ -1144,3 +1146,182 @@ def test_datafusion_filters_to_expr_errors(filters, match):
     """Malformed filters are rejected with the messages the pyarrow path uses."""
     with pytest.raises(ValueError, match=match):
         _datafusion_filters_to_expr(filters)
+
+
+# ------------------------------------------------------------------------------
+# Fixed-shape tensor columns
+# ------------------------------------------------------------------------------
+
+TENSOR_STACK = np.arange(24, dtype=np.float64).reshape(4, 2, 3)
+"""Four (2, 3) tensors, the tensor column of the tests below"""
+
+
+def _tensor_table(permutation: list[int] | None = None) -> pa.Table:
+    """A table with a tensor column, a plain column and a nested column.
+
+    With ``permutation=None`` the tensor column is built by pyarrow's
+    ``from_numpy_ndarray``, which stamps an identity permutation on the type,
+    just like a file written from numpy would have. With an explicit
+    permutation the storage is reinterpreted with that (non-trivial) layout.
+    """
+    if permutation is None:
+        tensor = pa.FixedShapeTensorArray.from_numpy_ndarray(TENSOR_STACK)
+        assert tensor.type.permutation == [0, 1]
+    else:
+        tensor_type = pa.fixed_shape_tensor(pa.float64(), TENSOR_STACK.shape[1:], permutation=permutation)
+        tensor = pa.ExtensionArray.from_storage(
+            tensor_type, pa.FixedSizeListArray.from_arrays(TENSOR_STACK.ravel(), TENSOR_STACK[0].size)
+        )
+    return pa.table(
+        {
+            "a": [1, 2, 3, 4],
+            "tensor": tensor,
+            "nested": pa.StructArray.from_arrays(
+                [
+                    pa.array([[1.0], [2.0, 3.0], [], [4.0]]),
+                    pa.array([[0.5], [0.6, 0.7], [], [0.8]]),
+                ],
+                names=["t", "flux"],
+            ),
+        }
+    )
+
+
+def _assert_tensor_column(nf: NestedFrame) -> None:
+    """The "tensor" column of ``nf`` is a TensorExtensionArray holding TENSOR_STACK."""
+    assert isinstance(nf["tensor"].dtype, TensorDtype)
+    assert nf["tensor"].dtype == TensorDtype(pa.fixed_shape_tensor(pa.float64(), [2, 3]))
+    # The identity permutation from_numpy_ndarray writes is normalised away
+    assert nf["tensor"].dtype.pyarrow_dtype.permutation is None
+    assert isinstance(nf["tensor"].array, TensorExtensionArray)
+    np.testing.assert_array_equal(nf["tensor"].array.to_stack(), TENSOR_STACK)
+
+
+def test_from_pyarrow_tensor_column():
+    """from_pyarrow loads a fixed-shape tensor column as a TensorExtensionArray."""
+    nf = from_pyarrow(_tensor_table())
+
+    assert nf.columns.tolist() == ["a", "tensor", "nested"]
+    assert nf["a"].dtype == pd.ArrowDtype(pa.int64())
+    assert nf.nested_columns == ["nested"]
+    _assert_tensor_column(nf)
+
+
+def test_from_pyarrow_tensor_column_autocast_list():
+    """autocast_list packs list columns, but leaves tensor columns alone."""
+    table = _tensor_table().append_column("lists", pa.array([[1.0], [2.0, 3.0], [], [4.0]]))
+    nf = from_pyarrow(table, autocast_list=True)
+
+    assert nf.nested_columns == ["nested", "lists"]
+    _assert_tensor_column(nf)
+
+
+@pytest.mark.parametrize("engine", ["pyarrow", "datafusion"])
+def test_read_parquet_tensor_column(engine):
+    """read_parquet loads a fixed-shape tensor column as a TensorExtensionArray with either engine."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tensor.parquet")
+        pq.write_table(_tensor_table(), path)
+
+        nf = read_parquet(path, engine=engine)
+        _assert_tensor_column(nf)
+        assert nf.nested_columns == ["nested"]
+
+        # Column selection keeps the tensor type as well
+        projected = read_parquet(path, columns=["tensor", "nested.t"], engine=engine)
+        assert projected.columns.tolist() == ["tensor", "nested"]
+        _assert_tensor_column(projected)
+
+        # Filters too, the tensor rows follow the selected rows
+        filtered = read_parquet(path, filters=[("a", ">", 2)], engine=engine)
+        assert isinstance(filtered["tensor"].array, TensorExtensionArray)
+        np.testing.assert_array_equal(filtered["tensor"].array.to_stack(), TENSOR_STACK[2:])
+
+
+def test_read_parquet_tensor_column_engines_agree():
+    """The "datafusion" engine returns the same frame as the "pyarrow" engine for tensor columns."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tensor.parquet")
+        pq.write_table(_tensor_table(), path)
+
+        for columns in [None, ["tensor"], ["a", "tensor", "nested.flux"]]:
+            assert_frame_equal(
+                read_parquet(path, columns=columns, engine="datafusion"),
+                read_parquet(path, columns=columns, engine="pyarrow"),
+            )
+
+
+@pytest.mark.parametrize("engine", ["pyarrow", "datafusion"])
+def test_to_parquet_tensor_column_roundtrip(engine):
+    """A NestedFrame with a tensor column survives to_parquet/read_parquet.
+
+    Missing tensors are not covered: pyarrow's parquet writer rejects any
+    fixed-size list with null slots ("Lists with non-zero length null
+    components are not supported"), tensor extension type or not.
+    """
+    nf = from_pyarrow(_tensor_table())
+    nf["tensor"] = TensorExtensionArray.from_stack(TENSOR_STACK * 2)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tensor.parquet")
+        nf.to_parquet(path)
+        actual = read_parquet(path, engine=engine)
+
+    assert_frame_equal(actual, nf)
+    assert isinstance(actual["tensor"].array, TensorExtensionArray)
+    np.testing.assert_array_equal(actual["tensor"].array.to_stack(), TENSOR_STACK * 2)
+
+
+@pytest.mark.xfail(
+    Version(pa.__version__) < Version("26"),
+    reason="nullable fixed-size lists do not round-trip parquet before pyarrow 26: older writers reject "
+    "them (apache/arrow#35692) and newer ones write the null slots with length zero, which fails to "
+    "read back (apache/arrow#35697)",
+    raises=(pa.ArrowNotImplementedError, pa.ArrowInvalid),
+    strict=True,
+)
+def test_to_parquet_tensor_column_with_missing_roundtrip():
+    """A NestedFrame with a missing tensor survives to_parquet/read_parquet from pyarrow 26 on."""
+    nf = from_pyarrow(_tensor_table())
+    nf["tensor"] = TensorExtensionArray.from_sequence([TENSOR_STACK[0], None, TENSOR_STACK[2], None])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tensor.parquet")
+        nf.to_parquet(path)
+        actual = read_parquet(path)
+
+    assert isinstance(actual["tensor"].array, TensorExtensionArray)
+    assert actual["tensor"].isna().tolist() == [False, True, False, True]
+    assert actual["tensor"].array.dropna().equals(nf["tensor"].array.dropna())
+
+
+def test_read_parquet_tensor_column_permutation():
+    """A tensor column with a non-trivial permutation is rejected, naming the column.
+
+    The error explains how to rebuild the column without the permutation, and
+    that recipe must work.
+    """
+    match = "Column 'tensor' has a fixed_shape_tensor type with a non-trivial permutation \\[1, 0\\]"
+    table = _tensor_table(permutation=[1, 0])
+
+    with pytest.raises(NotImplementedError, match=match):
+        from_pyarrow(table)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tensor.parquet")
+        pq.write_table(table, path)
+        for engine in ["pyarrow", "datafusion"]:
+            with pytest.raises(NotImplementedError, match=match):
+                read_parquet(path, engine=engine)
+        # Other columns are still readable
+        assert read_parquet(path, columns=["a", "nested.t"]).columns.tolist() == ["a", "nested"]
+
+    # The recipe from the error message: the permutation is applied by pyarrow when converting
+    # to numpy, so the rebuilt column holds the transposed tensors
+    ndarray = table.column("tensor").combine_chunks().to_numpy_ndarray()
+    tensors = pa.FixedShapeTensorArray.from_numpy_ndarray(np.ascontiguousarray(ndarray))
+    table = table.set_column(table.schema.get_field_index("tensor"), "tensor", tensors)
+    nf = from_pyarrow(table)
+
+    assert nf["tensor"].dtype == TensorDtype(pa.fixed_shape_tensor(pa.float64(), [3, 2]))
+    np.testing.assert_array_equal(nf["tensor"].array.to_stack(), TENSOR_STACK.transpose(0, 2, 1))

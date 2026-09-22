@@ -18,6 +18,7 @@ from upath import UPath
 from ..series.ext_array import NestedExtensionArray
 from ..series.packer import pack_lists
 from ..series.utils import is_pa_type_a_list, table_to_struct_array
+from ..tensors.ext_array import TensorExtensionArray
 from .core import NestedFrame
 
 # Use smaller block size for these FSSPEC filesystems.
@@ -49,7 +50,8 @@ def read_parquet(
     As a specialization of the ``pandas.read_parquet`` function, this
     function loads the data via existing ``pyarrow`` or
     ``fsspec.parquet`` methods, and then converts the data to a
-    NestedFrame.
+    NestedFrame. Struct-of-list columns become nested columns and
+    ``fixed_shape_tensor`` columns become tensor columns (``TensorDtype``).
 
     Parameters
     ----------
@@ -839,6 +841,10 @@ def from_pyarrow(
     """
     Load a pyarrow Table object into a NestedFrame.
 
+    Struct-of-list columns become nested columns and ``fixed_shape_tensor``
+    columns become tensor columns (``TensorDtype``); everything else gets
+    the corresponding ``pandas.ArrowDtype``.
+
     Parameters
     ----------
     table: pa.Table
@@ -897,8 +903,9 @@ def from_pyarrow(
             ignore_metadata=not use_pandas_metadata,
         )
     )
-    # Replace struct columns with NestedExtensionArrays built from the table.
-    df = _cast_struct_cols_to_nested(df, reject_nesting, table)
+    # Replace struct columns with NestedExtensionArrays and fixed-shape tensor
+    # columns with TensorExtensionArrays, both built from the table.
+    df = _cast_cols_to_extension_arrays(df, reject_nesting, table)
 
     # If autocast_list is True, cast list columns to NestedDTypes
     if autocast_list:
@@ -907,36 +914,62 @@ def from_pyarrow(
     return df
 
 
-def _cast_struct_cols_to_nested(df: NestedFrame, reject_nesting: list[str], table: pa.Table) -> NestedFrame:
-    """Replace struct columns of ``df`` with nested columns built from ``table``.
+def _cast_cols_to_extension_arrays(
+    df: NestedFrame, reject_nesting: list[str], table: pa.Table
+) -> NestedFrame:
+    """Replace struct and fixed-shape tensor columns of ``df`` with nested-pandas' extension arrays.
 
-    The nested columns are constructed straight from the pyarrow ``table``
-    rather than from the ``df`` columns produced by ``Table.to_pandas``.
-    Converting a struct column that holds a ``null``-typed (all-null) field via
-    ``types_mapper=pd.ArrowDtype`` corrupts it
-    (https://github.com/apache/arrow/issues/44881).
+    Struct columns become nested columns and ``pa.FixedShapeTensorType``
+    columns become tensor columns, both built straight from the pyarrow
+    ``table`` rather than from the ``df`` columns produced by
+    ``Table.to_pandas``. Converting a struct column that holds a
+    ``null``-typed (all-null) field via ``types_mapper=pd.ArrowDtype``
+    corrupts it (https://github.com/apache/arrow/issues/44881).
     """
     for field in table.schema:
-        if field.name in reject_nesting:
-            continue
-
-        if not NestedExtensionArray.is_input_pa_type_supported(field.type):
-            continue
-
-        try:
-            # Attempt to cast Struct to NestedDType
-            df[field.name] = NestedExtensionArray(table.column(field.name))
-        except ValueError as err:
-            # If cast fails, the struct likely does not fit nested-pandas
-            # criteria for a valid nested column
-            raise ValueError(
-                f"Column '{field.name}' is a Struct, but an attempt to cast it to a NestedDType failed. "
-                "This is likely due to the struct not meeting the requirements for a nested column "
-                "(all fields should be equal length). To proceed, you may add the column to the "
-                "`reject_nesting` argument of the read_parquet function to skip the cast attempt:"
-                f" read_parquet(..., reject_nesting=['{field.name}'])"
-            ) from err
+        if isinstance(field.type, pa.FixedShapeTensorType):
+            df[field.name] = _tensor_column(field.name, table.column(field.name))
+        elif field.name not in reject_nesting and NestedExtensionArray.is_input_pa_type_supported(field.type):
+            df[field.name] = _nested_column(field.name, table.column(field.name))
     return df
+
+
+def _tensor_column(name: str, column: pa.ChunkedArray) -> TensorExtensionArray:
+    """Build a tensor column from a ``fixed_shape_tensor`` chunked array, explaining a rejected permutation.
+
+    Permutations other than the identity are not supported by TensorDtype; the error says how to rebuild
+    the column without one.
+    """
+    try:
+        return TensorExtensionArray(column)
+    except NotImplementedError as err:
+        # TensorDtype rejects non-trivial permutations, add the column and a way out
+        raise NotImplementedError(
+            f"Column '{name}' has a fixed_shape_tensor type with a non-trivial permutation "
+            f"{list(column.type.permutation)}, which nested-pandas does not support: {column.type}. "
+            "Please open an issue on the nested-pandas github if you need this feature. As a workaround, "
+            "read the data with pyarrow, convert the column to a C-ordered numpy array, which applies "
+            "the permutation, rebuild the column without one and pass the table to from_pyarrow():\n"
+            f"    ndarray = table.column('{name}').combine_chunks().to_numpy_ndarray()\n"
+            "    tensors = pa.FixedShapeTensorArray.from_numpy_ndarray("
+            "np.ascontiguousarray(ndarray))\n"
+            f"    table = table.set_column(table.schema.get_field_index('{name}'), '{name}', tensors)"
+        ) from err
+
+
+def _nested_column(name: str, column: pa.ChunkedArray) -> NestedExtensionArray:
+    """Build a nested column from a struct-of-lists chunked array, explaining a failed cast."""
+    try:
+        return NestedExtensionArray(column)
+    except ValueError as err:
+        # If cast fails, the struct likely does not fit nested-pandas criteria for a valid nested column
+        raise ValueError(
+            f"Column '{name}' is a Struct, but an attempt to cast it to a NestedDType failed. "
+            "This is likely due to the struct not meeting the requirements for a nested column "
+            "(all fields should be equal length). To proceed, you may add the column to the "
+            "`reject_nesting` argument of the read_parquet function to skip the cast attempt:"
+            f" read_parquet(..., reject_nesting=['{name}'])"
+        ) from err
 
 
 def _cast_list_cols_to_nested(df):
