@@ -28,6 +28,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
+from nested_pandas.series.utils import is_pa_type_a_list
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -634,23 +635,26 @@ class NestedFrame(pd.DataFrame):
             raise ValueError("No columns were assigned as list columns.")
 
         # Pack list columns into a nested column
-        if len(df) == 0:
-            # if the dataframe is empty, just return an empty nested column
-            # since there are no iterable values to pack
+        list_columns_are_list_dtype = all(
+            isinstance(df[col].dtype, pd.ArrowDtype) and is_pa_type_a_list(df[col].dtype.pyarrow_dtype)
+            for col in list_columns
+        )
+        if len(df) == 0 and not list_columns_are_list_dtype:
             packed_df = NestedFrame().join_nested(df[list_columns], name=name)
             packed_df.index.name = df.index.name
         else:
-            # Check that each column has iterable elements
-            for col in list_columns:
-                # Check if the column is iterable based on its first value.
-                # This is a simple heuristic but infers more than its dtype
-                # which will probably be an object.
-                sample_val = df[col].iloc[0]
-                if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, str | bytes):
-                    raise ValueError(
-                        f"Cannot pack column {col} which does not contain an iterable list based "
-                        "on its first value, {sample_val}."
-                    )
+            if len(df) > 0:
+                # Check that each column has iterable elements
+                for col in list_columns:
+                    # Check if the column is iterable based on its first value.
+                    # This is a simple heuristic but infers more than its dtype
+                    # which will probably be an object.
+                    sample_val = df[col].iloc[0]
+                    if not hasattr(sample_val, "__iter__") and not isinstance(sample_val, str | bytes):
+                        raise ValueError(
+                            f"Cannot pack column {col} which does not contain an iterable list based "
+                            "on its first value, {sample_val}."
+                        )
             packed_df = pack_lists(df[list_columns])
             packed_df.name = name
 

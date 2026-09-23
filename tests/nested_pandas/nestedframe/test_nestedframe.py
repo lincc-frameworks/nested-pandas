@@ -825,6 +825,27 @@ def test_from_lists():
     assert list(res.nested_columns) == ["nested"]
     assert res.shape == (0, 3)
 
+    # An empty dataframe whose list columns carry a pyarrow list dtype should produce the
+    # same nested dtype as an equivalent non-empty dataframe (regression test for a bug where
+    # the empty case left the columns double-nested, e.g. `e: list<double>` instead of `e: double`).
+    empty_typed_nf = NestedFrame(
+        {
+            "c": pd.array([], dtype=pd.ArrowDtype(pa.int64())),
+            "d": pd.array([], dtype=pd.ArrowDtype(pa.int64())),
+            "e": pd.array([], dtype=pd.ArrowDtype(pa.list_(pa.float64()))),
+        }
+    )
+    nonempty_typed_nf = NestedFrame(
+        {
+            "c": pd.array([1], dtype=pd.ArrowDtype(pa.int64())),
+            "d": pd.array([2], dtype=pd.ArrowDtype(pa.int64())),
+            "e": pd.array([[1.0, 2.0]], dtype=pd.ArrowDtype(pa.list_(pa.float64()))),
+        }
+    )
+    empty_res = NestedFrame.from_lists(empty_typed_nf, base_columns=["c", "d"], list_columns=["e"])
+    nonempty_res = NestedFrame.from_lists(nonempty_typed_nf, base_columns=["c", "d"], list_columns=["e"])
+    assert empty_res.dtypes["nested"] == nonempty_res.dtypes["nested"]
+
     nf = NestedFrame(
         {"c": [1, 2, 3], "d": [2, 4, 6], "e": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}, index=[0, 1, 2]
     )
