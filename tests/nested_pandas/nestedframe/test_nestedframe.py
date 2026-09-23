@@ -1492,6 +1492,43 @@ def test_map_rows_infer_nesting():
     assert list(result.lc.nest.columns) == ["flux_quantiles", "labels"]
 
 
+def test_map_rows_list_expands_nested_columns():
+    """Regression test for #555: a bare nested-column name in a list should expand like the str branch."""
+    nf = NestedFrame(
+        data={"a": [1, 2, 3]},
+        index=pd.Index([0, 1, 2], name="idx"),
+    )
+    to_pack = pd.DataFrame(
+        data={
+            "t": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "flux": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0],
+        },
+        index=pd.Index([0, 0, 0, 1, 1, 1, 2, 2, 2], name="idx"),
+    )
+    nf = nf.join_nested(to_pack, "nested")
+
+    def max_flux(row):
+        return row["nested.flux"].max()
+
+    result_str = nf.map_rows(max_flux, columns="nested", output_names="max_flux")
+    result_list = nf.map_rows(max_flux, columns=["nested"], output_names="max_flux")
+
+    assert result_str.equals(result_list)
+    assert list(result_list["max_flux"]) == [30.0, 60.0, 90.0]
+
+    result_list_mixed = nf.map_rows(
+        lambda row: row["nested.flux"].max() - row["a"],
+        columns=["a", "nested"],
+        output_names="result",
+    )
+    result_str_mixed = nf.map_rows(
+        lambda row: row["nested.flux"].max() - row["a"],
+        columns=["a", "nested.t", "nested.flux"],
+        output_names="result",
+    )
+    assert result_list_mixed.equals(result_str_mixed)
+
+
 def test_map_rows_arg_errors():
     """Test that map_rows errors based on non-column args trigger as expected"""
 
