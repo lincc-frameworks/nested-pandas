@@ -2179,6 +2179,13 @@ class NestedFrame(pd.DataFrame):
         elif isinstance(columns, str):
             # If it's a nested column, grab all sub-columns
             columns = self.get_subcolumns(columns) if columns in self.nested_columns else [columns]
+        else:
+            # Expand any bare nested-column names in the list to their sub-columns
+            columns = [
+                sub
+                for col in columns
+                for sub in (self.get_subcolumns(col) if col in self.nested_columns else [col])
+            ]
 
         # Check arg validity
         requested_columns = []
