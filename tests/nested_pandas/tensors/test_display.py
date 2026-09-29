@@ -4,7 +4,7 @@ import pytest
 
 from nested_pandas import NestedFrame
 from nested_pandas.tensors import TensorExtensionArray
-from nested_pandas.tensors.display import tensor_cell_html
+from nested_pandas.tensors.display import MAX_RENDERED, tensor_cell_html, tensor_column_formatter
 
 pytest.importorskip("matplotlib")
 
@@ -64,3 +64,29 @@ def test_nestedframe_repr_html_truncates_tensor_rows():
         html = nf._repr_html_()
     assert html.count('title="colorbar"') < 30
     assert "30 rows x 1 columns" in html
+
+
+def test_tensor_column_formatter_caps_thumbnails():
+    """Test that a column formatter renders MAX_RENDERED thumbnails and placeholders after, without
+    counting cells that show values or a descriptor."""
+    formatter = tensor_column_formatter()
+    big = np.zeros((4, 4), dtype=np.float32)
+    outputs = [formatter(cell) for cell in [np.zeros((2, 2))] + [big] * (MAX_RENDERED + 2) + [None]]
+    assert outputs[0].startswith("<pre")  # values, not counted
+    assert all('title="colorbar"' in html for html in outputs[1 : MAX_RENDERED + 1])
+    assert all("not rendered in preview" in html for html in outputs[MAX_RENDERED + 1 : -1])
+    assert outputs[-1] == "&lt;NA&gt;"
+    assert "[2×3×3] float32" in formatter(np.zeros((2, 3, 3), dtype=np.float32))
+    assert "not rendered in preview" in tensor_column_formatter(max_rendered=0)(big)
+
+
+def test_nestedframe_repr_html_caps_thumbnails_per_column():
+    """Test that each tensor column of a NestedFrame repr renders MAX_RENDERED thumbnails, then
+    placeholders, independently of the other columns."""
+    n = MAX_RENDERED + 3
+    array = TensorExtensionArray.from_stack(np.zeros((n, 4, 4), dtype=np.float32))
+    nf = NestedFrame({"t": array, "u": array.copy()})
+    html = nf._repr_html_()
+    assert html.count('title="colorbar"') == 2 * MAX_RENDERED
+    assert html.count("not rendered in preview") == 2 * 3
+    assert f"{n} rows x 2 columns" in html

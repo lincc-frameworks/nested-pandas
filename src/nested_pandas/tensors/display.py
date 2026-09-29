@@ -5,8 +5,10 @@ their values, one line per row. Larger 2-d tensors render as inline PNG
 thumbnails through the viridis colormap, with a colorbar beside each
 thumbnail labelled with the displayed value range, and larger tensors of
 any other dimensionality show the compact ``[h×w] dtype`` descriptor.
-:func:`tensor_cell_html` formats one cell of a ``NestedFrame`` HTML repr,
-where pandas' own row truncation bounds how many cells are rendered.
+:func:`tensor_cell_html` formats one cell that way. A ``NestedFrame`` HTML
+repr formats each tensor column with :func:`tensor_column_formatter`, which
+renders thumbnails for the first :data:`MAX_RENDERED` cells that would get
+one and shows a placeholder for the rest, so a wide repr stays small.
 Thumbnails need matplotlib; without it, those cells degrade to the
 descriptor text.
 """
@@ -16,17 +18,24 @@ from __future__ import annotations
 import base64
 import html as html_module
 import io
+from collections.abc import Callable
 from functools import cache
+from typing import Any
 
 import numpy as np
 
 from nested_pandas.tensors.ext_array import TENSOR_FORMATTING_MAX_ELEMENTS
 
 __all__ = [
+    "MAX_RENDERED",
     "TENSOR_CMAP",
     "render_png_base64",
     "tensor_cell_html",
+    "tensor_column_formatter",
 ]
+
+MAX_RENDERED = 10
+"""Number of thumbnails rendered per tensor column in a NestedFrame HTML repr."""
 
 TENSOR_CMAP = "viridis"
 """Matplotlib colormap of the thumbnails."""
@@ -42,6 +51,7 @@ _COLORBAR_LABELS_STYLE = (
     f"height:{_THUMBNAIL_SIZE}px;font-size:9px;line-height:1;font-family:monospace;"
 )
 _CELL_STYLE = "display:inline-flex;align-items:flex-start;gap:3px;"
+_PLACEHOLDER_HTML = '<span style="color:#888;">&lt;not rendered in preview&gt;</span>'
 _VALUES_STYLE = "margin:0;font-family:monospace;text-align:left;"
 
 
@@ -122,6 +132,11 @@ def _values_html(value: np.ndarray) -> str:
     return f'<pre style="{_VALUES_STYLE}">{html_module.escape(np.array2string(value))}</pre>'
 
 
+def _wants_thumbnail(value: np.ndarray) -> bool:
+    """Whether a tensor is rendered as a thumbnail: 2-d and too large to show its values."""
+    return value.ndim == 2 and value.size > TENSOR_FORMATTING_MAX_ELEMENTS
+
+
 def _cell_html(value: np.ndarray) -> str:
     """HTML for a single tensor: its values if small, else a thumbnail with a colorbar if 2-d, else
     descriptor text."""
@@ -158,3 +173,36 @@ def tensor_cell_html(value) -> str:
     if not isinstance(value, np.ndarray):
         return "&lt;NA&gt;"
     return _cell_html(value)
+
+
+def tensor_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any], str]:
+    """Cell HTML formatter for one tensor column of a ``NestedFrame`` HTML repr.
+
+    Like :func:`tensor_cell_html`, but only the first ``max_rendered``
+    cells that would get a thumbnail are rendered; later ones show a
+    placeholder instead, which keeps a long repr from embedding one PNG per
+    row. Cells that show their values or a descriptor are not counted. A
+    new formatter is needed for every repr, since it counts the cells it
+    has rendered.
+
+    Parameters
+    ----------
+    max_rendered : int, default MAX_RENDERED
+        Number of thumbnails to render.
+
+    Returns
+    -------
+    Callable
+        Formatter taking a cell value and returning its HTML.
+    """
+    rendered = 0
+
+    def format_cell(value) -> str:
+        nonlocal rendered
+        if isinstance(value, np.ndarray) and _wants_thumbnail(value):
+            if rendered >= max_rendered:
+                return _PLACEHOLDER_HTML
+            rendered += 1
+        return tensor_cell_html(value)
+
+    return format_cell
