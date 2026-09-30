@@ -7,8 +7,9 @@ thumbnail labelled with the displayed value range, and larger tensors of
 any other dimensionality show the compact ``[h×w] dtype`` descriptor.
 :func:`tensor_cell_html` formats one cell that way. A ``NestedFrame`` HTML
 repr formats each tensor column with :func:`tensor_column_formatter`, which
-renders thumbnails for the first :data:`MAX_RENDERED` cells that would get
-one and shows a placeholder for the rest, so a wide repr stays small.
+renders thumbnails for the first :data:`~nested_pandas.display.MAX_RENDERED`
+cells that would get one and shows a placeholder for the rest, so a long
+repr stays small.
 Thumbnails need matplotlib; without it, those cells degrade to the
 descriptor text.
 """
@@ -24,18 +25,15 @@ from typing import Any
 
 import numpy as np
 
+from nested_pandas.display import MAX_RENDERED, capped_column_formatter
 from nested_pandas.tensors.ext_array import TENSOR_FORMATTING_MAX_ELEMENTS
 
 __all__ = [
-    "MAX_RENDERED",
     "TENSOR_CMAP",
     "render_png_base64",
     "tensor_cell_html",
     "tensor_column_formatter",
 ]
-
-MAX_RENDERED = 10
-"""Number of thumbnails rendered per tensor column in a NestedFrame HTML repr."""
 
 TENSOR_CMAP = "viridis"
 """Matplotlib colormap of the thumbnails."""
@@ -51,7 +49,6 @@ _COLORBAR_LABELS_STYLE = (
     f"height:{_THUMBNAIL_SIZE}px;font-size:9px;line-height:1;font-family:monospace;"
 )
 _CELL_STYLE = "display:inline-flex;align-items:flex-start;gap:3px;"
-_PLACEHOLDER_HTML = '<span style="color:#888;">&lt;not rendered in preview&gt;</span>'
 _VALUES_STYLE = "margin:0;font-family:monospace;text-align:left;"
 
 
@@ -195,14 +192,8 @@ def tensor_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any],
     Callable
         Formatter taking a cell value and returning its HTML.
     """
-    rendered = 0
 
-    def format_cell(value) -> str:
-        nonlocal rendered
-        if isinstance(value, np.ndarray) and _wants_thumbnail(value):
-            if rendered >= max_rendered:
-                return _PLACEHOLDER_HTML
-            rendered += 1
-        return tensor_cell_html(value)
+    def is_thumbnail(value: Any) -> bool:
+        return isinstance(value, np.ndarray) and _wants_thumbnail(value)
 
-    return format_cell
+    return capped_column_formatter(tensor_cell_html, is_thumbnail, max_rendered)

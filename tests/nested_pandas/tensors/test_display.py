@@ -3,8 +3,9 @@ import pandas as pd
 import pytest
 
 from nested_pandas import NestedFrame
+from nested_pandas.display import MAX_RENDERED
 from nested_pandas.tensors import TensorExtensionArray
-from nested_pandas.tensors.display import MAX_RENDERED, tensor_cell_html, tensor_column_formatter
+from nested_pandas.tensors.display import tensor_cell_html, tensor_column_formatter
 
 pytest.importorskip("matplotlib")
 

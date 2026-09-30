@@ -27,6 +27,24 @@ def test_init_nestedseries():
     assert nested_series.index.equals(pd.Index([0, 1, 2]))
 
 
+def test_repr_html():
+    """Test the HTML repr renders nested cells like a one-column NestedFrame, with the same cap, and
+    is absent for other dtypes."""
+    from nested_pandas import NestedFrame
+    from nested_pandas.display import MAX_RENDERED
+
+    n = MAX_RENDERED + 2
+    base = NestedFrame(data={"c": [[1, 2, 3]] * n}, index=range(10, 10 + n)).nest_lists(["c"], name="nested")
+    series = base["nested"]
+    assert isinstance(series, NestedSeries)
+    html = series._repr_html_()
+    assert html.count("+2 rows") == MAX_RENDERED
+    assert html.count("not rendered in preview") == 2
+    assert ">11</th>" in html  # the index is kept
+    assert f"{n} rows x 1 columns" in html
+    assert NestedSeries([1, 2, 3])._repr_html_() is None
+
+
 def test_nestedonly_decorator():
     """Test nested_only decorator."""
 

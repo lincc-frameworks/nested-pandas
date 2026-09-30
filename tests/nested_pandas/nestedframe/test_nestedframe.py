@@ -107,6 +107,22 @@ def test_html_repr_small_rows():
     assert "+1 rows" not in html
 
 
+def test_html_repr_caps_rendered_nested_cells():
+    """Make sure each nested column renders MAX_RENDERED cells as sub-frames and placeholders after,
+    with empty cells not counted."""
+    from nested_pandas.display import MAX_RENDERED
+
+    n = MAX_RENDERED + 3
+    lists = [[1, 2, 3]] * n
+    lists[0] = []
+    base = NestedFrame(data={"a": range(n), "c": lists, "d": lists}, index=range(n))
+    base = base.nest_lists(columns=["c"], name="nested_c").nest_lists(columns=["d"], name="nested_d")
+    html = base._repr_html_()
+    assert html.count("+2 rows") == 2 * MAX_RENDERED
+    assert html.count("not rendered in preview") == 2 * 2
+    assert f"{n} rows x 3 columns" in html
+
+
 def test_all_columns():
     """Test the all_columns function"""
 
