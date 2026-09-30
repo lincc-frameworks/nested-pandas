@@ -1,10 +1,11 @@
 """HTML rendering for tensor columns.
 
 Small tensors, up to :data:`TENSOR_FORMATTING_MAX_ELEMENTS` elements, show
-their values, one line per row. Larger 2-d tensors render as inline PNG
-thumbnails through the viridis colormap, with a colorbar beside each
-thumbnail labelled with the displayed value range, and larger tensors of
-any other dimensionality show the compact ``[h×w] dtype`` descriptor.
+their values, one line per row. Larger 1-d tensors render as an inline PNG
+line plot against their index, larger 2-d tensors as inline PNG thumbnails through the viridis
+colormap, with a colorbar beside each thumbnail labelled with the displayed
+value range, and larger tensors of any other dimensionality show the
+compact ``[h×w] dtype`` descriptor.
 :func:`tensor_cell_html` formats one cell that way. A ``NestedFrame`` HTML
 repr formats each tensor column with :func:`tensor_column_formatter`, which
 renders thumbnails for the first :data:`~nested_pandas.display.MAX_RENDERED`
@@ -51,6 +52,14 @@ _COLORBAR_LABELS_STYLE = (
 _CELL_STYLE = "display:inline-flex;align-items:flex-start;gap:3px;"
 _VALUES_STYLE = "margin:0;font-family:monospace;text-align:left;"
 
+# Line plot of a 1-d tensor: a small figure with index and value axes
+_PLOT_SIZE_INCHES = (2.4, 1.2)
+_PLOT_DPI = 96
+_PLOT_STYLE = "height:96px;"
+_PLOT_COLOR = "#21918c"  # viridis mid-range, to match the thumbnails
+_PLOT_FONT_SIZE = 6
+_PLOT_AXES_COLOR = "#888888"  # readable on light and dark notebook themes
+
 
 def _descriptor_text(value: np.ndarray) -> str:
     return f"[{'×'.join(str(size) for size in value.shape)}] {value.dtype}"
@@ -76,6 +85,31 @@ def _imsave_png_base64(data: np.ndarray, cmap: str, vmin: float, vmax: float) ->
         return None
     buffer = io.BytesIO()
     mpl_image.imsave(buffer, data, cmap=cmap, vmin=vmin, vmax=vmax, origin="lower", format="png")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def _plot_png_base64(values: np.ndarray) -> str | None:
+    """Base64 PNG line plot of a 1-d array against its index, with sparse axes, or None without
+    matplotlib."""
+    try:
+        from matplotlib.figure import Figure
+        from matplotlib.ticker import MaxNLocator
+    except ImportError:
+        return None
+    figure = Figure(figsize=_PLOT_SIZE_INCHES, dpi=_PLOT_DPI)
+    axes = figure.add_subplot()
+    axes.plot(values, color=_PLOT_COLOR, linewidth=1.0)
+    axes.margins(x=0.0, y=0.1)
+    axes.xaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+    axes.yaxis.set_major_locator(MaxNLocator(nbins=3))
+    axes.tick_params(labelsize=_PLOT_FONT_SIZE, length=2, pad=1, width=0.5, colors=_PLOT_AXES_COLOR)
+    for side in ("top", "right"):
+        axes.spines[side].set_visible(False)
+    for side in ("bottom", "left"):
+        axes.spines[side].set_linewidth(0.5)
+        axes.spines[side].set_color(_PLOT_AXES_COLOR)
+    buffer = io.BytesIO()
+    figure.savefig(buffer, format="png", transparent=True, bbox_inches="tight", pad_inches=0.02)
     return base64.b64encode(buffer.getvalue()).decode()
 
 
@@ -129,17 +163,23 @@ def _values_html(value: np.ndarray) -> str:
     return f'<pre style="{_VALUES_STYLE}">{html_module.escape(np.array2string(value))}</pre>'
 
 
-def _wants_thumbnail(value: np.ndarray) -> bool:
-    """Whether a tensor is rendered as a thumbnail: 2-d and too large to show its values."""
-    return value.ndim == 2 and value.size > TENSOR_FORMATTING_MAX_ELEMENTS
+def _wants_image(value: np.ndarray) -> bool:
+    """Whether a tensor is rendered as an image, a line plot or a thumbnail: 1-d or 2-d and too large
+    to show its values."""
+    return value.ndim in (1, 2) and value.size > TENSOR_FORMATTING_MAX_ELEMENTS
 
 
 def _cell_html(value: np.ndarray) -> str:
-    """HTML for a single tensor: its values if small, else a thumbnail with a colorbar if 2-d, else
-    descriptor text."""
+    """HTML for a single tensor: its values if small, else a line plot if 1-d, a thumbnail with a
+    colorbar if 2-d, or descriptor text otherwise."""
     if value.size <= TENSOR_FORMATTING_MAX_ELEMENTS:
         return _values_html(value)
     descriptor = html_module.escape(_descriptor_text(value), quote=True)
+    if value.ndim == 1:
+        png = _plot_png_base64(np.asarray(value, dtype=float))
+        if png is None:  # matplotlib unavailable
+            return descriptor
+        return f'<img src="data:image/png;base64,{png}" style="{_PLOT_STYLE}" title="{descriptor}"/>'
     if value.ndim != 2:
         return descriptor
     data = np.asarray(value, dtype=float)
@@ -176,16 +216,16 @@ def tensor_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any],
     """Cell HTML formatter for one tensor column of a ``NestedFrame`` HTML repr.
 
     Like :func:`tensor_cell_html`, but only the first ``max_rendered``
-    cells that would get a thumbnail are rendered; later ones show a
-    placeholder instead, which keeps a long repr from embedding one PNG per
-    row. Cells that show their values or a descriptor are not counted. A
-    new formatter is needed for every repr, since it counts the cells it
-    has rendered.
+    cells that would get a line plot or thumbnail are rendered; later ones
+    show a placeholder instead, which keeps a long repr from embedding one
+    PNG per row. Cells that show their values or a descriptor are not
+    counted. A new formatter is needed for every repr, since it counts the
+    cells it has rendered.
 
     Parameters
     ----------
     max_rendered : int, default MAX_RENDERED
-        Number of thumbnails to render.
+        Number of plots and thumbnails to render.
 
     Returns
     -------
@@ -193,7 +233,7 @@ def tensor_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any],
         Formatter taking a cell value and returning its HTML.
     """
 
-    def is_thumbnail(value: Any) -> bool:
-        return isinstance(value, np.ndarray) and _wants_thumbnail(value)
+    def is_image(value: Any) -> bool:
+        return isinstance(value, np.ndarray) and _wants_image(value)
 
-    return capped_column_formatter(tensor_cell_html, is_thumbnail, max_rendered)
+    return capped_column_formatter(tensor_cell_html, is_image, max_rendered)

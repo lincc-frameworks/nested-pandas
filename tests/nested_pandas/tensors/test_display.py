@@ -32,12 +32,22 @@ def test_tensor_cell_html_renders_thumbnail_with_colorbar():
     assert html.index("29.7") < html.index("0.3")
 
 
-def test_tensor_cell_html_non_2d_and_missing():
-    """Test that missing cells and larger tensors that are not 2-d fall back to a descriptor."""
+def test_tensor_cell_html_renders_line_plot():
+    """Test that larger 1-d tensors render as a line plot image with the descriptor as its title."""
+    html = tensor_cell_html(np.sin(np.linspace(0.0, 6.0, 50, dtype=np.float32)))
+    assert html.count("<img src=") == 1
+    assert 'title="[50] float32"' in html
+    assert "colorbar" not in html
+    # NaN gaps and integer values plot too
+    assert "<img src=" in tensor_cell_html(np.array([np.nan, 1.0, 2.0, np.nan] * 5))
+    assert "<img src=" in tensor_cell_html(np.arange(20))
+
+
+def test_tensor_cell_html_higher_rank_and_missing():
+    """Test that missing cells and larger tensors of rank 3 or more fall back to a descriptor."""
     assert tensor_cell_html(pd.NA) == "&lt;NA&gt;"
     assert tensor_cell_html(None) == "&lt;NA&gt;"
     assert tensor_cell_html(np.zeros((2, 3, 3), dtype=np.float32)) == "[2×3×3] float32"
-    assert tensor_cell_html(np.zeros(20, dtype=np.float32)) == "[20] float32"
 
 
 def test_tensor_cell_html_bool_tensor():
@@ -79,6 +89,8 @@ def test_tensor_column_formatter_caps_thumbnails():
     assert outputs[-1] == "&lt;NA&gt;"
     assert "[2×3×3] float32" in formatter(np.zeros((2, 3, 3), dtype=np.float32))
     assert "not rendered in preview" in tensor_column_formatter(max_rendered=0)(big)
+    # Line plots count towards the same limit
+    assert "not rendered in preview" in tensor_column_formatter(max_rendered=0)(np.arange(20))
 
 
 def test_nestedframe_repr_html_caps_thumbnails_per_column():
