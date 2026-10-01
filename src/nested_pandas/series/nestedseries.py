@@ -30,6 +30,19 @@ class NestedSeries(pd.Series):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    def _repr_html_(self) -> str | None:
+        """HTML repr of a nested series: its cells rendered as in a one-column NestedFrame.
+
+        Plain pandas Series have no HTML repr, so for any other dtype this
+        returns None and notebooks show the text repr.
+        """
+        if not isinstance(self.dtype, NestedDtype):
+            return None
+        # Imported here because nestedframe.core imports this module
+        from nested_pandas.nestedframe.core import NestedFrame
+
+        return NestedFrame(self.to_frame())._repr_html_()
+
     @property
     @nested_only
     def columns(self):
