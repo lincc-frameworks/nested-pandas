@@ -18,7 +18,7 @@ from pandas.core.dtypes.common import is_bool_dtype
 from pandas.core.dtypes.inference import is_list_like
 from upath import UPath
 
-from nested_pandas.display import MAX_RENDERED, capped_column_formatter
+from nested_pandas.display import MAX_RENDERED, CappedColumnFormatter
 from nested_pandas.nestedframe.expr import (
     _identify_aliases,
     _NestResolver,
@@ -77,7 +77,7 @@ def _nested_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any]
     The first ``max_rendered`` non-empty cells are rendered as small
     dataframes, later ones show a placeholder.
     """
-    return capped_column_formatter(
+    return CappedColumnFormatter(
         _nested_cell_html, lambda chunk: isinstance(chunk, pd.DataFrame) and len(chunk) > 0, max_rendered
     )
 
