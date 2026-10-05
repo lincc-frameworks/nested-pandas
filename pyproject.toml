@@ -47,6 +47,7 @@ dev = [
     "requests",
     "s3fs",
     "numba>=0.64.0",
+    "matplotlib", # Optional, renders tensor columns as thumbnails in HTML reprs
 ]
 
 [build-system]

@@ -18,6 +18,7 @@ from pandas.core.dtypes.common import is_bool_dtype
 from pandas.core.dtypes.inference import is_list_like
 from upath import UPath
 
+from nested_pandas.display import MAX_RENDERED, CappedColumnFormatter
 from nested_pandas.nestedframe.expr import (
     _identify_aliases,
     _NestResolver,
@@ -29,9 +30,72 @@ from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
 from nested_pandas.series.utils import is_pa_type_a_list
+from nested_pandas.tensors.display import tensor_column_formatter
+from nested_pandas.tensors.dtype import TensorDtype
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
+
+
+def _nested_cell_html(chunk: pd.DataFrame | None, header: bool = True) -> str:
+    """HTML for one cell of a nested column: a small single-row dataframe with a "+N rows" footer."""
+    # If the chunk is None or empty, return None (displayed same as Null)
+    if chunk is None or len(chunk) == 0:
+        return "None"
+    n_rows = len(chunk)
+
+    if n_rows <= 2:
+        # For 1 or 2 rows, show all rows without a footer
+        chunk = chunk.round(8)
+        max_rows_html = n_rows
+    else:
+        # For 3+ rows, show first row and a "+N rows" footer
+        chunk = chunk.head(1).round(8)
+        chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
+        len_row = pd.DataFrame(
+            {
+                col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
+                for i, col in enumerate(chunk.columns)
+            }
+        )
+        chunk = pd.concat([chunk, len_row], ignore_index=True)
+        max_rows_html = 2
+
+    return chunk.to_html(
+        max_rows=max_rows_html,
+        max_cols=5,
+        show_dimensions=False,
+        index=False,
+        header=header,
+        escape=False,
+    )
+
+
+def _nested_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any], str]:
+    """Cell HTML formatter for a nested column of a NestedFrame HTML repr.
+
+    The first ``max_rendered`` non-empty cells are rendered as small
+    dataframes, later ones show a placeholder.
+    """
+    return CappedColumnFormatter(
+        _nested_cell_html, lambda chunk: isinstance(chunk, pd.DataFrame) and len(chunk) > 0, max_rendered
+    )
+
+
+_HTML_CELL_FORMATTERS: dict[type[pd.api.extensions.ExtensionDtype], Callable[[], Callable[[Any], str]]] = {
+    NestedDtype: _nested_column_formatter,
+    TensorDtype: tensor_column_formatter,
+}
+"""Extension dtypes with a custom cell rendering in NestedFrame HTML reprs, mapped to a factory of
+their cell formatter. A fresh formatter is made per column and per repr, so it may keep state."""
+
+
+def _html_cell_formatter(dtype: Any) -> Callable[[Any], str] | None:
+    """A new cell formatter for columns of ``dtype``, or None if pandas' own rendering is used."""
+    for dtype_type, factory in _HTML_CELL_FORMATTERS.items():
+        if isinstance(dtype, dtype_type):
+            return factory()
+    return None
 
 
 class NestedFrame(pd.DataFrame):
@@ -109,10 +173,16 @@ class NestedFrame(pd.DataFrame):
         return self.columns[nested_mask].tolist()
 
     def _repr_html_(self) -> str | None:
-        """Override html representation"""
+        """Override html representation
 
-        # Without nested columns (or empty), just do representation as normal
-        if len(self.nested_columns) == 0 or len(self) == 0:
+        Columns whose dtype has a cell formatter in ``_HTML_CELL_FORMATTERS``
+        (nested and tensor columns) are rendered with it; the rest as pandas
+        does.
+        """
+        formatters = self._html_cell_formatters()
+
+        # Without specially formatted columns (or empty), just do representation as normal
+        if not formatters or len(self) == 0:
             # This mimics pandas behavior
             if pd.get_option("display.max_rows") is None:
                 # If max_rows is None, just show the header
@@ -121,43 +191,6 @@ class NestedFrame(pd.DataFrame):
                 return super().to_html(max_rows=pd.get_option("display.min_rows"), show_dimensions=True)
             else:
                 return super().to_html(max_rows=pd.get_option("display.max_rows"), show_dimensions=True)
-
-        # Nested Column Formatting
-
-        # Display nested columns as small html dataframes with a single row
-        def repack_row(chunk, header=True):
-            # If the chunk is None or empty, return None (displayed same as Null)
-            if chunk is None or len(chunk) == 0:
-                return "None"
-            n_rows = len(chunk)
-
-            if n_rows <= 2:
-                # For 1 or 2 rows, show all rows without a footer
-                chunk = chunk.round(8)
-                max_rows_html = n_rows
-            else:
-                # For 3+ rows, show first row and a "+N rows" footer
-                chunk = chunk.head(1).round(8)
-                chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
-                len_row = pd.DataFrame(
-                    {
-                        col: [f"<i>+{n_rows - 1} rows</i>"] if i == 0 else ["..."]
-                        for i, col in enumerate(chunk.columns)
-                    }
-                )
-                chunk = pd.concat([chunk, len_row], ignore_index=True)
-                max_rows_html = 2
-
-            # Estimate width and resize
-            html_res = chunk.to_html(
-                max_rows=max_rows_html,
-                max_cols=5,
-                show_dimensions=False,
-                index=False,
-                header=header,
-                escape=False,
-            )
-            return html_res
 
         # Handle sizing, trim html dataframe if output will be truncated
         df_shape = self.shape  # grab original shape information for later
@@ -172,7 +205,7 @@ class NestedFrame(pd.DataFrame):
         # replace index to ensure proper behavior for duplicate index values
         index_values = html_df.index
         html_df = html_df.reset_index(drop=True)
-        repr = html_df.style.format({col: repack_row for col in self.nested_columns})
+        repr = html_df.style.format(formatters)
 
         # Create a mapping function to retrieve original index
         def map_true_index(index):
@@ -195,6 +228,15 @@ class NestedFrame(pd.DataFrame):
         html_repr += f"{df_shape[0]} rows x {df_shape[1]} columns"
 
         return html_repr
+
+    def _html_cell_formatters(self) -> dict[Hashable, Callable[[Any], str]]:
+        """Fresh cell formatters for the columns with a custom HTML rendering, by column name."""
+        formatters = {}
+        for column in self.columns:
+            formatter = _html_cell_formatter(self.dtypes[column])
+            if formatter is not None:
+                formatters[column] = formatter
+        return formatters
 
     def _parse_hierarchical_components(self, delimited_path: str, delimiter: str = ".") -> list[str]:
         """
