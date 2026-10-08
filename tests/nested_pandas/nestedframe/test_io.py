@@ -17,17 +17,19 @@ from upath import UPath
 
 from nested_pandas import NestedFrame, TensorDtype, read_parquet
 from nested_pandas.datasets import generate_data
-from nested_pandas.nestedframe.io import (
-    FSSPEC_BLOCK_SIZE,
+from nested_pandas.nestedframe.io import from_pyarrow
+from nested_pandas.nestedframe.io.datafusion import (
     _check_datafusion_support,
-    _columns_to_load,
     _datafusion_filters_to_expr,
     _datafusion_object_store,
     _datafusion_read_table,
+)
+from nested_pandas.nestedframe.io.pyarrow import (
+    FSSPEC_BLOCK_SIZE,
+    _columns_to_load,
     _get_storage_options,
     _pyarrow_read_table,
     _transform_read_parquet_data_arg,
-    from_pyarrow,
 )
 from nested_pandas.tensors import TensorExtensionArray
 
@@ -543,7 +545,7 @@ def test__get_storage_options(nested_parquet_path):
 
 def test__is_local_path(nested_data_dir, nested_parquet_path):
     """Test the _is_local_path function with various scenarios."""
-    from nested_pandas.nestedframe.io import _is_local_path
+    from nested_pandas.nestedframe.io.pyarrow import _is_local_path
 
     assert _is_local_path(UPath(nested_data_dir)) is True
     assert _is_local_path(UPath(nested_parquet_path)) is True
@@ -552,7 +554,7 @@ def test__is_local_path(nested_data_dir, nested_parquet_path):
 
 def test__is_remote_dir(nested_data_dir, nested_parquet_path):
     """Test the _is_remote_dir function with various scenarios."""
-    from nested_pandas.nestedframe.io import _is_remote_dir
+    from nested_pandas.nestedframe.io.pyarrow import _is_remote_dir
 
     # Local path that is a directory
     local_dir = UPath(nested_data_dir)
