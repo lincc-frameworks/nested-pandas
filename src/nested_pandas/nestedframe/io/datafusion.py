@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from itertools import chain
 from pathlib import Path
 from typing import cast
 
@@ -81,7 +82,7 @@ def _check_datafusion_support(
     except ImportError as e:
         raise ImportError(
             "The 'datafusion' engine requires the 'datafusion' package, install it with "
-            "`pip install datafusion`."
+            "`pip install 'datafusion>=54.1'`."
         ) from e
 
     if not isinstance(data, str | Path | UPath):
@@ -184,7 +185,9 @@ def _datafusion_read_table(
                     raise validation_error from e
             raise
 
-    table = df.to_arrow_table()
+    # Partitions hold contiguous file ranges, so concatenating them keeps file order
+    batches = chain.from_iterable(df.collect_partitioned())
+    table = pa.Table.from_batches(batches, schema=df.schema())
 
     if columns is not None:
         table = table.rename_columns([column.split(".")[-1] for column in columns])
@@ -203,10 +206,8 @@ DATAFUSION_SESSION_SETTINGS = {
     "datafusion.execution.parquet.schema_force_view_types": "false",
     # Default is 8192, which chunks the output table 15x more finely than pyarrow does
     "datafusion.execution.batch_size": "131072",
-    # Scan in a single partition, so rows come back in file order like pyarrow's do.
-    # In parallel DataFusion splits the row groups of even a single file across
-    # partitions and the output order is not reproducible from run to run.
-    "datafusion.execution.target_partitions": "1",
+    # Keep the plan-time assignment of byte ranges to partitions, so the row order is stable
+    "datafusion.execution.enable_file_stream_work_stealing": "false",
 }
 
 
