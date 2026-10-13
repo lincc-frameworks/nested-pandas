@@ -919,9 +919,10 @@ class TensorExtensionArray(ExtensionArray):
         size = self.dtype.size
         values = storage.values.slice(storage.offset * size, len(storage) * size)
         if values.null_count == 0:
-            return combined.to_numpy_ndarray()
+            # allow_nulls leaves the null tensors undefined instead of rejecting them (pyarrow 26+)
+            return combined.to_tensor(allow_nulls=True).to_numpy()
 
-        # to_numpy_ndarray() ignores the validity bitmap of the elements and would return
+        # to_tensor() ignores the validity bitmap of the elements and would return
         # arbitrary values for them. pyarrow's to_numpy() fills them with NaN instead.
         return values.to_numpy(zero_copy_only=False).reshape(len(storage), *self.dtype.shape)
 

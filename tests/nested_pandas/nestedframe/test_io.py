@@ -11,7 +11,6 @@ import pyarrow.compute as pc
 import pyarrow.fs
 import pyarrow.parquet as pq
 import pytest
-from packaging.version import Version
 from pandas.testing import assert_frame_equal
 from upath import UPath
 
@@ -1274,16 +1273,12 @@ def test_to_parquet_tensor_column_roundtrip(engine):
     np.testing.assert_array_equal(actual["tensor"].array.to_stack(), TENSOR_STACK * 2)
 
 
-@pytest.mark.xfail(
-    Version(pa.__version__) < Version("26"),
-    reason="nullable fixed-size lists do not round-trip parquet before pyarrow 26: older writers reject "
-    "them (apache/arrow#35692) and newer ones write the null slots with length zero, which fails to "
-    "read back (apache/arrow#35697)",
-    raises=(pa.ArrowNotImplementedError, pa.ArrowInvalid),
-    strict=True,
-)
 def test_to_parquet_tensor_column_with_missing_roundtrip():
-    """A NestedFrame with a missing tensor survives to_parquet/read_parquet from pyarrow 26 on."""
+    """A NestedFrame with a missing tensor survives to_parquet/read_parquet.
+
+    Nullable fixed-size lists only round-trip parquet from pyarrow 26 on
+    (apache/arrow#35692, apache/arrow#35697), which is why that is the minimum.
+    """
     nf = from_pyarrow(_tensor_table())
     nf["tensor"] = TensorExtensionArray.from_sequence([TENSOR_STACK[0], None, TENSOR_STACK[2], None])
 

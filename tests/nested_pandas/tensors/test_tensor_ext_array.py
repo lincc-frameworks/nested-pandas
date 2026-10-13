@@ -1022,16 +1022,16 @@ def test_table_from_pandas_and_parquet_round_trip(array_with_missing, dtype, sta
     table = pa.Table.from_pandas(df)
     assert table.schema.field("t").type == dtype.pyarrow_dtype
 
-    # The parquet round trip is only checked without missing values: a nullable fixed_size_list
-    # does not round-trip parquet before pyarrow 26 (apache/arrow#35692, apache/arrow#35697)
-    table = pa.Table.from_pandas(pd.DataFrame({"t": array_with_missing.dropna()}))
+    # Missing tensors are included: a nullable fixed_size_list round-trips parquet from pyarrow 26 on
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
     buffer.seek(0)
     read = pq.read_table(buffer)
     assert read.schema.field("t").type == dtype.pyarrow_dtype
     back = TensorExtensionArray(read.column("t"))
-    assert_array_equal(back.to_stack(), stack[[0, 3]])
+    assert back.isna().tolist() == [False, True, True, False]
+    assert_array_equal(back.to_stack()[[0, 3]], stack[[0, 3]])
+    assert back.equals(array_with_missing)
     # And via __from_arrow__ with a types_mapper
     df_back = read.to_pandas(types_mapper=lambda t: dtype if isinstance(t, pa.FixedShapeTensorType) else None)
     assert df_back["t"].dtype == dtype
