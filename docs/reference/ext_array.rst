@@ -1,6 +1,6 @@
-=========
-NestedDtype
-=========
+====================
+NestedExtensionArray
+====================
 .. currentmodule:: nested_pandas
 
 Constructor

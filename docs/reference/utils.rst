@@ -15,5 +15,5 @@ Generating Toy Datasets
 .. autosummary::
     :toctree: api/
     
-    datasets.generation.generate_data
-    datasets.generation.generate_parquet_file
+    datasets.generate_data
+    datasets.generate_parquet_file

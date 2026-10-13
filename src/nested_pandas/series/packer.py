@@ -68,10 +68,10 @@ def pack_flat(
 
     For the input dataframe with repeated indexes, make a pandas.Series,
     where each original column is replaced by a structure of lists.
-    The dtype of the column is `nested_pandas.NestedDtype` with
+    The dtype of the column is :class:`nested_pandas.NestedDtype` with
     the corresponding pyarrow type. The index of the output series is
-    the unique index of the input dataframe. The Series has `.nest` accessor,
-    see :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    the unique index of the input dataframe. The Series has ``.nest`` accessor,
+    see :class:`nested_pandas.NestSeriesAccessor` for details.
 
     Parameters
     ----------
@@ -89,8 +89,8 @@ def pack_flat(
 
     See Also
     --------
-    nested_pandas.series.accessor.NestSeriesAccessor : .nest accessor for the output series.
-    nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
+    nested_pandas.NestSeriesAccessor : .nest accessor for the output series.
+    nested_pandas.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_lists : Pack a dataframe of nested arrays.
     """
     if on is not None:
@@ -187,10 +187,10 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
 
     For the input dataframe with repeated indexes, make a pandas.Series,
     where each original column is replaced by a structure of lists.
-    The dtype of the column is `nested_pandas.NestedDtype` with the corresponding
+    The dtype of the column is :class:`nested_pandas.NestedDtype` with the corresponding
     pyarrow type. The index of the output series is the unique index of the
-    input dataframe. The Series has `.nest` accessor, see
-    :meth:`nested_pandas.series.accessor.NestSeriesAccessor` for details.
+    input dataframe. The Series has ``.nest`` accessor, see
+    :class:`nested_pandas.NestSeriesAccessor` for details.
 
     For every row, all the nested array (aka pyarrow list) lengths must be
     the same.
@@ -211,8 +211,8 @@ def pack_lists(df: pd.DataFrame, name: str | None = None, *, validate: bool = Tr
 
     See Also
     --------
-    nested_pandas.series.accessor.NestSeriesAccessor : The accessor for the output series.
-    nested_pandas.series.dtype.NestedDtype : The dtype of the output series.
+    nested_pandas.NestSeriesAccessor : The accessor for the output series.
+    nested_pandas.NestedDtype : The dtype of the output series.
     nested_pandas.series.packer.pack_flat : Pack a "flat" dataframe with repeated indexes.
     """
     # When series is converted to pa.array it may be both Array and ChunkedArray
@@ -298,7 +298,7 @@ def view_sorted_series_as_list_array(
         Pre-calculated offsets of the input series index.
     unique_index: np.ndarray or None, optional
         Pre-calculated unique index of the input series. If given it must be
-        equal to `series.index.unique()` and `series.index.values[offset[:-1]]`.
+        equal to ``series.index.unique()`` and ``series.index.values[offset[:-1]]``.
 
     Returns
     -------
