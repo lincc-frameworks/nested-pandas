@@ -488,7 +488,7 @@ def rechunk(array: pa.Array | pa.ChunkedArray, chunk_lens: ArrayLike) -> pa.Chun
     pa.ChunkedArray
         Rechunked `array`.
     """
-    if len(array) != np.sum(chunk_lens):
+    if len(array) != np.sum(np.asarray(chunk_lens)):
         raise ValueError("Input array must have the same length as the total chunk lengths")
     if isinstance(array, pa.Array):
         array = pa.chunked_array([array])
