@@ -33,7 +33,7 @@ dependencies = [
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
 dev = [
-    "asv[virtualenv]==0.6.6", # Used to compute performance benchmarks
+    "asv==0.6.6", # Used to compute performance benchmarks
     "jupyter", # Clears output from Jupyter notebooks
     "mypy", # Used for static type checking of files
     "pre-commit", # Used to run checks before finalizing a git commit
@@ -58,7 +58,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 # Resolve module names from src/ and tests/ so the two conftest.py files do not collide
 mypy_path = "src"
 explicit_package_bases = true
@@ -73,6 +73,7 @@ testpaths = [
     "docs",
 ]
 addopts = "--doctest-modules --doctest-glob=*.rst"
+log_cli_level = "INFO"
 
 [tool.ruff]
 line-length = 110
