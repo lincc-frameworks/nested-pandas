@@ -4,7 +4,17 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    # Wait before adopting new releases, so a compromised release has time to be caught
+    cooldown:
+      default-days: 7
+    # Bump all SHA-pinned actions in a single PR
+    groups:
+      github-actions:
+        patterns:
+          - "*"
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
