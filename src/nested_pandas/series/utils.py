@@ -388,13 +388,15 @@ def transpose_list_struct_type(t: pa.ListType) -> pa.StructType:
     return struct_type
 
 
-def transpose_list_struct_array(array: pa.LargeListArray) -> pa.StructArray:
+def transpose_list_struct_array(array: pa.LargeListArray, recursive: bool = False) -> pa.StructArray:
     """Converts a list-array of structs into a struct-array of lists.
 
     Parameters
     ----------
     array : pa.LargeListArray
         Input list array of structs.
+    recursive : bool, default False
+        If True, transpose list-struct fields at all nesting levels too.
 
     Returns
     -------
@@ -408,6 +410,8 @@ def transpose_list_struct_array(array: pa.LargeListArray) -> pa.StructArray:
 
     fields = []
     for field_values in values.flatten():
+        if recursive and is_pa_type_is_list_struct(field_values.type):
+            field_values = transpose_list_struct_array(field_values, recursive=True)
         list_array = pa.LargeListArray.from_arrays(offsets, field_values)
         fields.append(list_array)
 
@@ -418,13 +422,15 @@ def transpose_list_struct_array(array: pa.LargeListArray) -> pa.StructArray:
     )
 
 
-def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
+def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray, recursive: bool = False) -> pa.ChunkedArray:
     """Converts a chunked array of list-struct into a chunked array of struct-list.
 
     Parameters
     ----------
     chunked_array : pa.ChunkedArray
         Input chunked array of list-struct.
+    recursive : bool, default False
+        If True, transpose list-struct fields at all nesting levels too.
 
     Returns
     -------
@@ -433,7 +439,9 @@ def transpose_list_struct_chunked(chunked_array: pa.ChunkedArray) -> pa.ChunkedA
     """
     if chunked_array.num_chunks == 0:
         return pa.chunked_array([], type=transpose_list_struct_type(chunked_array.type))
-    return pa.chunked_array([transpose_list_struct_array(array) for array in chunked_array.iterchunks()])
+    return pa.chunked_array(
+        [transpose_list_struct_array(array, recursive=recursive) for array in chunked_array.iterchunks()]
+    )
 
 
 def nested_types_mapper(type: pa.DataType) -> pd.ArrowDtype | NestedDtype:

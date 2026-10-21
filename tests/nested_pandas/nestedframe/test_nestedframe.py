@@ -1,4 +1,5 @@
 import re
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -2791,3 +2792,65 @@ def test_issue350():
     nf = nf.set_index(np.array([100, 100, 101]))
     result = nf.map_rows(lambda flux: {"new.flux": flux}, columns="nested.flux", row_container="args")
     assert len(result) == 3
+
+
+def test_to_dict_not_recursive():
+    """Default to_dict keeps nested values as data frames"""
+    nf = NestedFrame({"a": [1, 2], "b": [[1.0, 2.0], [3.0]]}).nest_lists(["b"], "nested")
+    result = nf.to_dict(orient="list")
+    assert result["a"] == [1, 2]
+    assert isinstance(result["nested"][0], pd.DataFrame)
+    assert_frame_equal(result["nested"][1], nf["nested"].iloc[1])
+
+
+def _double_nested_frame():
+    inner = NestedFrame({"c": [1, 2, 3], "d": [[10.0], [20.0, 30.0], []]}, index=[0, 0, 1])
+    inner = inner.nest_lists(["d"], "deep")
+    nf = NestedFrame({"a": [1, 2, 3]}).join_nested(inner, "outer")
+    nf.loc[2, "outer"] = None
+    return nf
+
+
+def test_to_dict_recursive_list():
+    """recursive=True with orient="list" converts all nesting levels to dicts of lists"""
+    nf = _double_nested_frame()
+    assert nf.to_dict(orient="list", recursive=True) == {
+        "a": [1, 2, 3],
+        "outer": [
+            {"c": [1, 2], "deep": [{"d": [10.0]}, {"d": [20.0, 30.0]}]},
+            {"c": [3], "deep": [{"d": []}]},
+            None,
+        ],
+    }
+
+
+def test_to_dict_recursive_records():
+    """recursive=True with orient="records" converts all nesting levels to lists of records"""
+    nf = _double_nested_frame()
+    assert nf.to_dict(orient="records", recursive=True) == [
+        {"a": 1, "outer": [{"c": 1, "deep": [{"d": 10.0}]}, {"c": 2, "deep": [{"d": 20.0}, {"d": 30.0}]}]},
+        {"a": 2, "outer": [{"c": 3, "deep": []}]},
+        {"a": 3, "outer": None},
+    ]
+
+
+def test_to_dict_recursive_duplicate_index():
+    """Duplicate index doesn't break column assignment"""
+    nf = generate_data(3, 2, seed=1).set_index(np.array([5, 5, 6]))
+    result = nf.to_dict(orient="list", recursive=True)
+    assert result["nested"][2]["t"] == nf["nested"].iloc[2]["t"].tolist()
+
+
+@pytest.mark.parametrize("orient", ["dict", "series", "tight"])
+def test_to_dict_recursive_unsupported_orient(orient):
+    """recursive=True supports only orient="list" and "records" """
+    nf = generate_data(3, 2, seed=1)
+    with pytest.raises(ValueError, match="orient='list' or 'records'"):
+        nf.to_dict(orient=orient, recursive=True)
+
+
+def test_to_dict_recursive_unsupported_into():
+    """recursive=True supports only into=dict"""
+    nf = generate_data(3, 2, seed=1)
+    with pytest.raises(ValueError, match="into=dict"):
+        nf.to_dict(orient="list", into=OrderedDict, recursive=True)
