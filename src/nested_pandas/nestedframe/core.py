@@ -13,6 +13,7 @@ import pyarrow.parquet as pq
 from pandas._libs import lib
 from pandas._typing import Any, AnyAll, Axis, Hashable, IndexLabel, Mapping
 from pandas.api.extensions import no_default
+from pandas.core.common import standardize_mapping
 from pandas.core.computation.eval import Expr, ensure_scope
 from pandas.core.dtypes.common import is_bool_dtype
 from pandas.core.dtypes.inference import is_list_like
@@ -29,7 +30,7 @@ from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.ext_array import NestedExtensionArray
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
-from nested_pandas.series.utils import is_pa_type_a_list
+from nested_pandas.series.utils import is_pa_type_a_list, transpose_list_struct_chunked
 from nested_pandas.tensors.display import tensor_column_formatter
 from nested_pandas.tensors.dtype import TensorDtype
 
@@ -1938,6 +1939,96 @@ class NestedFrame(pd.DataFrame):
                 self._update_inplace(new_df)
                 return None
             return new_df
+
+    def to_dict(
+        self,
+        orient: Literal["dict", "list", "series", "split", "tight", "records", "index"] = "dict",
+        *,
+        into=dict,
+        index: bool = True,
+        recursive: bool = False,
+    ):
+        """Convert the DataFrame to a dictionary.
+
+        The type of the key-value pairs can be customized with the parameters
+        (see below).
+
+        Parameters
+        ----------
+        orient : str {'dict', 'list', 'series', 'split', 'tight', 'records', 'index'}
+            Determines the type of the values of the dictionary.
+
+            - 'dict' (default) : dict like {column -> {index -> value}}
+            - 'list' : dict like {column -> [values]}
+            - 'series' : dict like {column -> Series(values)}
+            - 'split' : dict like
+              {'index' -> [index], 'columns' -> [columns], 'data' -> [values]}
+            - 'tight' : dict like
+              {'index' -> [index], 'columns' -> [columns], 'data' -> [values],
+              'index_names' -> [index.names], 'column_names' -> [column.names]}
+            - 'records' : list like
+              [{column -> value}, ... , {column -> value}]
+            - 'index' : dict like {index -> {column -> value}}
+
+        into : class, default dict
+            The collections.abc.MutableMapping subclass used for all Mappings
+            in the return value.  Can be the actual class or an empty
+            instance of the mapping type you want.  If you want a
+            collections.defaultdict, you must pass it initialized.
+
+        index : bool, default True
+            Whether to include the index item (and index_names item if `orient`
+            is 'tight') in the returned dictionary. Can only be ``False``
+            when `orient` is 'split' or 'tight'. Note that when `orient` is
+            'records', this parameter does not take effect (index item always
+            not included).
+
+        recursive : bool, default False
+            If True, convert nested frames to dicts too, with the same `orient`.
+            Supported only for `orient` 'list' or 'records' and ``into=dict``.
+
+        Returns
+        -------
+        dict, list or collections.abc.MutableMapping
+            Return a collections.abc.MutableMapping object representing the
+            DataFrame. The resulting transformation depends on the `orient`
+            parameter.
+
+        Examples
+        --------
+        >>> import nested_pandas as npd
+        >>> nf = npd.NestedFrame({"a": [1, 2], "b": [[1.0, 2.0], [3.0]]})
+        >>> nf = nf.nest_lists(["b"], "nested")
+        >>> nf.to_dict(orient="list", recursive=True)
+        {'a': [1, 2], 'nested': [{'b': [1.0, 2.0]}, {'b': [3.0]}]}
+        >>> nf.to_dict(orient="records", recursive=True)
+        [{'a': 1, 'nested': [{'b': 1.0}, {'b': 2.0}]}, {'a': 2, 'nested': [{'b': 3.0}]}]
+        """
+        if not recursive:
+            return super().to_dict(orient=orient, into=into, index=index)
+        if standardize_mapping(into) is not dict:
+            raise ValueError(f"recursive=True is supported only for into=dict, got {into!r}")
+
+        df = pd.DataFrame(self, copy=False)
+        list_arrays = {col: df[col].array.list_array for col in self.nested_columns}
+        # Get pyarrow arrays which to_pylist() into the layout of the given orient
+        match orient:
+            case "list":
+                arrays = {
+                    col: transpose_list_struct_chunked(list_array, recursive=True)
+                    for col, list_array in list_arrays.items()
+                }
+            case "records":
+                arrays = list_arrays
+            case _:
+                raise ValueError(
+                    f"recursive=True is supported only for orient='list' or 'records', got {orient!r}"
+                )
+
+        # Replace nested columns with object columns
+        for col, array in arrays.items():
+            df[col] = pd.Series(array.to_pylist(), index=df.index, dtype=object)
+        return df.to_dict(orient=orient, into=into, index=index)
 
     def _apply_njit_map_rows(self, requested_columns, func):
         """
