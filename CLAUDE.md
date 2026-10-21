@@ -54,6 +54,12 @@ cd docs && make html
 - Type checker: mypy (Python 3.10+)
 - Pre-commit hooks enforce all of the above before commits
 
+## Conventions
+
+See also the "Conventions" section of `docs/gettingstarted/contributing.rst`.
+
+- New public methods and functions must be added to the API reference in `docs/reference/*.rst`
+
 ## Architecture
 
 ```

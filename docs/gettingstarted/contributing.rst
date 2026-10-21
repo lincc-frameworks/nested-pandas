@@ -17,3 +17,9 @@ Download code and install dependencies in a conda environment. Run unit tests at
 
     pip install pytest
     pytest
+
+Conventions
+-----------
+
+- **API reference:** when adding a new public method or function, add it to the corresponding
+  ``autosummary`` list in ``docs/reference/*.rst``, otherwise it won't appear in the documentation.
