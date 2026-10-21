@@ -31,6 +31,61 @@ def test_nestedframe_construction():
     assert_frame_equal(nf, base.assign(list_struct=nested_series))
 
 
+def test_nestedframe_construction_dotted_columns():
+    """Test that "nested.field" columns are packed into a nested column by the constructor"""
+    data = [
+        [1, [60000.0, 60001.0, 60002.0], [18.5, 18.7, 18.6], 10.0],
+        [2, [60000.5, 60003.0, 60010.0], [20.1, 20.0, 19.9], 20.0],
+    ]
+    nf = NestedFrame(data, columns=["id", "lc.time", "lc.mag", "ra"])
+
+    expected = NestedFrame(data, columns=["id", "time", "mag", "ra"]).nest_lists(["time", "mag"], "lc")
+    assert_frame_equal(nf, expected)
+    assert nf["lc.time"].dtype == pd.ArrowDtype(pa.float64())
+    assert nf["lc.mag"].dtype == pd.ArrowDtype(pa.float64())
+
+    # dict input with columns selection
+    nf = NestedFrame({"id": [1, 2], "lc.mag": [[18.5, None], [20.1]]}, columns=["id", "lc.mag"])
+    assert nf.nested_columns == ["lc"]
+    assert nf["lc.mag"].dtype == pd.ArrowDtype(pa.float64())
+    assert nf["lc.mag"].isna().tolist() == [False, True, False]
+
+    # empty input
+    nf = NestedFrame([], columns=["id", "lc.mag"])
+    assert nf.nested_columns == ["lc"]
+
+
+def test_nestedframe_construction_two_nested_columns():
+    """Test that "nested.field" columns are packed into multiple nested columns by the constructor"""
+    data = [
+        [1, [60000.0, 60001.0], [4000.0, 5000.0, 6000.0], [18.5, 18.7], [1.0, 2.0, 3.0]],
+        [2, [60002.0], [], [20.1], []],
+    ]
+    nf = NestedFrame(data, columns=["id", "lc.time", "sed.wave", "lc.mag", "sed.flux"])
+
+    expected = (
+        NestedFrame(data, columns=["id", "time", "wave", "mag", "flux"])
+        .nest_lists(["time", "mag"], "lc")
+        .nest_lists(["wave", "flux"], "sed")
+    )
+    assert_frame_equal(nf, expected)
+    assert list(nf["lc"].columns) == ["time", "mag"]
+    assert list(nf["sed"].columns) == ["wave", "flux"]
+
+
+def test_nestedframe_construction_dotted_columns_errors():
+    """Test errors when "nested.field" columns cannot be packed"""
+    # mismatched list lengths
+    with pytest.raises(ValueError):
+        NestedFrame([[[60000.0, 60001.0], [18.5]]], columns=["lc.time", "lc.mag"])
+    # scalar values
+    with pytest.raises(ValueError):
+        NestedFrame([[60000.0, 18.5]], columns=["lc.time", "lc.mag"])
+    # conflicting with an existing column
+    with pytest.raises(ValueError, match="already exists"):
+        NestedFrame([[1, [18.5]]], columns=["lc", "lc.mag"])
+
+
 def test_nestedseries_construction():
     """Test NestedSeries construction"""
     series = _SeriesFromNest([1, 2, 3], index=[0, 2, 4])
@@ -840,6 +895,13 @@ def test_from_lists():
     assert list(res.columns) == ["c", "d", "nested"]
     assert list(res.nested_columns) == ["nested"]
     assert res.shape == (0, 3)
+
+    # Test a dataframe with no rows and no base columns
+    res = NestedFrame.from_lists(empty_nf[["e"]], name="nested")
+    assert isinstance(res, NestedFrame)
+    assert list(res.columns) == ["nested"]
+    assert list(res.nested_columns) == ["nested"]
+    assert res.shape == (0, 1)
 
     # An empty dataframe whose list columns carry a pyarrow list dtype should produce the
     # same nested dtype as an equivalent non-empty dataframe (regression test for a bug where
