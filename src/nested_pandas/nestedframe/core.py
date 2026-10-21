@@ -1957,7 +1957,6 @@ class NestedFrame(pd.DataFrame):
         ----------
         orient : str {'dict', 'list', 'series', 'split', 'tight', 'records', 'index'}
             Determines the type of the values of the dictionary.
-
             - 'dict' (default) : dict like {column -> {index -> value}}
             - 'list' : dict like {column -> [values]}
             - 'series' : dict like {column -> Series(values)}
@@ -1969,20 +1968,17 @@ class NestedFrame(pd.DataFrame):
             - 'records' : list like
               [{column -> value}, ... , {column -> value}]
             - 'index' : dict like {index -> {column -> value}}
-
         into : class, default dict
             The collections.abc.MutableMapping subclass used for all Mappings
             in the return value.  Can be the actual class or an empty
             instance of the mapping type you want.  If you want a
             collections.defaultdict, you must pass it initialized.
-
         index : bool, default True
             Whether to include the index item (and index_names item if `orient`
             is 'tight') in the returned dictionary. Can only be ``False``
             when `orient` is 'split' or 'tight'. Note that when `orient` is
             'records', this parameter does not take effect (index item always
             not included).
-
         recursive : bool, default False
             If True, convert nested frames to dicts too, with the same `orient`.
             Supported only for `orient` 'list' or 'records' and ``into=dict``.
