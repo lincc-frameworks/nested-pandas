@@ -33,6 +33,7 @@ from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_st
 from nested_pandas.series.utils import is_pa_type_a_list, transpose_list_struct_chunked
 from nested_pandas.tensors.display import tensor_column_formatter
 from nested_pandas.tensors.dtype import TensorDtype
+from nested_pandas.tensors.tensorseries import TensorSeries
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
@@ -89,6 +90,13 @@ _HTML_CELL_FORMATTERS: dict[type[pd.api.extensions.ExtensionDtype], Callable[[],
 }
 """Extension dtypes with a custom cell rendering in NestedFrame HTML reprs, mapped to a factory of
 their cell formatter. A fresh formatter is made per column and per repr, so it may keep state."""
+
+
+_SERIES_TYPES: dict[type[pd.api.extensions.ExtensionDtype], type[pd.Series]] = {
+    TensorDtype: TensorSeries,
+}
+"""Extension dtypes whose base columns are returned as a Series subclass by ``NestedFrame.__getitem__``.
+Nested columns are handled separately, since they are also addressable by their hierarchical names."""
 
 
 def _html_cell_formatter(dtype: Any) -> Callable[[Any], str] | None:
@@ -281,19 +289,27 @@ class NestedFrame(pd.DataFrame):
 
         return super().__getitem__(item)
 
+    @staticmethod
+    def _wrap_series(series: pd.Series) -> pd.Series:
+        """Wrap a base column in the Series subclass for its dtype, if there is one."""
+        for dtype_type, series_type in _SERIES_TYPES.items():
+            if isinstance(series.dtype, dtype_type):
+                return series_type(series)
+        return series
+
     def _getitem_str(self, item):
         if self._is_nested_column(item):
             return NestedSeries(super().__getitem__(item))
         # Preempt the nested check if the item is a base column, with or without
         # dots and backticks.
         if item in self.columns:
-            return super().__getitem__(item)
+            return self._wrap_series(super().__getitem__(item))
         components = self._parse_hierarchical_components(item)
         # One more check on the entirety of the item name, in case backticks were used
         # (even if they weren't necessary).
         cleaned_item = ".".join(components)
         if cleaned_item in self.columns:
-            return super().__getitem__(cleaned_item)
+            return self._wrap_series(super().__getitem__(cleaned_item))
 
         # If a nested column name is passed, return a flat series for that column
         # flat series is chosen over list series for utility
