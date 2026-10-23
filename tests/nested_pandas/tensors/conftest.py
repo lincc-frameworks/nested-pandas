@@ -11,6 +11,7 @@ import operator
 import pandas as pd
 import pyarrow as pa
 import pytest
+from packaging.version import Version
 from tensor_test_utils import TENSOR_SHAPE, tensor, tensor_stack
 
 from nested_pandas import TensorDtype
@@ -26,6 +27,8 @@ NO_VIEWS = (
     "an arrow-backed array cannot share buffers with a view (pandas' ArrowExtensionArray xfails this too)"
 )
 NO_ORDERING = "tensors have no ordering"
+
+PANDAS_GE_31 = Version(pd.__version__) >= Version("3.1")
 NO_EQ = "== is not implemented yet"
 
 XFAIL_STRICT = {
@@ -54,6 +57,7 @@ XFAIL_STRICT = {
     "test_fillna_limit_series": PANDAS_NDARRAY_SCALAR,
     # Hash tables
     "test_unique": NOT_HASHABLE,
+    "test_loc_setitem_with_expansion_retains_ea_dtype": NOT_HASHABLE,  # pandas 3.1+, calls unique()
     "test_duplicated": NOT_HASHABLE,
     "test_value_counts_with_normalize": NOT_HASHABLE,
     "test_hash_pandas_object": NOT_HASHABLE,
@@ -78,17 +82,20 @@ XFAIL_NO_RUN = {
 }
 """Suite tests that are not run at all, as pandas does for its own arrow array."""
 
-XFAIL_FOR_PARAM = {
+XFAIL_FOR_PARAMS = {
     # Broadcasting one tensor to several positions of a Series: pandas length-checks the ndarray.
     # Series.__setitem__ with a single position and with a sequence of tensors both work.
-    "test_setitem_sequence_broadcasts": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
-    "test_setitem_integer_array": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
-    "test_setitem_mask": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
-    "test_setitem_slice": ("box_in_series", True, PANDAS_NDARRAY_SCALAR),
-    # value_counts only hashes when there is more than one distinct element
-    "test_value_counts": ("all_data", "data", NOT_HASHABLE),
+    "test_setitem_sequence_broadcasts": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
+    "test_setitem_integer_array": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
+    "test_setitem_mask": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
+    "test_setitem_slice": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
+    # value_counts only hashes when there is more than one distinct element. With a single one, pandas
+    # 3.1+ still sorts the result by its tensor index, which has no ordering.
+    "test_value_counts": [({"all_data": "data"}, NOT_HASHABLE)]
+    + ([({"all_data": "data_missing", "dropna": True}, NO_ORDERING)] if PANDAS_GE_31 else []),
 }
-"""Suite tests that must fail only for one value of one parameter: name -> (param, value, reason)."""
+"""Suite tests that must fail only for some parameter values: name -> [(params, reason), ...], where
+each entry applies to the tests whose parameters include all of ``params``."""
 
 
 def pytest_collection_modifyitems(items):
@@ -105,11 +112,11 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.xfail(reason=XFAIL_STRICT[name], strict=True))
         elif name in XFAIL_NO_RUN:
             item.add_marker(pytest.mark.xfail(reason=XFAIL_NO_RUN[name], run=False))
-        elif name in XFAIL_FOR_PARAM:
-            param, value, reason = XFAIL_FOR_PARAM[name]
+        elif name in XFAIL_FOR_PARAMS:
             params = getattr(getattr(item, "callspec", None), "params", {})
-            if params.get(param) == value:
-                item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
+            for match, reason in XFAIL_FOR_PARAMS[name]:
+                if all(params.get(param) == value for param, value in match.items()):
+                    item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
 
 
 # Fixtures with the names and semantics of pandas/tests/extension/conftest.py #

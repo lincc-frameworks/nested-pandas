@@ -27,6 +27,7 @@ nested-pandas workarounds can be removed.
 import pandas as pd
 import pyarrow as pa
 import pytest
+from packaging.version import Version
 
 
 def _combine(array):
@@ -80,8 +81,9 @@ def test_pyarrow_43838_null_list_identity_cast():
 
 
 @pytest.mark.xfail(
+    Version(pd.__version__) < Version("3.1"),
     strict=True,
-    reason="upstream pyarrow bug: https://github.com/apache/arrow/issues/44881",
+    reason="upstream pyarrow bug: https://github.com/apache/arrow/issues/44881, not triggered by pandas 3.1+",
     raises=pa.ArrowInvalid,
 )
 def test_pyarrow_44881_to_pandas_arrowdtype_null_field():
