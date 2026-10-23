@@ -24,4 +24,4 @@ Functions
     :toctree: api/
 
     TensorSeries.to_stack
-    TensorSeries.to_lists
+    TensorSeries.to_arrow_fixed_lists

@@ -175,7 +175,7 @@ class TensorSeries(pd.Series):
         return self.array.to_stack(na_value=na_value)
 
     @tensor_only
-    def to_lists(self) -> pd.Series:
+    def to_arrow_fixed_lists(self) -> pd.Series:
         """Convert the series to a pandas Series of pyarrow fixed-size lists.
 
         The result has a ``pd.ArrowDtype`` of the ``fixed_size_list`` storage
@@ -192,7 +192,7 @@ class TensorSeries(pd.Series):
         >>> import numpy as np
         >>> from nested_pandas import TensorSeries
         >>> series = TensorSeries.from_stack(np.arange(8.0).reshape(2, 2, 2), name="t")
-        >>> series.to_lists()
+        >>> series.to_arrow_fixed_lists()
         0    [0. 1. 2. 3.]
         1    [4. 5. 6. 7.]
         Name: t, dtype: fixed_size_list<item: double>[4][pyarrow]

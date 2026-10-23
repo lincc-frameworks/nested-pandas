@@ -90,7 +90,7 @@ def test_tensor_only_decorator():
     with pytest.raises(TypeError, match="'tensor_shape' can only be used with a TensorDtype"):
         _ = series.tensor_shape
 
-    for func in ["to_stack", "to_lists"]:
+    for func in ["to_stack", "to_arrow_fixed_lists"]:
         with pytest.raises(TypeError, match=f"'{func}' can only be used with a TensorDtype"):
             getattr(series, func)()
 
@@ -112,10 +112,10 @@ def test_to_stack():
     assert np.isnan(with_missing.to_stack()[1]).all()
 
 
-def test_to_lists():
-    """Test to_lists gives an arrow fixed_size_list series with the same index and name."""
+def test_to_arrow_fixed_lists():
+    """Test to_arrow_fixed_lists gives an arrow fixed_size_list series with the same index and name."""
     series = TensorSeries.from_stack(tensor_stack([0, 1]), index=[5, 6], name="t")
-    lists = series.to_lists()
+    lists = series.to_arrow_fixed_lists()
 
     assert lists.dtype == pd.ArrowDtype(pa.list_(pa.float64(), int(np.prod(TENSOR_SHAPE))))
     assert lists.index.equals(series.index)
