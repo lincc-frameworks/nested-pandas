@@ -7,6 +7,7 @@ from .series.accessor import NestSeriesAccessor  # noqa: F401
 from .series.dtype import NestedDtype
 from .series.nestedseries import NestedSeries
 from .tensors.dtype import TensorDtype
+from .tensors.tensorseries import TensorSeries
 
 __all__ = [
     "NestedDtype",
@@ -15,5 +16,6 @@ __all__ = [
     "from_pyarrow",
     "NestedSeries",
     "TensorDtype",
+    "TensorSeries",
     "__version__",
 ]
