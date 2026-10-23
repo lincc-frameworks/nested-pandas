@@ -47,7 +47,7 @@ from numpy.typing import DTypeLike
 from pandas import Index
 from pandas._typing import InterpolateOptions
 from pandas.api.extensions import no_default
-from pandas.api.types import is_scalar, pandas_dtype
+from pandas.api.types import is_list_like, is_scalar, pandas_dtype
 from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
 from pandas.core.indexers import (  # type: ignore[attr-defined]
     check_array_indexer,
@@ -437,6 +437,35 @@ class TensorExtensionArray(ExtensionArray):
         # so we work on the fixed_size_list storage and wrap it back.
         storage = replace_with_mask(self.storage, pa_mask, value_storage)
         self._pa_array = _wrap_storage(storage, self.dtype)
+
+    def _where(self, mask: np.ndarray, value: Any) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Analogue to ``np.where(mask, self, value)``, see :meth:`_rows_for_mask` for ``value``."""
+        result = self.copy()
+        result[~mask] = self._rows_for_mask(value, ~mask)
+        return result
+
+    def _putmask(self, mask: np.ndarray, value: Any) -> None:
+        """Analogue to ``np.putmask(self, mask, value)``, see :meth:`_rows_for_mask` for ``value``."""
+        self[mask] = self._rows_for_mask(value, mask)
+
+    def _rows_for_mask(self, value: Any, mask: np.ndarray) -> Any:
+        """The ``value`` of ``_where`` or ``_putmask`` for the rows selected by ``mask``.
+
+        pandas lines a list-like ``value`` up against the rows and takes the
+        selected ones. A list of tensors becomes a numpy stack with one more
+        dimension than the tensors, and a stack of a single tensor is
+        broadcast to every selected row, as pandas does for a length-1 list.
+        A single tensor, or a missing value, is used for every selected row.
+        """
+        if self._is_scalar_value(value) or not is_list_like(value):
+            return value
+        if isinstance(value, list | tuple):
+            value = type(self)._from_sequence(value, dtype=self.dtype)
+        if len(value) == 1:
+            return value[0]
+        if len(value) != len(mask):
+            raise ValueError(f"Length of values ({len(value)}) does not match length of index ({len(mask)})")
+        return value[mask]
 
     def __len__(self) -> int:
         return len(self._pa_array)
