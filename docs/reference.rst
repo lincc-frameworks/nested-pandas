@@ -6,6 +6,7 @@ API Reference
 
     NestedFrame <reference/nestedframe>
     NestedSeries <reference/nestedseries>
+    TensorSeries <reference/tensorseries>
     .nest Accessor <reference/accessor>
     Utility Functions <reference/utils>
     NestedDtype <reference/nesteddtype>
