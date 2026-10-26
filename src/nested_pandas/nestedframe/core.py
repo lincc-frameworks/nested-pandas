@@ -117,11 +117,97 @@ class NestedFrame(pd.DataFrame):
     # contains those aliases, keyed by the cleaned name.
     _metadata = ["_aliases"]
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._cast_cols_to_nested(struct_list=False)
+    def __init__(
+        self,
+        data=None,
+        index=None,
+        columns=None,
+        dtype=None,
+        copy=None,
+        *,
+        reject_nesting: list[str] | str | None = None,
+    ) -> None:
+        """Construct a NestedFrame.
 
-    def _cast_cols_to_nested(self, *, struct_list: bool) -> None:
+        All arguments except ``reject_nesting`` are passed to
+        `pandas.DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`_.
+
+        Parameters
+        ----------
+        data : ndarray (structured or homogeneous), Iterable, dict, or DataFrame
+            Dict can contain Series, arrays, constants, dataclass or list-like objects. If
+            data is a dict, column order follows insertion-order. If a dict contains Series
+            which have an index defined, it is aligned by its index. This alignment also
+            occurs if data is a Series or a DataFrame itself. Alignment is done on
+            Series/DataFrame inputs.
+
+            If data is a list of dicts, column order follows insertion-order.
+        index : Index or array-like
+            Index to use for resulting frame. Will default to RangeIndex if
+            no indexing information part of input data and no index provided.
+        columns : Index or array-like
+            Column labels to use for resulting frame when data does not have them,
+            defaulting to RangeIndex(0, 1, 2, ..., n). If data contains column labels,
+            will perform column selection instead.
+
+            Column labels given as ``"nested.field"`` are packed into a nested
+            column ``"nested"``, so their values must be list-like with
+            matching lengths for each row. Use ``reject_nesting`` to disable this.
+        dtype : dtype, default None
+            Data type to force. Only a single dtype is allowed. If None, infer.
+            If ``data`` is DataFrame then is ignored.
+        copy : bool or None, default None
+            Copy data from inputs.
+            For dict data, the default of None behaves like ``copy=True``.  For DataFrame
+            or 2d ndarray input, the default of None behaves like ``copy=False``.
+            If data is a dict containing one or more Series (possibly of different dtypes),
+            ``copy=False`` will ensure that these inputs are not copied.
+        reject_nesting : list or str, default=None
+            Column(s) to reject from being cast to a nested dtype. For a name
+            ``"nested"``, columns named ``"nested.<field>"`` are kept as
+            regular flat columns, and a list-struct pyarrow column ``"nested"``
+            is kept as a `pandas.ArrowDtype` column.
+
+        Examples
+        --------
+        >>> import nested_pandas as npd
+        >>> data = [[1, [1.0, 2.0, 3.0]], [2, [4.0, 5.0, None]]]
+        >>> nf = npd.NestedFrame(data, columns=["a", "nested.b"])
+        >>> nf
+           a                  nested
+        0  1  [{b: 1.0}; …] (3 rows)
+        1  2  [{b: 4.0}; …] (3 rows)
+        >>> nf["nested.b"].dtype
+        double[pyarrow]
+        """
+        super().__init__(data=data, index=index, columns=columns, dtype=dtype, copy=copy)
+
+        if reject_nesting is None:
+            reject_nesting = []
+        elif isinstance(reject_nesting, str):
+            reject_nesting = [reject_nesting]
+
+        if columns is not None:
+            # Pack "nested.field" columns into "nested" columns
+            nested_fields: dict[str, dict[str, str]] = defaultdict(dict)
+            for column in columns:
+                if isinstance(column, str) and "." in column:
+                    nested_name, field = column.split(".", 1)
+                    if nested_name not in reject_nesting:
+                        nested_fields[nested_name][column] = field
+            for nested_name, fields in nested_fields.items():
+                if nested_name in self.columns:
+                    raise ValueError(
+                        f"Cannot pack columns {list(fields)} into nested column '{nested_name}', because it "
+                        f"already exists. Use reject_nesting=['{nested_name}'] to keep these columns flat."
+                    )
+                packed = NestedFrame.from_lists(self[list(fields)].rename(columns=fields), name=nested_name)
+                self.drop(columns=list(fields), inplace=True)
+                self[nested_name] = packed[nested_name]
+
+        self._cast_cols_to_nested(struct_list=False, reject_nesting=reject_nesting)
+
+    def _cast_cols_to_nested(self, *, struct_list: bool, reject_nesting: list[str] | None = None) -> None:
         """Cast arrow columns to nested.
 
         Parameters
@@ -130,8 +216,12 @@ class NestedFrame(pd.DataFrame):
             If `False` cast list-struct columns only. If `True`, also
             try to cast struct-list columns validating if they have
             valid nested structure.
+        reject_nesting : list[str] or None
+            Columns not to cast.
         """
         for column, dtype in self.dtypes.items():
+            if reject_nesting is not None and column in reject_nesting:
+                continue
             if not isinstance(dtype, pd.ArrowDtype):
                 continue
             pa_type = dtype.pyarrow_dtype
@@ -683,8 +773,8 @@ class NestedFrame(pd.DataFrame):
             for col in list_columns
         )
         if len(df) == 0 and not list_columns_are_list_dtype:
-            packed_df = NestedFrame().join_nested(df[list_columns], name=name)
-            packed_df.index.name = df.index.name
+            packed = NestedFrame().join_nested(df[list_columns], name=name)[name]
+            packed.index.name = df.index.name
         else:
             if len(df) > 0:
                 # Check that each column has iterable elements
@@ -698,15 +788,14 @@ class NestedFrame(pd.DataFrame):
                             f"Cannot pack column {col} which does not contain an iterable list based "
                             "on its first value, {sample_val}."
                         )
-            packed_df = pack_lists(df[list_columns])
-            packed_df.name = name
+            packed = pack_lists(df[list_columns], name=name)
 
         # concat the nested column to the base_column df
         if base_columns is not None:
-            return pd.concat([df[base_columns], packed_df], axis=1)
-        # or just return the packed_df as a nestedframe if no base cols
+            return pd.concat([df[base_columns], packed], axis=1)
+        # or just return the packed series as a nestedframe if no base cols
         else:
-            return NestedFrame(packed_df.to_frame())
+            return NestedFrame(packed.to_frame())
 
     def drop(
         self,
