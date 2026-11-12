@@ -25,3 +25,6 @@ Functions
 
     TensorSeries.to_stack
     TensorSeries.to_arrow_fixed_lists
+    TensorSeries.fillna
+    TensorSeries.where
+    TensorSeries.mask

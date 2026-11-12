@@ -67,10 +67,8 @@ XFAIL_STRICT = {
     "test_merge_on_extension_array_duplicates": NOT_HASHABLE,
     # Ordering
     "test_combine_le": NO_ORDERING,
-    # __contains__ and the assertions of these setitem tests compare with ==
+    # ExtensionArray.__contains__ compares the item with ==
     "test_contains": NO_EQ,
-    "test_setitem_2d_values": NO_EQ,
-    "test_setitem_mask_boolean_array_with_na": NO_EQ,
 }
 """Suite tests that must fail, by test function name."""
 
@@ -89,6 +87,7 @@ XFAIL_FOR_PARAMS = {
     "test_setitem_integer_array": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
     "test_setitem_mask": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
     "test_setitem_slice": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
+    "test_setitem_mask_boolean_array_with_na": [({"box_in_series": True}, PANDAS_NDARRAY_SCALAR)],
     # value_counts only hashes when there is more than one distinct element. With a single one, pandas
     # 3.1+ still sorts the result by its tensor index, which has no ordering.
     "test_value_counts": [({"all_data": "data"}, NOT_HASHABLE)]
