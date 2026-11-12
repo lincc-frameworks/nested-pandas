@@ -77,6 +77,12 @@ class TensorSeries(pd.Series):
     pandas Series reject. A numpy stack of shape ``(k, *shape)`` assigns one
     tensor per selected row.
 
+    Constructing a TensorSeries from data of any other dtype raises a
+    ``TypeError``. Results of operations that are not of TensorDtype, such
+    as ``isna()``, are plain pandas Series. pandas can still leave a
+    TensorSeries holding another dtype by modifying it in place, e.g. when
+    enlarging it with a new label, and it then behaves as a plain Series.
+
     Examples
     --------
     >>> import numpy as np
@@ -91,6 +97,11 @@ class TensorSeries(pd.Series):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not isinstance(self.dtype, TensorDtype):
+            raise TypeError(
+                f"TensorSeries requires a TensorDtype, not '{self.dtype}': use TensorSeries.from_stack, "
+                "or a plain pandas Series for other data."
+            )
 
     def _wrap_tensor_value(self, value: Any) -> Any:
         """Rewrap a tensor value so that pandas passes it to the extension array untouched.
