@@ -8,9 +8,17 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pandas.api.extensions import no_default
+from pandas.api.types import is_number
+
+# pandas does not expose its indexer classes. TensorSeries subclasses them to rewrap tensor values
+# before pandas inspects them, relying on: the classes existing under these names, their
+# ``(name, obj)`` constructor, and ``__setitem__`` being the single entry point of assignment (it
+# is marked @final, hence the type: ignore on the override). pandas is pinned to >=3,<4 in pyproject.toml.
+from pandas.core.indexing import _iLocIndexer, _LocIndexer  # type: ignore[attr-defined]
 
 from nested_pandas.tensors.dtype import TensorDtype
-from nested_pandas.tensors.ext_array import TensorExtensionArray
+from nested_pandas.tensors.ext_array import TensorExtensionArray, _is_na
 
 __all__ = ["TensorSeries"]
 
@@ -27,6 +35,23 @@ def tensor_only(func):
         return result
 
     return wrapper
+
+
+class _TensorIndexerMixin:
+    """Assignment through an indexer of a TensorSeries, rewrapping the value as ``series[key] = value``."""
+
+    obj: TensorSeries
+
+    def __setitem__(self, key, value) -> None:  # type: ignore[misc]
+        super().__setitem__(key, self.obj._wrap_tensor_value(value))  # type: ignore[misc]
+
+
+class _TensorLocIndexer(_TensorIndexerMixin, _LocIndexer):
+    """``.loc`` of a TensorSeries, see :attr:`TensorSeries.loc`."""
+
+
+class _TensorILocIndexer(_TensorIndexerMixin, _iLocIndexer):
+    """``.iloc`` of a TensorSeries, see :attr:`TensorSeries.iloc`."""
 
 
 def _tensor_series_or_series(data=None, *args, **kwargs) -> pd.Series:
@@ -46,6 +71,12 @@ class TensorSeries(pd.Series):
     read-only numpy view, and :meth:`to_stack` returns the whole column as
     a single ``(n, *shape)`` numpy array.
 
+    A single tensor given as a numpy array, or a number filling a whole
+    tensor, can be assigned to one or more rows with ``[]``, ``.loc``,
+    ``.iloc``, :meth:`fillna`, :meth:`where` and :meth:`mask`, which plain
+    pandas Series reject. A numpy stack of shape ``(k, *shape)`` assigns one
+    tensor per selected row.
+
     Examples
     --------
     >>> import numpy as np
@@ -60,6 +91,63 @@ class TensorSeries(pd.Series):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def _wrap_tensor_value(self, value: Any) -> Any:
+        """Rewrap a tensor value so that pandas passes it to the extension array untouched.
+
+        pandas inspects numpy array values before the extension array is
+        consulted, reading a 2-d array as a column of values and rejecting
+        it, but passes a pyarrow scalar or an extension array through. So a
+        single tensor becomes a pyarrow tensor scalar, a stack of tensors a
+        TensorExtensionArray, and a number, or a 0-d array, a tensor scalar
+        filled with it, validating the shape before the series is modified. Other values,
+        and any value when the dtype is not a TensorDtype, are unchanged.
+        """
+        if not isinstance(self.dtype, TensorDtype):
+            return value
+        if isinstance(value, np.ndarray) and value.ndim == 0:
+            value = value[()]  # a numpy scalar, handled as a number below
+        if isinstance(value, np.ndarray) and value.dtype != object:
+            if value.ndim == self.dtype.ndim:
+                return self.array._tensor_scalar(value)
+            if value.ndim == self.dtype.ndim + 1:
+                return TensorExtensionArray.from_stack(value, dtype=self.dtype)
+            return value
+        if is_number(value) and not _is_na(value):
+            return self.array._tensor_scalar(np.full(self.dtype.shape, value))
+        return value
+
+    def __setitem__(self, key, value) -> None:
+        """Set one or more rows, see :meth:`pandas.Series.__setitem__` and the tensor values accepted
+        in the class docstring."""
+        super().__setitem__(key, self._wrap_tensor_value(value))
+
+    @property
+    def loc(self) -> _TensorLocIndexer:
+        """Label-based indexer, see :attr:`pandas.Series.loc`. Assignment accepts the tensor values of
+        :meth:`__setitem__`."""
+        return _TensorLocIndexer("loc", self)
+
+    @property
+    def iloc(self) -> _TensorILocIndexer:
+        """Position-based indexer, see :attr:`pandas.Series.iloc`. Assignment accepts the tensor values of
+        :meth:`__setitem__`."""
+        return _TensorILocIndexer("iloc", self)
+
+    def fillna(self, value, **kwargs):
+        """Fill missing rows, see :meth:`pandas.Series.fillna`. ``value`` may be a single tensor or a
+        number, as for :meth:`__setitem__`."""
+        return super().fillna(self._wrap_tensor_value(value), **kwargs)
+
+    def where(self, cond, other=no_default, **kwargs):
+        """Keep the rows where ``cond`` is True, see :meth:`pandas.Series.where`. ``other`` may be a single
+        tensor or a number, as for :meth:`__setitem__`."""
+        return super().where(cond, self._wrap_tensor_value(other), **kwargs)
+
+    def mask(self, cond, other=no_default, **kwargs):
+        """Replace the rows where ``cond`` is True, see :meth:`pandas.Series.mask`. ``other`` may be a
+        single tensor or a number, as for :meth:`__setitem__`."""
+        return super().mask(cond, self._wrap_tensor_value(other), **kwargs)
 
     @property
     def _constructor(self):

@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -160,3 +162,183 @@ def test_nestedframe_getitem_returns_tensorseries():
 
     # Other columns are unchanged
     assert type(nf["a"]) is pd.Series
+
+
+# Assignment of tensors (#539) #
+
+
+def _series_for_setitem() -> TensorSeries:
+    """A four-row series shared by the assignment tests."""
+    return TensorSeries.from_stack(tensor_stack([0, 1, 2, 3]), index=[10, 11, 12, 13], name="t")
+
+
+_SETTERS = [
+    ("getitem-label", lambda s, v: s.__setitem__(11, v), [1]),
+    ("loc-label", lambda s, v: s.loc.__setitem__(11, v), [1]),
+    ("iloc-position", lambda s, v: s.iloc.__setitem__(1, v), [1]),
+    ("getitem-list", lambda s, v: s.__setitem__([11, 12], v), [1, 2]),
+    ("getitem-mask", lambda s, v: s.__setitem__(np.array([True, False, True, False]), v), [0, 2]),
+    (
+        "getitem-bool-series",
+        lambda s, v: s.__setitem__(pd.Series([False, False, True, True], index=s.index), v),
+        [2, 3],
+    ),
+    ("loc-slice", lambda s, v: s.loc.__setitem__(slice(11, 12), v), [1, 2]),
+    ("loc-list", lambda s, v: s.loc.__setitem__([10, 13], v), [0, 3]),
+    ("loc-mask", lambda s, v: s.loc.__setitem__(np.array([True, False, True, False]), v), [0, 2]),
+    ("iloc-slice", lambda s, v: s.iloc.__setitem__(slice(1, 3), v), [1, 2]),
+    ("iloc-list", lambda s, v: s.iloc.__setitem__([0, 3], v), [0, 3]),
+]
+"""Every assignment path, as (id, setter(series, value), positions it sets)."""
+
+SETTERS = [pytest.param(setter, rows, id=name) for name, setter, rows in _SETTERS]
+MULTI_ROW_SETTERS = [pytest.param(setter, rows, id=name) for name, setter, rows in _SETTERS if len(rows) > 1]
+"""The assignment paths selecting several rows, where a sequence of tensors can be assigned."""
+
+
+@pytest.mark.parametrize("setter,rows", SETTERS)
+@pytest.mark.parametrize(
+    "value,expected_tensor",
+    [
+        (tensor(100), tensor(100)),
+        (7, np.full(TENSOR_SHAPE, 7.0)),
+        (np.array(7.0), np.full(TENSOR_SHAPE, 7.0)),
+    ],
+    ids=["tensor", "number", "0d-array"],
+)
+def test_setitem_broadcasts_single_value(setter, rows, value, expected_tensor):
+    """Test that a single tensor, or a number filling a tensor, is assigned to every selected row through
+    [], .loc and .iloc, keeping the dtype and name."""
+    series = _series_for_setitem()
+
+    setter(series, value)
+
+    assert isinstance(series.dtype, TensorDtype)
+    expected = tensor_stack([0, 1, 2, 3])
+    expected[rows] = expected_tensor
+    np.testing.assert_array_equal(series.to_stack(), expected)
+    assert series.name == "t"
+    assert series.index.tolist() == [10, 11, 12, 13]
+
+
+@pytest.mark.parametrize("setter,rows", SETTERS)
+@pytest.mark.parametrize("value", [None, np.nan, pd.NA], ids=["None", "nan", "NA"])
+def test_setitem_missing_value_makes_rows_missing(setter, rows, value):
+    """Test that None, np.nan and pd.NA make the selected rows missing through every path."""
+    series = _series_for_setitem()
+
+    setter(series, value)
+
+    expected = np.zeros(4, dtype=bool)
+    expected[rows] = True
+    np.testing.assert_array_equal(series.isna(), expected)
+    unchanged = ~expected
+    np.testing.assert_array_equal(series.to_stack()[unchanged], tensor_stack([0, 1, 2, 3])[unchanged])
+
+
+@pytest.mark.parametrize("setter,rows", MULTI_ROW_SETTERS)
+@pytest.mark.parametrize("value_kind", ["stack", "list", "tensorseries"])
+def test_setitem_sequence_assigns_one_tensor_per_row(setter, rows, value_kind):
+    """Test that a stack, a list of tensors or another TensorSeries assigns one tensor per selected row."""
+    series = _series_for_setitem()
+    new = tensor_stack(range(100, 100 + len(rows)))
+    if value_kind == "stack":
+        value = new
+    elif value_kind == "list":
+        value = list(new)
+    else:
+        value = TensorSeries.from_stack(new, index=series.index[rows])
+
+    setter(series, value)
+
+    expected = tensor_stack([0, 1, 2, 3])
+    expected[rows] = new
+    np.testing.assert_array_equal(series.to_stack(), expected)
+
+
+def test_setitem_stack_of_vectors():
+    """Test that a stack of 1-d tensors, a 2-d array pandas would read as a column, is assigned per row."""
+    vectors = TensorSeries.from_stack(np.zeros((3, 4)))
+
+    vectors.iloc[1:] = np.ones((2, 4))
+    vectors.loc[0] = np.full(4, 2.0)
+
+    np.testing.assert_array_equal(vectors.to_stack(), [[2.0] * 4, [1.0] * 4, [1.0] * 4])
+
+
+@pytest.mark.parametrize("setter,rows", SETTERS)
+def test_setitem_wrong_shape_raises_and_leaves_series_unchanged(setter, rows):
+    """Test that a tensor or stack of another shape is rejected with a ValueError naming the shape, and
+    the series is left as it was."""
+    series = _series_for_setitem()
+    wrong_shape = TENSOR_SHAPE[::-1]
+
+    with pytest.raises(ValueError, match=rf"Expected a tensor of shape {re.escape(str(TENSOR_SHAPE))}"):
+        setter(series, np.ones(wrong_shape))
+    with pytest.raises(ValueError, match="Expected a stack of tensors of shape"):
+        setter(series, np.ones((len(rows), *wrong_shape)))
+
+    np.testing.assert_array_equal(series.to_stack(), tensor_stack([0, 1, 2, 3]))
+    assert not series.isna().any()
+
+
+def test_fillna_with_tensor():
+    """Test that fillna accepts a single tensor, or a number, for every missing row, not in place."""
+    series = TensorSeries(TensorExtensionArray.from_sequence([tensor(0), None, tensor(2), None]), name="t")
+
+    filled = series.fillna(tensor(9))
+
+    assert type(filled) is TensorSeries
+    assert not filled.isna().any()
+    np.testing.assert_array_equal(filled.to_stack(), tensor_stack([0, 9, 2, 9]))
+    assert filled.name == "t"
+    np.testing.assert_array_equal(series.isna(), [False, True, False, True])
+
+    np.testing.assert_array_equal(series.fillna(0).to_stack()[1], np.zeros(TENSOR_SHAPE))
+    with pytest.raises(TypeError, match="value"):  # required, as in pandas
+        series.fillna()
+
+
+def test_where_and_mask_with_tensor():
+    """Test that where and mask take a row condition and, optionally, a single tensor or a number for the
+    replaced rows."""
+    series = _series_for_setitem()
+    cond = pd.Series([True, False, True, False], index=series.index)
+
+    np.testing.assert_array_equal(series.where(cond).isna(), [False, True, False, True])
+    np.testing.assert_array_equal(series.mask(cond).isna(), [True, False, True, False])
+    np.testing.assert_array_equal(series.where(cond, tensor(9)).to_stack(), tensor_stack([0, 9, 2, 9]))
+    np.testing.assert_array_equal(series.mask(cond, tensor(9)).to_stack(), tensor_stack([9, 1, 9, 3]))
+    np.testing.assert_array_equal(series.mask(cond, 0).to_stack()[0], np.zeros(TENSOR_SHAPE))
+    assert type(series.where(cond, tensor(9))) is TensorSeries
+    assert series.where(cond, tensor(9)).name == "t"
+
+    series.mask(cond, tensor(9), inplace=True)
+    np.testing.assert_array_equal(series.to_stack(), tensor_stack([9, 1, 9, 3]))
+
+
+def test_setitem_other_dtype_unchanged():
+    """Test that a TensorSeries of another dtype assigns, fills and masks as a plain Series."""
+    series = TensorSeries([1.0, 2.0, 3.0, np.nan])
+
+    series[0] = 5
+    series.loc[1] = 6
+    series.iloc[2] = 7
+
+    assert series.tolist()[:3] == [5, 6, 7]
+    assert series.fillna(0).tolist() == [5, 6, 7, 0]
+    assert series.where(series > 5, 0).tolist() == [0, 6, 7, 0]
+    assert series.mask(series > 5, 0).fillna(-1).tolist() == [5, 0, 0, -1]
+
+
+def test_indexers_are_pandas_subclasses():
+    """Test that .loc and .iloc are the pandas indexers, so their private base classes still exist."""
+    from pandas.core.indexing import _iLocIndexer, _LocIndexer
+
+    series = _series_for_setitem()
+    assert isinstance(series.loc, _LocIndexer)
+    assert isinstance(series.iloc, _iLocIndexer)
+    assert type(series.loc) is not _LocIndexer
+    assert type(series.iloc) is not _iLocIndexer
+    np.testing.assert_array_equal(series.loc[11], tensor(1))
+    np.testing.assert_array_equal(series.iloc[1], tensor(1))

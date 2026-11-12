@@ -800,6 +800,16 @@ class TensorExtensionArray(ExtensionArray):
         """Convert a single tensor (or missing value) to a fixed_size_list storage scalar."""
         return type(self)._from_sequence([value], dtype=self.dtype).storage[0]
 
+    def _tensor_scalar(self, value: Any) -> pa.FixedShapeTensorScalar:
+        """Convert a single tensor (or missing value) to a ``fixed_shape_tensor`` scalar of this dtype,
+        the twin of :meth:`_scalar_storage`.
+
+        pandas treats this scalar as opaque and passes it to :meth:`__setitem__`
+        untouched, unlike a numpy array, see :meth:`TensorSeries._wrap_tensor_value`.
+        The shape is validated here, see :func:`_tensor_to_flat`.
+        """
+        return type(self)._from_sequence([value], dtype=self.dtype).pa_array[0]
+
     @property
     def pa_array(self) -> pa.ChunkedArray:
         """Pyarrow chunked array of the ``fixed_shape_tensor`` extension type."""
