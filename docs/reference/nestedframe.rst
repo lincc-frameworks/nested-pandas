@@ -19,6 +19,13 @@ Helpful Properties
     NestedFrame.base_columns
     NestedFrame.all_columns
 
+Display
+~~~~~~~
+.. autosummary::
+    :toctree: api/
+
+    NestedFrame.compact_view
+
 Nesting
 ~~~~~~~~~
 .. autosummary::

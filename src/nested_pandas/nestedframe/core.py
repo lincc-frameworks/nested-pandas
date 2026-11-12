@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import html
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
@@ -19,6 +20,8 @@ from pandas.core.dtypes.common import is_bool_dtype
 from pandas.core.dtypes.inference import is_list_like
 from upath import UPath
 
+# Imported for its registration of the HTML rendering of tensor columns
+import nested_pandas.tensors.display  # noqa: F401, E402, I001
 from nested_pandas.display import MAX_RENDERED, CappedColumnFormatter
 from nested_pandas.nestedframe.expr import (
     _identify_aliases,
@@ -26,33 +29,98 @@ from nested_pandas.nestedframe.expr import (
     _SeriesFromNest,
     _subexprs_by_nest,
 )
+from nested_pandas.nestedframe.paths import ColumnPath, resolve_column_path
 from nested_pandas.series.dtype import NestedDtype
-from nested_pandas.series.ext_array import NestedExtensionArray
+from nested_pandas.series.ext_array import (
+    NestedExtensionArray,
+    compact_inner_nested,
+    nested_value_summary,
+)
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack, pack_lists, pack_sorted_df_into_struct
+from nested_pandas.series.registry import html_cell_formatter, register_html_formatter, wrap_series
 from nested_pandas.series.utils import is_pa_type_a_list, transpose_list_struct_chunked
-from nested_pandas.tensors.display import tensor_column_formatter
-from nested_pandas.tensors.dtype import TensorDtype
-from nested_pandas.tensors.tensorseries import TensorSeries
 
 pd.set_option("display.max_rows", 30)
 pd.set_option("display.min_rows", 5)
 
 
-def _nested_cell_html(chunk: pd.DataFrame | None, header: bool = True) -> str:
+class _NestedCellHtml:
+    """Renders the cells of one nested column to HTML: small dataframes with a "+N rows" footer.
+
+    The cells of nested and tensor sub-columns are rendered by the formatters
+    registered for their dtypes, as they are for columns of the frame. One
+    formatter per sub-column is shared by all the cells rendered, so the
+    limits those formatters keep, such as the number of tensor thumbnails,
+    hold for the whole column.
+    """
+
+    def __init__(self, compact_inner: bool = False) -> None:
+        self._compact_inner = compact_inner
+        """Whether nested sub-columns show only their sub-column names and number of rows"""
+        self._sub_formatters: dict[Hashable, Callable[[Any], str] | None] = {}
+
+    def _sub_formatter(self, dtype: Any) -> Callable[[Any], str] | None:
+        """A new formatter for the cells of a sub-column of ``dtype``, None for pandas' own rendering."""
+        if self._compact_inner and isinstance(dtype, NestedDtype):
+            return _compact_nested_cell_html
+        return html_cell_formatter(dtype)
+
+    def _render_special_columns(self, chunk: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
+        """Render the cells of the nested and tensor columns of ``chunk`` to HTML.
+
+        Returns ``chunk`` with those columns replaced by object columns of
+        placeholders, and the HTML to put in place of each placeholder once
+        the dataframe is rendered. pandas would otherwise escape the line
+        breaks of the HTML when rendering it as the value of a cell.
+        """
+        placeholders: dict[str, str] = {}
+        rendered = {}
+        for column, dtype in chunk.dtypes.items():
+            if column not in self._sub_formatters:
+                self._sub_formatters[column] = self._sub_formatter(dtype)
+            formatter = self._sub_formatters[column]
+            if formatter is None:
+                continue
+            cells = []
+            for value in chunk[column]:
+                placeholder = f"@@nested-pandas-cell-{id(self)}-{len(placeholders)}@@"
+                placeholders[placeholder] = formatter(value)
+                cells.append(placeholder)
+            rendered[column] = pd.Series(cells, index=chunk.index, dtype=object)
+        if not rendered:
+            return chunk, placeholders
+        # A plain dataframe, so that the placeholders are not interpreted in any way
+        chunk = pd.DataFrame({column: rendered.get(column, chunk[column]) for column in chunk.columns})
+        return chunk, placeholders
+
+    def __call__(self, chunk: pd.DataFrame | None, header: bool = True) -> str:
+        """HTML for one cell: a small dataframe of its first rows with a "+N rows" footer."""
+        return _nested_cell_html(chunk, header, self._render_special_columns)
+
+
+def _nested_cell_html(
+    chunk: pd.DataFrame | None,
+    header: bool = True,
+    render_special_columns: Callable[[pd.DataFrame], tuple[pd.DataFrame, dict[str, str]]] | None = None,
+) -> str:
     """HTML for one cell of a nested column: a small single-row dataframe with a "+N rows" footer."""
     # If the chunk is None or empty, return None (displayed same as Null)
     if chunk is None or len(chunk) == 0:
         return "None"
     n_rows = len(chunk)
+    if render_special_columns is None:
+        render_special_columns = _NestedCellHtml()._render_special_columns
 
     if n_rows <= 2:
         # For 1 or 2 rows, show all rows without a footer
+        chunk, placeholders = render_special_columns(chunk)
         chunk = chunk.round(8)
         max_rows_html = n_rows
     else:
         # For 3+ rows, show first row and a "+N rows" footer
-        chunk = chunk.head(1).round(8)
+        chunk, placeholders = render_special_columns(chunk.head(1))
+        chunk = chunk.round(8)
         chunk.astype({col: object for col in chunk.columns})  # cast to string for info row
         len_row = pd.DataFrame(
             {
@@ -63,7 +131,7 @@ def _nested_cell_html(chunk: pd.DataFrame | None, header: bool = True) -> str:
         chunk = pd.concat([chunk, len_row], ignore_index=True)
         max_rows_html = 2
 
-    return chunk.to_html(
+    table_html = chunk.to_html(
         max_rows=max_rows_html,
         max_cols=5,
         show_dimensions=False,
@@ -71,40 +139,52 @@ def _nested_cell_html(chunk: pd.DataFrame | None, header: bool = True) -> str:
         header=header,
         escape=False,
     )
+    for placeholder, cell_html in placeholders.items():
+        table_html = table_html.replace(placeholder, cell_html)
+    return table_html
 
 
-def _nested_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any], str]:
+def _compact_nested_cell_html(chunk: pd.DataFrame | None) -> str:
+    """Compact HTML for one cell of a nested column: its sub-column names and its number of rows."""
+    summary = nested_value_summary(chunk)
+    if summary is None or summary[1] == 0:
+        return "None"
+    names, n_rows = summary
+    return f"[{html.escape(names)}] <i>{n_rows} row{'' if n_rows == 1 else 's'}</i>"
+
+
+def _nested_column_formatter(
+    max_rendered: int = MAX_RENDERED, compact_inner: bool = False
+) -> Callable[[Any], str]:
     """Cell HTML formatter for a nested column of a NestedFrame HTML repr.
 
     The first ``max_rendered`` non-empty cells are rendered as small
-    dataframes, later ones show a placeholder.
+    dataframes, later ones show a placeholder. With ``compact_inner``, the
+    nested sub-columns in those dataframes show only their sub-column names
+    and number of rows.
     """
     return CappedColumnFormatter(
-        _nested_cell_html, lambda chunk: isinstance(chunk, pd.DataFrame) and len(chunk) > 0, max_rendered
+        _NestedCellHtml(compact_inner),
+        lambda chunk: isinstance(chunk, pd.DataFrame) and len(chunk) > 0,
+        max_rendered,
     )
 
 
-_HTML_CELL_FORMATTERS: dict[type[pd.api.extensions.ExtensionDtype], Callable[[], Callable[[Any], str]]] = {
-    NestedDtype: _nested_column_formatter,
-    TensorDtype: tensor_column_formatter,
-}
-"""Extension dtypes with a custom cell rendering in NestedFrame HTML reprs, mapped to a factory of
-their cell formatter. A fresh formatter is made per column and per repr, so it may keep state."""
+class _CompactView:
+    """What ``NestedFrame.compact_view()`` returns: the frame, displayed with compact inner nesting."""
+
+    def __init__(self, frame: NestedFrame) -> None:
+        self._frame = frame
+
+    def __repr__(self) -> str:
+        with compact_inner_nested():
+            return repr(self._frame)
+
+    def _repr_html_(self) -> str | None:
+        return self._frame._repr_html_(compact_inner=True)
 
 
-_SERIES_TYPES: dict[type[pd.api.extensions.ExtensionDtype], type[pd.Series]] = {
-    TensorDtype: TensorSeries,
-}
-"""Extension dtypes whose base columns are returned as a Series subclass by ``NestedFrame.__getitem__``.
-Nested columns are handled separately, since they are also addressable by their hierarchical names."""
-
-
-def _html_cell_formatter(dtype: Any) -> Callable[[Any], str] | None:
-    """A new cell formatter for columns of ``dtype``, or None if pandas' own rendering is used."""
-    for dtype_type, factory in _HTML_CELL_FORMATTERS.items():
-        if isinstance(dtype, dtype_type):
-            return factory()
-    return None
+register_html_formatter(NestedDtype, _nested_column_formatter)
 
 
 class NestedFrame(pd.DataFrame):
@@ -271,14 +351,52 @@ class NestedFrame(pd.DataFrame):
         nested_mask = self.dtypes.apply(lambda dtype: not isinstance(dtype, NestedDtype))
         return self.columns[nested_mask].tolist()
 
-    def _repr_html_(self) -> str | None:
+    def compact_view(self) -> _CompactView:
+        """Display the frame with nested columns inside nested columns shown compactly.
+
+        The default display shows a nested column inside a nested column in
+        full: as a table inside the table of each cell in notebooks, and by
+        the values of its first row in text. With several levels of nesting
+        that gets large. In the compact view, such an inner nested column
+        shows only its sub-column names and its number of rows. Everything
+        else is displayed as usual.
+
+        Returns
+        -------
+        object
+            An object which displays as the frame does, in notebooks and as
+            text, with the compact format for inner nested columns. It is
+            only meant to be displayed.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> from nested_pandas import NestedFrame
+        >>> spectra = pd.DataFrame({"wave": [4000.0, 5000.0, 6000.0], "flux": [1.0, 2.0, 3.0]},
+        ...                        index=[0, 0, 1])
+        >>> epochs = NestedFrame({"obj": [7, 7], "mjd": [60000.5, 60001.5]}).join_nested(spectra, "spectrum")
+        >>> nf = NestedFrame.from_flat(epochs, base_columns=[], on="obj", name="lc")
+        >>> nf  # doctest: +NORMALIZE_WHITESPACE
+                                                            lc
+        obj
+        7    [{mjd: 60000.5, spectrum: [{wave: 4000.0, flux...
+        >>> nf.compact_view()  # doctest: +NORMALIZE_WHITESPACE
+                                                            lc
+        obj
+        7    [{mjd: 60000.5, spectrum: [wave, flux] (2 rows...
+        """
+        return _CompactView(self)
+
+    def _repr_html_(self, compact_inner: bool = False) -> str | None:
         """Override html representation
 
-        Columns whose dtype has a cell formatter in ``_HTML_CELL_FORMATTERS``
-        (nested and tensor columns) are rendered with it; the rest as pandas
-        does.
+        Columns whose dtype has a registered HTML cell formatter (nested and
+        tensor columns, see ``nested_pandas.series.registry``) are rendered
+        with it; the rest as pandas does. With ``compact_inner``, nested
+        columns inside nested columns show only their sub-column names and
+        number of rows, see :meth:`compact_view`.
         """
-        formatters = self._html_cell_formatters()
+        formatters = self._html_cell_formatters(compact_inner)
 
         # Without specially formatted columns (or empty), just do representation as normal
         if not formatters or len(self) == 0:
@@ -328,11 +446,16 @@ class NestedFrame(pd.DataFrame):
 
         return html_repr
 
-    def _html_cell_formatters(self) -> dict[Hashable, Callable[[Any], str]]:
+    def _html_cell_formatters(self, compact_inner: bool = False) -> dict[Hashable, Callable[[Any], str]]:
         """Fresh cell formatters for the columns with a custom HTML rendering, by column name."""
         formatters = {}
         for column in self.columns:
-            formatter = _html_cell_formatter(self.dtypes[column])
+            dtype = self.dtypes[column]
+            formatter: Callable[[Any], str] | None
+            if compact_inner and isinstance(dtype, NestedDtype):
+                formatter = _nested_column_formatter(compact_inner=True)
+            else:
+                formatter = html_cell_formatter(dtype)
             if formatter is not None:
                 formatters[column] = formatter
         return formatters
@@ -347,28 +470,49 @@ class NestedFrame(pd.DataFrame):
             delimited_path, aliases = _identify_aliases(delimited_path)
         return [aliases.get(x, x) for x in delimited_path.split(delimiter)]
 
+    def _resolve_column_path(
+        self, name: str | list[str], *, allow_new_field: bool = False
+    ) -> ColumnPath | None:
+        """Resolve a column name, possibly a dot-delimited path into nested columns, to a ``ColumnPath``.
+
+        This is how every method of the frame interprets a column name, see
+        :func:`nested_pandas.nestedframe.paths.resolve_column_path`.
+
+        Parameters
+        ----------
+        name : str or list of str
+            The column name, or its already parsed components. Backticks may
+            protect components containing the delimiter.
+        allow_new_field : bool, default False
+            Whether the name may refer to a sub-column that does not exist
+            yet, of an existing nested column.
+
+        Returns
+        -------
+        ColumnPath or None
+            The resolved path, None if the name is not a string or does not
+            refer to a column.
+        """
+        if isinstance(name, str):
+            # A column label is used as is, whatever dots and backticks it contains
+            components = [name] if name in self.columns else self._parse_hierarchical_components(name)
+        elif isinstance(name, list):
+            components = name
+        else:
+            return None
+        return resolve_column_path(self, components, allow_new_field=allow_new_field)
+
     def _is_known_hierarchical_column(self, components: list[str] | str) -> bool:
         """Determine whether a string is a known hierarchical column name"""
-        if isinstance(components, str):
-            components = self._parse_hierarchical_components(components)
-        if len(components) < 2:
-            return False
-        base_name = components[0]
-        if self._is_nested_column(base_name):
-            nested_name = ".".join(components[1:])
-            return nested_name in self.dtypes[base_name].column_dtypes
-        return False
+        path = self._resolve_column_path(components)
+        return path is not None and not path.is_base
 
     def _is_nested_column(self, col: str):
         return col in self.columns and isinstance(self.dtypes[col], NestedDtype)
 
     def _is_known_column(self, components: list[str] | str) -> bool:
         """Determine whether a list of field components describes a known column name"""
-        if isinstance(components, str):
-            components = self._parse_hierarchical_components(components)
-        if ".".join(components) in self.columns:
-            return True
-        return self._is_known_hierarchical_column(components)
+        return self._resolve_column_path(components) is not None
 
     def __getitem__(self, item):
         """Adds custom __getitem__ behavior for nested columns"""
@@ -379,37 +523,40 @@ class NestedFrame(pd.DataFrame):
 
         return super().__getitem__(item)
 
-    @staticmethod
-    def _wrap_series(series: pd.Series) -> pd.Series:
-        """Wrap a base column in the Series subclass for its dtype, if there is one."""
-        for dtype_type, series_type in _SERIES_TYPES.items():
-            if isinstance(series.dtype, dtype_type):
-                return series_type(series)
+    def _get_path_series(self, path: ColumnPath) -> pd.Series:
+        """The column at ``path``: a column of the frame, or a sub-column as a flat series.
+
+        A sub-column is flattened through every level of nesting above it,
+        so its index is the index of the frame repeated for each of its
+        values. A flat series is chosen over a list series for utility, e.g.
+        the native ability to do something like ``ndf["nested.a"] + 3``.
+        """
+        series = super().__getitem__(path.column)
+        if isinstance(series, pd.Series):  # a dataframe for a duplicated column label
+            # Nested and tensor columns are returned as their Series subclasses
+            series = wrap_series(series)
+        for field in path.fields:
+            series = series.nest[field]
         return series
 
-    def _getitem_str(self, item):
-        if self._is_nested_column(item):
-            return NestedSeries(super().__getitem__(item))
-        # Preempt the nested check if the item is a base column, with or without
-        # dots and backticks.
-        if item in self.columns:
-            return self._wrap_series(super().__getitem__(item))
-        components = self._parse_hierarchical_components(item)
-        # One more check on the entirety of the item name, in case backticks were used
-        # (even if they weren't necessary).
-        cleaned_item = ".".join(components)
-        if cleaned_item in self.columns:
-            return self._wrap_series(super().__getitem__(cleaned_item))
+    def _with_nested_replaced(self, path: ColumnPath, nested: pd.Series) -> pd.Series:
+        """The column of the frame that ``path`` starts at, with the nested column at ``path`` replaced.
 
-        # If a nested column name is passed, return a flat series for that column
-        # flat series is chosen over list series for utility
-        # e.g. native ability to do something like ndf["nested.a"] + 3
-        if self._is_known_hierarchical_column(components):
-            nested = components[0]
-            field = ".".join(components[1:])
-            return self[nested].nest.to_flat(columns=[field])[field]
-        else:
+        ``nested`` must have one value per value of the nested column it
+        replaces, as the series returned by ``_get_path_series(path)`` does.
+        """
+        while not path.is_base:
+            parent = path.parent
+            nested = self._get_path_series(parent).nest.set_flat_column(path.leaf, nested)
+            path = parent
+        return nested
+
+    def _getitem_str(self, item):
+        path = self._resolve_column_path(item)
+        if path is None:
+            cleaned_item = ".".join(self._parse_hierarchical_components(item))
             raise KeyError(f"Column '{cleaned_item}' not found in nested columns or base columns")
+        return self._get_path_series(path)
 
     @staticmethod
     def _is_key_list(item):
@@ -420,19 +567,37 @@ class NestedFrame(pd.DataFrame):
         return all(isinstance(k, str) for k in item)
 
     def _getitem_list(self, item):
-        unknown_cols = [k for k in item if not self._is_known_column(k)]
+        paths = [self._resolve_column_path(k) for k in item]
+        unknown_cols = [k for k, path in zip(item, paths, strict=True) if path is None]
         if unknown_cols:
             raise KeyError(f"{unknown_cols} not in index")
-        non_nested_keys = [k for k in item if k in self.columns]
-        result = super().__getitem__(non_nested_keys).copy()
-        components = [self._parse_hierarchical_components(k) for k in item]
-        nested_components = [c for c in components if self._is_known_hierarchical_column(c)]
-        nested_columns = defaultdict(list)
-        for comps in nested_components:
-            nested_columns[comps[0]].append(".".join(comps[1:]))
-        for c in nested_columns:
-            result[c] = self[c].nest[nested_columns[c]]
+        result = super().__getitem__([path.column for path in paths if path.is_base]).copy()
+        # The requested sub-columns of each nested column, as a tree of names: a sub-column maps to
+        # None if all of it is requested, or to the tree of what is requested below it.
+        selections: dict[Hashable, dict] = {}
+        for path in paths:
+            if path.is_base:
+                continue
+            selection: dict | None = selections.setdefault(path.column, {})
+            for field in path.fields[:-1]:
+                selection = selection.setdefault(field, {})
+                if selection is None:  # all of this nested sub-column is already requested
+                    break
+            if selection is not None:
+                selection[path.leaf] = None
+        for column, selection in selections.items():
+            result[column] = self._select_sub_columns(NestedSeries(super().__getitem__(column)), selection)
         return result
+
+    @staticmethod
+    def _select_sub_columns(nested: pd.Series, selection: dict) -> pd.Series:
+        """A nested series with only the sub-columns named in ``selection``, see ``_getitem_list``."""
+        selected = nested.nest[list(selection)]
+        for field, sub_selection in selection.items():
+            if sub_selection is not None:
+                inner = NestedFrame._select_sub_columns(nested.nest[field], sub_selection)
+                selected = selected.nest.set_flat_column(field, inner)
+        return selected
 
     def __setitem__(self, key, value):
         """Custom __setitem__ for NestedFrame: auto-nest DataFrame assignment to new columns."""
@@ -458,29 +623,36 @@ class NestedFrame(pd.DataFrame):
                 self._update_inplace(new_df)
                 return
 
-        components = self._parse_hierarchical_components(key)
-        # Replacing or adding columns to a nested structure
+        path = self._resolve_column_path(key, allow_new_field=True)
+        # Replacing or adding columns to a nested structure, at any depth
         # Allows statements like ndf["nested.t"] = ndf["nested.t"] - 5
         # Or ndf["nested.base_t"] = ndf["nested.t"] - 5
         # Performance note: This requires building a new nested structure
         # TODO: Support assignment of a new column to an existing nested col from a list series
-        if self._is_known_hierarchical_column(components) or (
-            len(components) > 1 and components[0] in self.nested_columns
-        ):
-            if len(components) != 2:
-                raise ValueError(f"Only one level of nesting is supported; given {key}")
-            nested, field = components
-            # Support a special case of embedding a base column into a nested column, with values being
-            # repeated in each nested list-array.
-            if isinstance(value, pd.Series) and self.index.equals(value.index):
-                new_nested_series = self[nested].nest.set_filled_column(field, value)
+        if path is not None and not path.is_base:
+            parent = path.parent
+            nested_series = self._get_path_series(parent)
+            # Support a special case of embedding a column of the level above into a nested column, with
+            # values being repeated in each nested list-array.
+            if isinstance(value, pd.Series) and nested_series.index.equals(value.index):
+                new_nested_series = nested_series.nest.set_filled_column(path.leaf, value)
             else:
-                new_nested_series = self[nested].nest.set_flat_column(field, value)
-            return super().__setitem__(nested, new_nested_series)
+                new_nested_series = nested_series.nest.set_flat_column(path.leaf, value)
+            return super().__setitem__(path.column, self._with_nested_replaced(parent, new_nested_series))
 
         # Adding a new nested structure from a column
         # Allows statements like ndf["new_nested.t"] = ndf["nested.t"] - 5
+        components = [] if path is not None else self._parse_hierarchical_components(key)
         if len(components) > 1:
+            if components[0] in self.nested_columns:
+                raise ValueError(
+                    f"Cannot set '{key}': '{'.'.join(components[:-1])}' is not a nested column of "
+                    f"'{components[0]}'"
+                )
+            if len(components) != 2:
+                raise ValueError(
+                    f"Only one level of nesting is supported for a new nested column; given {key}"
+                )
             new_nested, field = components
             if isinstance(value, pd.Series):
                 value.name = field
@@ -889,20 +1061,24 @@ class NestedFrame(pd.DataFrame):
                 labels = [columns] if isinstance(columns, str) else columns
                 columns = None
                 axis = 1
-            nested_labels = [label for label in labels if self._is_known_hierarchical_column(label)]
-            base_labels = [label for label in labels if not self._is_known_hierarchical_column(label)]
+            base_labels = []
+            # sub-columns to drop, by the nested column directly containing them
+            sub_cols_by_parent: dict[ColumnPath, list[str]] = defaultdict(list)
+            for label in labels:
+                path = self._resolve_column_path(label)
+                if path is None or path.is_base:
+                    base_labels.append(label)
+                else:
+                    sub_cols_by_parent[path.parent].append(path.leaf)
 
-            # split nested_labels by nested column
-            if len(nested_labels) > 0:
-                nested_cols = set([label.split(".")[0] for label in nested_labels])
-
-                # drop targeted sub-columns for each nested column
-                for col in nested_cols:
-                    sub_cols = [label.split(".")[1] for label in nested_labels if label.split(".")[0] == col]
-                    if inplace:
-                        self[col] = self[col].nest.drop(sub_cols)
-                    else:
-                        self = self.assign(**{f"{col}": self[col].nest.drop(sub_cols)})
+            # drop targeted sub-columns for each nested column
+            for parent, sub_cols in sub_cols_by_parent.items():
+                new_nested = self._get_path_series(parent).nest.drop(sub_cols)
+                new_column = self._with_nested_replaced(parent, new_nested)
+                if inplace:
+                    self[parent.column] = new_column
+                else:
+                    self = self.assign(**{f"{parent.column}": new_column})
 
             # drop remaining base columns
             if len(base_labels) > 0:
@@ -1485,17 +1661,23 @@ class NestedFrame(pd.DataFrame):
         base_cols = [col for col in self.columns if col not in self.nested_columns]
         filled_df = super().__getitem__(base_cols).fillna(value=value, axis=axis, inplace=False, limit=limit)
 
+        # Fill values given per sub-column, by nested column
+        nested_values: dict[Hashable, dict] = defaultdict(dict)
+        if isinstance(value, Mapping):
+            for k, v in value.items():
+                path = self._resolve_column_path(k, allow_new_field=True)
+                if path is None or path.is_base:
+                    continue
+                if len(path.fields) > 1:
+                    raise NotImplementedError(
+                        f"fillna does not support sub-columns nested deeper than one level, given '{k}'"
+                    )
+                nested_values[path.column][path.leaf] = v
+
         for nest_col in self.nested_columns:
             nested_df = self[nest_col].explode()
             nested_value: Any
-            if isinstance(value, Mapping):
-                nested_value = {}
-                for k, v in value.items():
-                    if k.startswith(f"{nest_col}."):
-                        subcol = k.split(".", 1)[1]  # strip prefix
-                        nested_value[subcol] = v
-            else:
-                nested_value = value
+            nested_value = nested_values[nest_col] if isinstance(value, Mapping) else value
             nested_df = nested_df.fillna(value=nested_value, axis=axis, inplace=False, limit=None)
             filled_df = filled_df.join_nested(nested_df, nest_col)
 
@@ -1713,9 +1895,19 @@ class NestedFrame(pd.DataFrame):
         e.g. flat_df.index == [0, 2, 2, 2], while self.index
         is arbitrary (e.g. ["a", "b", "a"]),
         and self[nest_name].array.list_index is [0, 0, 1, 1, 1, 2, 2, 2, 2].
+
+        ``nest_name`` may also be the path of a nested column inside
+        another nested column. The "ordinal" index then counts the values
+        of that nested column, flattened through the levels above it.
         """
+        path = self._resolve_column_path(nest_name)
         new_df = self.reset_index(drop=True)
-        new_df[nest_name] = pack_sorted_df_into_struct(flat_df, name=nest_name)
+        packed = pack_sorted_df_into_struct(flat_df, name=path.leaf)
+        if not path.is_base:
+            # One value per value of the replaced nested column, missing where all rows got filtered
+            n_values = len(new_df._get_path_series(path))
+            packed = new_df._with_nested_replaced(path, packed.reindex(pd.RangeIndex(n_values)))
+        new_df[path.column] = packed
         return new_df.set_index(self.index)
 
     def _resolve_dropna_target(self, on_nested, subset):
@@ -1730,15 +1922,17 @@ class NestedFrame(pd.DataFrame):
                 subset = [subset]
 
             for col in subset:
+                path = self._resolve_column_path(col, allow_new_field=True)
+                if path is not None:
+                    subset_target.append("base" if path.is_base else path.parent.name)
                 # Without a ".", always assume base layer
-                if "." not in col:
+                elif "." not in col:
                     subset_target.append("base")
                 else:
-                    layer, col = col.split(".")
+                    layer = col.split(".")[0]
                     if layer in nested_cols:
-                        subset_target.append(layer)
-                    else:
-                        raise ValueError(f"layer '{layer}' not found in the base columns")
+                        raise ValueError(f"'{col}' not found in the nested column '{layer}'")
+                    raise ValueError(f"layer '{layer}' not found in the base columns")
 
             # Check for 1 target
             subset_target = np.unique(subset_target)
@@ -1749,8 +1943,11 @@ class NestedFrame(pd.DataFrame):
             subset_target = str(subset_target[0])
 
         # Next check the on_nested kwarg input
-        if on_nested and on_nested not in nested_cols:
-            raise ValueError("Provided nested layer not found in nested dataframes")
+        if on_nested:
+            on_nested_path = self._resolve_column_path(on_nested)
+            if on_nested_path is None or not on_nested_path.is_nested:
+                raise ValueError("Provided nested layer not found in nested dataframes")
+            on_nested = on_nested_path.name
 
         # Resolve target layer
         target = "base"
@@ -1894,7 +2091,9 @@ class NestedFrame(pd.DataFrame):
         if ignore_index:
             raise ValueError("ignore_index is not supported for nested columns")
         if subset is not None:
-            subset = [col.split(".")[-1] for col in subset]
+            # _resolve_dropna_target() checked that every one of these resolves
+            subset_paths = [self._resolve_column_path(col, allow_new_field=True) for col in subset]
+            subset = [path.leaf for path in subset_paths if path is not None]
         target_flat = self[target].explode()
         target_flat = target_flat.set_index(self[target].array.get_list_index())
         if inplace:
@@ -1987,9 +2186,10 @@ class NestedFrame(pd.DataFrame):
         if isinstance(by, str):
             by = [by]
         # Check "by" columns for hierarchical references
-        for col in by:
-            if self._is_known_hierarchical_column(col):
-                target.append(col.split(".")[0])
+        by_paths = [self._resolve_column_path(col) for col in by]
+        for path in by_paths:
+            if path is not None and not path.is_base:
+                target.append(path.parent.name)
             else:
                 target.append("base")
 
@@ -2018,7 +2218,7 @@ class NestedFrame(pd.DataFrame):
             if target_flat.index.name is None:  # set name if not present
                 target_flat.index.name = "index"
             # Index must always be the first sort key for nested columns
-            nested_by = [target_flat.index.name] + [col.split(".")[-1] for col in by]
+            nested_by = [target_flat.index.name] + [path.leaf for path in by_paths]
 
             # Augment the ascending kwarg to include the index
             if isinstance(ascending, bool):
@@ -2434,16 +2634,20 @@ class NestedFrame(pd.DataFrame):
                     "All arguments to `map_rows` must be strings corresponding to"
                     " column names to pass along to the function."
                 )
-            components = self._parse_hierarchical_components(arg)
-            if not self._is_known_column(components):
+            path = self._resolve_column_path(arg)
+            if path is None:
                 raise ValueError(
                     f"Received a string argument '{arg}' that was not found in the columns list. "
                     "All arguments to `map_rows` must be strings corresponding to"
                     " column names to pass along to the function."
                 )
-            layer = "base" if len(components) < 2 else components[0]
-            col = components[-1]
-            requested_columns.append((layer, col))
+            if len(path.fields) > 1:
+                raise NotImplementedError(
+                    f"map_rows does not support sub-columns nested deeper than one level, given '{arg}'"
+                )
+            # The names are strings, since the path was resolved from one
+            layer = "base" if path.is_base else str(path.column)
+            requested_columns.append((layer, str(path.leaf)))
 
         # Construct row containers and apply
         results = []

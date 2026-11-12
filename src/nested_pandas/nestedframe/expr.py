@@ -12,6 +12,8 @@ from pandas.core.computation import ops
 from pandas.core.computation.expr import PARSERS, PandasExprVisitor
 from pandas.core.computation.parsing import clean_column_name
 
+from nested_pandas.series.dtype import NestedDtype
+
 # Avoid cyclic import
 if TYPE_CHECKING:
     from nested_pandas import NestedFrame
@@ -35,13 +37,20 @@ class NestedPandasExprVisitor(PandasExprVisitor):
             # If the target is not an attribute, then it's a simple assignment as usual
             return super().visit_Assign(node)
         target = node.targets[0]
-        if not isinstance(target.value, ast.Name):
+        # Walk up the attribute chain, which is longer than one attribute for a column
+        # of a nest inside another nest, like `outer.inner.col`.
+        names = [target.attr]
+        value = target.value
+        while isinstance(value, ast.Attribute):
+            names.append(value.attr)
+            value = value.value
+        if not isinstance(value, ast.Name):
             raise ValueError("Assignments to nested columns must be of the form `nested.col = ...`")
-        # target.value.id will be the name of the nest, target.attr is the column name.
+        # value.id will be the name of the outermost nest, the last name is the column name.
         # Describing the proper target for the assigner is enough for both overwrite and
         # creation of new columns.  The assigner will be a string like "nested.col".
         # This works both for the creation of new nest members and new nests.
-        self.assigner = f"{target.value.id}.{target.attr}"
+        self.assigner = ".".join([value.id, *reversed(names)])
         # Continue visiting.
         return self.visit(node.value, **kwargs)
 
@@ -55,6 +64,26 @@ class _SeriesFromNest(pd.Series):
     """
 
     _metadata = ["nest_name", "flat_nest"]
+
+    def __getattr__(self, name: str):
+        """Resolve a sub-column of a nest that is itself inside a nest, as in `outer.inner.col`.
+
+        Only reached for names that are not attributes of the series, so a
+        sub-column named like a Series attribute is not accessible this way.
+        """
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            if name.startswith("_") or name in self._metadata:
+                raise
+            dtype = self.dtype
+            if not isinstance(dtype, NestedDtype) or name not in dtype.column_dtypes:
+                raise
+        flat_nest = self.nest.to_flat()
+        result = _SeriesFromNest(flat_nest[name])
+        result.nest_name = f"{self.nest_name}.{self.name}"
+        result.flat_nest = flat_nest
+        return result
 
     @property
     def _constructor(self) -> Self:  # type: ignore[name-defined] # noqa: F821

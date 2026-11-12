@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
+from nested_pandas.series.registry import register_series_class
 from nested_pandas.tensors.dtype import TensorDtype
 from nested_pandas.tensors.ext_array import TensorExtensionArray
 
@@ -198,3 +199,6 @@ class TensorSeries(pd.Series):
         Name: t, dtype: fixed_size_list<item: double>[4][pyarrow]
         """
         return pd.Series(self.array.to_arrow_ext_array(storage=True), index=self.index, name=self.name)
+
+
+register_series_class(TensorDtype, TensorSeries)

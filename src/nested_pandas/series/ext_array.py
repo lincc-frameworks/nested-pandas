@@ -35,6 +35,8 @@
 from __future__ import annotations  # Self in Python 3.10
 
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, cast
 
 import numpy as np
@@ -63,16 +65,27 @@ from nested_pandas.series._storage import (
 # noqa
 from nested_pandas.series.dtype import NestedDtype
 from nested_pandas.series.nestedseries import NestedSeries  # noqa
+from nested_pandas.series.registry import (
+    has_special_dtype,
+    pandas_dtype_from_arrow,
+    register_text_formatter,
+    text_cell_formatter,
+)
 from nested_pandas.series.utils import (
     chunk_lengths,
+    contains_extension_type,
     downcast_large_list_array,
+    if_else,
     is_pa_type_a_list,
+    list_scalar,
     normalize_list_array,
     normalize_struct_list_type,
+    null_scalar,
     rechunk,
     replace_with_mask,
     safe_cast,
     scalars_to_pa_array,
+    storage_type,
     struct_field_names,
     transpose_struct_list_type,
 )
@@ -203,19 +216,130 @@ def convert_df_to_pa_scalar(df: pd.DataFrame, *, pa_type: pa.StructType | None) 
             # null-typed child the same way as arrow#43838's array cast does. Canary:
             # test_pyarrow_null_bugs.py::test_pyarrow_43838_null_list_identity_cast.
             if target is not None and ty != target.type and is_pa_type_a_list(target.type):
-                scalar = pa.scalar(safe_cast(scalar.values, target.type.value_type), type=target.type)
+                scalar = list_scalar(safe_cast(scalar.values, target.type.value_type), target.type)
                 ty = target.type
         else:
-            array = pa.array(series)
-            if target is not None and is_pa_type_a_list(target.type):
-                array = safe_cast(array, target.type.value_type)
-                ty = target.type
-            else:
-                ty = pa.large_list(array.type)
-            scalar = pa.scalar(array, type=ty)
+            array = _flat_values_to_pa_array(
+                series,
+                pa_type=None
+                if target is None or not is_pa_type_a_list(target.type)
+                else target.type.value_type,
+            )
+            ty = (
+                target.type
+                if target is not None and is_pa_type_a_list(target.type)
+                else pa.large_list(array.type)
+            )
+            scalar = list_scalar(array, ty)
         d[column] = scalar
         types[column] = ty
-    return pa.scalar(d, type=pa.struct(types), from_pandas=True)
+    struct_type = pa.struct(types)
+    if contains_extension_type(struct_type):
+        # pa.scalar() does not build values nesting extension types
+        arrays = [pa.repeat(scalar, 1) for scalar in d.values()]
+        return pa.StructArray.from_arrays(arrays, fields=list(struct_type))[0]
+    return pa.scalar(d, type=struct_type, from_pandas=True)
+
+
+def _flat_values_to_pa_array(value, *, pa_type: pa.DataType | None) -> pa.Array | pa.ChunkedArray:
+    """Convert the values of a sub-column to a pyarrow array, of ``pa_type`` if it is given.
+
+    Like ``pa.array(value, from_pandas=True, type=pa_type)``, but for a
+    ``pa_type`` with a registered extension dtype, such as a tensor type, the
+    values are converted by that dtype, since pyarrow builds no extension
+    arrays from Python objects. A numpy array with more than one dimension is
+    read as a stack of tensors, one per value.
+    """
+    if isinstance(value, np.ndarray) and value.ndim > 1 and value.dtype != object:
+        tensor_type = pa.fixed_shape_tensor(pa.from_numpy_dtype(value.dtype), value.shape[1:])
+        dtype = pandas_dtype_from_arrow(tensor_type)
+        value = dtype.construct_array_type().from_stack(value)  # type: ignore[attr-defined]
+    if pa_type is not None and contains_extension_type(pa_type):
+        if isinstance(value, pa.Array | pa.ChunkedArray):
+            return value.cast(pa_type)
+        dtype = pandas_dtype_from_arrow(pa_type)
+        if isinstance(dtype, pd.ArrowDtype):
+            return pa.array(value, from_pandas=True, type=storage_type(pa_type)).cast(pa_type)
+        if not (isinstance(value, pd.Series | ExtensionArray) and value.dtype == dtype):
+            value = dtype.construct_array_type()._from_sequence(value, dtype=dtype)
+        return pa.array(value, type=pa_type)
+    return pa.array(value, from_pandas=True, type=pa_type)
+
+
+NESTED_COMPACT_FORMATTING_MAX_COLUMNS = 5
+"""Maximum number of sub-column names listed by the compact format of a nested value"""
+
+_compact_inner_nested: ContextVar[bool] = ContextVar("compact_inner_nested", default=False)
+
+
+@contextmanager
+def compact_inner_nested() -> Iterator[None]:
+    """Within this context, text reprs show nested values inside nested columns in the compact format
+    of :func:`format_nested_value_compact`: their sub-column names and number of rows."""
+    token = _compact_inner_nested.set(True)
+    try:
+        yield
+    finally:
+        _compact_inner_nested.reset(token)
+
+
+def nested_value_summary(value) -> tuple[str, int] | None:
+    """The listed sub-column names and the number of rows of a nested value, None if it is missing.
+
+    At most :data:`NESTED_COMPACT_FORMATTING_MAX_COLUMNS` names are listed,
+    followed by an ellipsis if there are more.
+    """
+    if value is pd.NA or value is None:
+        return None
+    names = [str(name) for name in value.columns[:NESTED_COMPACT_FORMATTING_MAX_COLUMNS]]
+    if len(value.columns) > NESTED_COMPACT_FORMATTING_MAX_COLUMNS:
+        names.append("…")
+    return ", ".join(names), len(value)
+
+
+def format_nested_value_compact(value) -> str:
+    """Format one value of a nested column by its sub-column names and number of rows only, like
+    ``[wave, flux] (7 rows)``."""
+    summary = nested_value_summary(value)
+    if summary is None:
+        return str(pd.NA)
+    names, n_rows = summary
+    return f"[{names}] ({n_rows} row{'' if n_rows == 1 else 's'})"
+
+
+def _format_nested_value(value) -> str:
+    """Format one value of a nested column, a dataframe or a missing value, for text reprs.
+
+    The first rows are shown as ``[{column: value, ...}; …] (N rows)``, with
+    the values of nested and tensor sub-columns in their own short format.
+    """
+    if value is pd.NA or value is None:
+        return str(pd.NA)
+    # Select first few rows
+    df = value.iloc[:NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW]
+    # Format to strings using Pandas default formatters
+
+    def format_series(series):
+        formatter = text_cell_formatter(series.dtype)
+        if isinstance(series.dtype, NestedDtype) and _compact_inner_nested.get():
+            formatter = format_nested_value_compact
+        if formatter is not None:
+            return pd.Series([formatter(item) for item in series], index=series.index, dtype=object)
+        if is_float_dtype(series.dtype):
+            # Format with the default Pandas formatter and strip white-spaces it adds
+            return pd.Series(format_array(series.to_numpy(), None), index=series.index).str.strip()
+        # Convert to string, add extra quotes for strings
+        return series.apply(repr)
+
+    def format_row(row):
+        return ", ".join(f"{name}: {value}" for name, value in zip(row.index, row, strict=True))
+
+    # Format series to strings
+    df = pd.DataFrame({name: format_series(df[name]) for name in df.columns}, index=df.index)
+    str_rows = "; ".join(f"{{{format_row(row)}}}" for _index, row in df.iterrows())
+    if len(value) <= NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW:
+        return f"[{str_rows}]"
+    return f"[{str_rows}; …] ({len(value)} rows)"
 
 
 class NestedExtensionArray(ExtensionArray):
@@ -570,7 +694,7 @@ class NestedExtensionArray(ExtensionArray):
 
             result = self.struct_array.take(indices_array)
             if not pa.compute.is_null(fill_value).as_py():
-                result = pa.compute.if_else(fill_mask, fill_value, result)
+                result = if_else(fill_mask, fill_value, result)
             # Validate for fill_value
             return type(self)(result, validate=True)
 
@@ -591,32 +715,7 @@ class NestedExtensionArray(ExtensionArray):
 
     def _formatter(self, boxed: bool = False) -> Callable[[Any], str | None]:
         if boxed:
-
-            def box_formatter(value):
-                if value is pd.NA:
-                    return str(pd.NA)
-                # Select first few rows
-                df = value.iloc[:NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW]
-                # Format to strings using Pandas default formatters
-
-                def format_series(series):
-                    if is_float_dtype(series.dtype):
-                        # Format with the default Pandas formatter and strip white-spaces it adds
-                        return pd.Series(format_array(series.to_numpy(), None)).str.strip()
-                    # Convert to string, add extra quotes for strings
-                    return series.apply(repr)
-
-                def format_row(row):
-                    return ", ".join(f"{name}: {value}" for name, value in zip(row.index, row, strict=True))
-
-                # Format series to strings
-                df = df.apply(format_series, axis=0)
-                str_rows = "; ".join(f"{{{format_row(row)}}}" for _index, row in df.iterrows())
-                if len(value) <= NESTED_EXTENSION_ARRAY_FORMATTING_MAX_ITEMS_TO_SHOW:
-                    return f"[{str_rows}]"
-                return f"[{str_rows}; …] ({len(value)} rows)"
-
-            return box_formatter
+            return _format_nested_value
         return repr
 
     @classmethod
@@ -759,9 +858,14 @@ class NestedExtensionArray(ExtensionArray):
                 return value
             return value.cast(pa_type)
         if value is pd.NA or value is None:
-            return pa.scalar(None, type=pa_type, from_pandas=True)
+            if pa_type is None:
+                return pa.scalar(None, from_pandas=True)
+            return null_scalar(pa_type)
         if isinstance(value, pd.DataFrame):
             return convert_df_to_pa_scalar(value, pa_type=pa_type)
+        if pa_type is not None and contains_extension_type(pa_type):
+            # pyarrow builds no extension values from Python objects, so build the storage value
+            return pa.scalar(value, type=storage_type(pa_type), from_pandas=True).cast(pa_type)
         return pa.scalar(value, type=pa_type, from_pandas=True)
 
     @classmethod
@@ -773,8 +877,13 @@ class NestedExtensionArray(ExtensionArray):
             pa_array = value
         else:
             try:
-                pa_array = pa.array(value, type=pa_type)
-            except (ValueError, TypeError, KeyError):
+                # pyarrow builds no extension values from Python objects, so build the storage values,
+                # they are cast to the extension types below
+                build_type = pa_type
+                if pa_type is not None and contains_extension_type(pa_type):
+                    build_type = storage_type(pa_type)
+                pa_array = pa.array(value, type=build_type)
+            except (ValueError, TypeError, KeyError, pa.ArrowNotImplementedError):
                 scalars: list[pa.Scalar] = []
                 for v in value:
                     # If pa_type is not specified, then cast to the first non-null type
@@ -859,20 +968,27 @@ class NestedExtensionArray(ExtensionArray):
         if pa.compute.is_null(value).as_py():
             return na_value
         series = {}
-        for name, list_scalar in value.items():
-            dtype: pd.ArrowDtype | NestedDtype | None = self.dtype.column_dtype(name)
-            # It gave pd.ArrowDtype for non-NestedDtype fields,
+        for name, field_scalar in value.items():
+            dtype: pd.api.extensions.ExtensionDtype | None = self.dtype.column_dtype(name)
+            # It gave pd.ArrowDtype for fields which are neither nested nor tensors,
             # make it None if we'd like to use pandas "ordinary" dtypes.
-            if not pyarrow_dtypes and not isinstance(dtype, NestedDtype):
+            if not pyarrow_dtypes and isinstance(dtype, pd.ArrowDtype):
                 dtype = None
             series[name] = pd.Series(
-                list_scalar.values,
+                field_scalar.values,
                 # mypy doesn't understand that dtype is ExtensionDtype | None
                 dtype=dtype,  # type: ignore[arg-type]
                 copy=copy,
                 name=name,
             )
-        return pd.DataFrame(series, copy=False)
+        df = pd.DataFrame(series, copy=False)
+        if has_special_dtype(item.dtype for item in series.values()):
+            # A NestedFrame returns nested and tensor sub-columns as their Series subclasses.
+            # Imported here because nestedframe.core imports this module
+            from nested_pandas.nestedframe.core import NestedFrame
+
+            return NestedFrame(df)
+        return df
 
     @property
     def _list_storage(self):
@@ -1008,7 +1124,7 @@ class NestedExtensionArray(ExtensionArray):
         pa_array = self.list_array if list_struct else self.struct_array
         list_type = pa.large_list if large_list else pa.list_
         pa_type = list_type(pa_array.type)
-        return cast(pa.LargeListScalar | pa.ListScalar, pa.scalar(pa_array, type=pa_type))
+        return cast(pa.LargeListScalar | pa.ListScalar, list_scalar(pa_array, pa_type))
 
     @property
     def list_offsets(self) -> pa.Array:
@@ -1084,8 +1200,14 @@ class NestedExtensionArray(ExtensionArray):
         for chunk in self.struct_array.iterchunks():
             struct_array: pa.StructArray = cast(pa.StructArray, chunk)
             list_array: pa.LargeListArray = cast(pa.LargeListArray, struct_array.field(field))
-            for list_scalar in list_array:
-                yield np.asarray(list_scalar.values)
+            if isinstance(list_array.type.value_type, pa.FixedShapeTensorType):
+                # A stack of the tensors of each list, of shape (n, *tensor_shape)
+                tensor_array_type = pandas_dtype_from_arrow(list_array.type.value_type).construct_array_type()
+                for field_scalar in list_array:
+                    yield tensor_array_type(field_scalar.values).to_stack()  # type: ignore[attr-defined, call-arg]
+                continue
+            for field_scalar in list_array:
+                yield np.asarray(field_scalar.values)
 
     def view_fields(self, fields: str | list[str]) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Get a view of the extension array with the specified fields only
@@ -1146,7 +1268,7 @@ class NestedExtensionArray(ExtensionArray):
             value = np.repeat(value, self.flat_length)
 
         try:
-            pa_array = pa.array(value, from_pandas=True, type=pa_type)
+            pa_array = _flat_values_to_pa_array(value, pa_type=pa_type)
         except (ValueError, TypeError) as e:
             raise TypeError(
                 f"New values must be convertible to the existing element pyarrow type, {pa_type}. "
@@ -1272,3 +1394,6 @@ class NestedExtensionArray(ExtensionArray):
             raise ValueError("Cannot delete all fields")
 
         self.pa_table = self.pa_table.select(fields_to_keep)
+
+
+register_text_formatter(NestedDtype, _format_nested_value)

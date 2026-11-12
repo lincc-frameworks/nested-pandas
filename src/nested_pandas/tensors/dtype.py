@@ -14,6 +14,8 @@ from pandas.api.extensions import register_extension_dtype
 from pandas.core.arrays import ExtensionArray
 from pandas.core.dtypes.base import ExtensionDtype
 
+from nested_pandas.series.registry import arrow_type_from_string, register_arrow_dtype
+
 __all__ = ["TensorDtype"]
 
 
@@ -131,20 +133,14 @@ class TensorDtype(ExtensionDtype):
                 "for example 'tensor[double, (2, 3)]' or 'tensor[int32, (4, 4), dim_names=[y, x]]'"
             )
 
-        # Try pyarrow type aliases first, then reuse pandas' parsing of pyarrow type strings for
-        # common parametric types like timestamp[ns, tz=UTC]. Not the other way round, because
-        # pandas reserves "string[pyarrow]" for its StringDtype and refuses to parse it.
         value_type_str = match["value_type"]
         try:
-            value_type = pa.type_for_alias(value_type_str)
-        except ValueError:
-            try:
-                value_type = pd.ArrowDtype.construct_from_string(f"{value_type_str}[pyarrow]").pyarrow_dtype
-            except (TypeError, NotImplementedError) as e:
-                raise TypeError(
-                    f"Cannot parse tensor element type '{value_type_str}'. "
-                    "Please use TensorDtype(pa.fixed_shape_tensor(...)) instead."
-                ) from e
+            value_type = arrow_type_from_string(value_type_str)
+        except TypeError as e:
+            raise TypeError(
+                f"Cannot parse tensor element type '{value_type_str}'. "
+                "Please use TensorDtype(pa.fixed_shape_tensor(...)) instead."
+            ) from e
 
         shape = [int(s) for s in match["shape"].split(",") if s.strip()]
         dim_names = None if match["dim_names"] is None else [s.strip() for s in match["dim_names"].split(",")]
@@ -257,3 +253,10 @@ class TensorDtype(ExtensionDtype):
         if storage:
             return pd.ArrowDtype(self.storage_type)
         return pd.ArrowDtype(self.pyarrow_dtype)
+
+
+register_arrow_dtype(
+    TensorDtype,
+    lambda pa_type: isinstance(pa_type, pa.FixedShapeTensorType),
+    lambda dtype: dtype.pyarrow_dtype,
+)

@@ -11,8 +11,10 @@ from numpy.typing import ArrayLike
 from pandas.api.extensions import register_series_accessor
 
 from nested_pandas.series.dtype import NestedDtype
+from nested_pandas.series.ext_array import _flat_values_to_pa_array
 from nested_pandas.series.nestedseries import NestedSeries
 from nested_pandas.series.packer import pack_flat, pack_sorted_df_into_struct
+from nested_pandas.series.registry import has_special_dtype, wrap_series
 from nested_pandas.series.utils import downcast_large_list_array, nested_types_mapper
 
 __all__ = ["NestSeriesAccessor"]
@@ -153,7 +155,14 @@ class NestSeriesAccessor(Mapping):
             )
 
         # TODO: Consider returning a NestedSeries if only one column is present
-        return pd.DataFrame(flat_series)
+        flat_df = pd.DataFrame(flat_series)
+        if has_special_dtype(series.dtype for series in flat_series.values()):
+            # A NestedFrame returns nested and tensor sub-columns as their Series subclasses.
+            # Imported here because nestedframe.core imports this module
+            from nested_pandas.nestedframe.core import NestedFrame
+
+            return NestedFrame(flat_df)
+        return flat_df
 
     def len(self) -> list[int]:
         """Lengths of the list arrays"""
@@ -431,9 +440,8 @@ class NestSeriesAccessor(Mapping):
             name=key,
             copy=False,
         )
-        if isinstance(self._series.dtype.column_dtype(key), NestedDtype):
-            return NestedSeries(flat_series, copy=False)
-        return flat_series
+        # Nested and tensor sub-columns are returned as their Series subclasses
+        return wrap_series(flat_series)
 
     def __setitem__(self, key: str, value: ArrayLike) -> None:
         """Replace the field values from flat-array of values
@@ -461,7 +469,7 @@ class NestSeriesAccessor(Mapping):
         if isinstance(value, pd.Series) and not self.flat_index.equals(value.index):
             raise ValueError("Cannot set field with a Series of different index")
 
-        pa_array = pa.array(value, from_pandas=True)
+        pa_array = _flat_values_to_pa_array(value, pa_type=None)
 
         # Input is a flat array of values
         if len(pa_array) != self.flat_length:

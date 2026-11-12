@@ -55,6 +55,7 @@ from pandas.core.indexers import (  # type: ignore[attr-defined]
     validate_indices,
 )
 
+from nested_pandas.series.registry import register_text_formatter
 from nested_pandas.series.utils import replace_with_mask
 from nested_pandas.tensors.dtype import TensorDtype
 
@@ -978,3 +979,6 @@ class TensorExtensionArray(ExtensionArray):
             otherwise wrap its ``fixed_size_list`` storage array.
         """
         return ArrowExtensionArray(self.storage if storage else self._pa_array)
+
+
+register_text_formatter(TensorDtype, _format_tensor)

@@ -12,10 +12,16 @@ from pandas.api.extensions import register_extension_dtype
 from pandas.core.arrays import ExtensionArray
 from pandas.core.dtypes.base import ExtensionDtype
 
+from nested_pandas.series.registry import (
+    arrow_type_from_string,
+    pandas_dtype_from_arrow,
+    register_arrow_dtype,
+)
 from nested_pandas.series.utils import (
     is_pa_type_a_list,
     is_pa_type_is_list_struct,
     normalize_struct_list_type,
+    normalize_tensor_types,
     transpose_list_struct_type,
     transpose_struct_list_type,
 )
@@ -104,7 +110,10 @@ class NestedDtype(ExtensionDtype):
     def construct_from_string(cls, string: str) -> Self:  # type: ignore[name-defined] # noqa: F821
         """Construct NestedDtype from a string representation.
 
-        This works only for simple types, i.e. non-parametric pyarrow types.
+        Sub-column types may be names of pyarrow types, including the
+        common parametric ones ``pd.ArrowDtype`` parses, such as
+        ``timestamp[ns]``, and names of pandas extension dtypes, such as
+        ``nested<x: [int64]>`` and ``tensor[double, (2, 2)]``.
 
         Parameters
         ----------
@@ -122,14 +131,17 @@ class NestedDtype(ExtensionDtype):
         Raises
         ------
         TypeError
-            If the string is not a valid nested type string or if the element types
-            are parametric pyarrow types.
+            If the string is not a valid nested type string or if the type of a
+            sub-column cannot be parsed, as for the less common parametric
+            pyarrow types.
         """
+        if not isinstance(string, str):
+            raise TypeError(f"'construct_from_string' expects a string, got {type(string)}")
         if not string.startswith("nested<") or not string.endswith(">"):
             raise TypeError("Not a valid nested type string, expected 'nested<...>'")
         fields_str = string.removeprefix("nested<").removesuffix(">")
 
-        field_strings = fields_str.split(", ")
+        field_strings = _split_top_level(fields_str)
 
         fields = {}
         for field_string in field_strings:
@@ -147,16 +159,13 @@ class NestedDtype(ExtensionDtype):
                 )
 
             value_type = field_type.removeprefix("[").removesuffix("]")
-            # We follow ArrowDtype implementation heere and do not try to parse complex types
             try:
-                pa_value_type = pa.type_for_alias(value_type)
-            except ValueError as e:
+                fields[field_name] = arrow_type_from_string(value_type)
+            except TypeError as e:
                 raise TypeError(
-                    f"Parsing pyarrow specific parameters in the string is not supported yet: {value_type}. "
+                    f"Cannot parse the type of '{field_name}' in the nested type string: {e}. "
                     "Please use NestedDtype() or NestedDtype.from_columns() instead."
                 ) from e
-
-            fields[field_name] = pa_value_type
 
         return cls.from_columns(fields)
 
@@ -255,14 +264,14 @@ class NestedDtype(ExtensionDtype):
             struct_type = cast(pa.StructType, pyarrow_dtype)
             # Normalize list fields to large_list for backward compatibility
             # (callers may pass pa.list_ fields)
-            struct_type = normalize_struct_list_type(struct_type)
+            struct_type = cast(pa.StructType, normalize_tensor_types(normalize_struct_list_type(struct_type)))
             return struct_type, transpose_struct_list_type(struct_type)
         # Support pa.large_list (and pa.list_ for backward compatibility)
         if is_pa_type_a_list(pyarrow_dtype):
             if not pa.types.is_large_list(pyarrow_dtype):
                 # Normalize regular list or fixed-size list to large_list
                 pyarrow_dtype = pa.large_list(pyarrow_dtype.value_type)
-            list_type = cast(pa.LargeListType, pyarrow_dtype)
+            list_type = cast(pa.LargeListType, normalize_tensor_types(pyarrow_dtype))
             return transpose_list_struct_type(list_type), list_type
         raise ValueError(
             "NestedDtype can only be constructed with pa.StructType, pa.LargeListType, "
@@ -314,8 +323,8 @@ class NestedDtype(ExtensionDtype):
             return ArrowDtype(self.list_struct_pa_dtype)
         return ArrowDtype(self.pyarrow_dtype)
 
-    def column_dtype(self, column: str) -> pd.ArrowDtype | Self:  # type: ignore[name-defined] # noqa: F821
-        """Pandas dtype of a column, pd.ArrowDType or NestedDtype.
+    def column_dtype(self, column: str) -> ExtensionDtype:
+        """Pandas dtype of a column: pd.ArrowDtype, or the extension dtype of a nested or tensor column.
 
         Parameters
         ----------
@@ -324,12 +333,35 @@ class NestedDtype(ExtensionDtype):
 
         Returns
         -------
-        pd.ArrowDtype | NestedDtype
-            If the column is a list-struct, return NestedDtype, else wrap it
-            as a pd.ArrowDtype.
+        ExtensionDtype
+            If the column is a list-struct, return NestedDtype, if it is a
+            fixed-shape tensor, return TensorDtype, else wrap it as a
+            pd.ArrowDtype.
         """
         list_type = self.pyarrow_dtype.field(column).type
-        value_type = list_type.value_type
-        if is_pa_type_is_list_struct(value_type):
-            return type(self)(value_type)
-        return pd.ArrowDtype(value_type)
+        return pandas_dtype_from_arrow(list_type.value_type)
+
+
+def _split_top_level(string: str, separator: str = ", ") -> list[str]:
+    """Split a string on a separator, ignoring the separators inside any kind of brackets."""
+    parts = []
+    depth = 0
+    start = 0
+    i = 0
+    while i < len(string):
+        char = string[i]
+        if char in "<[(":
+            depth += 1
+        elif char in ">])":
+            depth -= 1
+        elif depth == 0 and string.startswith(separator, i):
+            parts.append(string[start:i])
+            i += len(separator)
+            start = i
+            continue
+        i += 1
+    parts.append(string[start:])
+    return parts
+
+
+register_arrow_dtype(NestedDtype, is_pa_type_is_list_struct, lambda dtype: dtype.list_struct_pa_dtype)

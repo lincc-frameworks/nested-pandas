@@ -27,6 +27,8 @@ from typing import Any
 import numpy as np
 
 from nested_pandas.display import MAX_RENDERED, CappedColumnFormatter
+from nested_pandas.series.registry import register_html_formatter
+from nested_pandas.tensors.dtype import TensorDtype
 from nested_pandas.tensors.ext_array import TENSOR_FORMATTING_MAX_ELEMENTS
 
 __all__ = [
@@ -237,3 +239,6 @@ def tensor_column_formatter(max_rendered: int = MAX_RENDERED) -> Callable[[Any],
         return isinstance(value, np.ndarray) and _wants_image(value)
 
     return CappedColumnFormatter(tensor_cell_html, is_image, max_rendered)
+
+
+register_html_formatter(TensorDtype, tensor_column_formatter)

@@ -1,6 +1,6 @@
 from __future__ import annotations  # TYPE_CHECKING
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -778,6 +778,108 @@ def safe_cast(array: pa.Array | pa.ChunkedArray, target_type: pa.DataType) -> pa
     return array.cast(target_type)
 
 
+def _map_leaf_types(pa_type: pa.DataType, leaf_type: Callable[[pa.DataType], pa.DataType]) -> pa.DataType:
+    """Rebuild a type with ``leaf_type`` applied to every type inside its structs and lists.
+
+    ``leaf_type`` gets each type that is not a struct or a list, extension
+    types included, and returns its replacement.
+    """
+    if pa.types.is_struct(pa_type):
+        return pa.struct(
+            [field.with_type(_map_leaf_types(field.type, leaf_type)) for field in struct_fields(pa_type)]
+        )
+    if is_pa_type_a_list(pa_type):
+        value_field = pa_type.value_field.with_type(_map_leaf_types(pa_type.value_type, leaf_type))
+        if pa.types.is_large_list(pa_type):
+            return pa.large_list(value_field)
+        if pa.types.is_fixed_size_list(pa_type):
+            return pa.list_(value_field, pa_type.list_size)
+        return pa.list_(value_field)
+    return leaf_type(pa_type)
+
+
+def contains_extension_type(pa_type: pa.DataType) -> bool:
+    """Whether ``pa_type`` is, or nests in its structs and lists, a pyarrow extension type."""
+    if isinstance(pa_type, pa.BaseExtensionType):
+        return True
+    return any(contains_extension_type(pa_type.field(i).type) for i in range(pa_type.num_fields))
+
+
+def storage_type(pa_type: pa.DataType) -> pa.DataType:
+    """The type with every extension type inside it replaced by its storage type.
+
+    pyarrow cannot build values of extension types from Python objects, nor
+    run kernels such as ``if_else`` on them, including when they are inside
+    structs and lists, but it casts arrays and scalars between a type and its
+    storage type without copying. So such operations are done on the storage
+    type and the result is cast back.
+    """
+
+    def leaf_storage_type(leaf: pa.DataType) -> pa.DataType:
+        if isinstance(leaf, pa.BaseExtensionType):
+            return storage_type(leaf.storage_type)
+        return leaf
+
+    return _map_leaf_types(pa_type, leaf_storage_type)
+
+
+def normalize_tensor_types(pa_type: pa.DataType) -> pa.DataType:
+    """The type with the identity permutation dropped from every fixed-shape tensor type inside it.
+
+    pyarrow compares a tensor type with an identity permutation equal to
+    the one without a permutation, but hashes them differently. Dropping it
+    keeps equality and hashing of the dtypes built on the type consistent,
+    as ``TensorDtype`` does for itself.
+    """
+
+    def without_identity_permutation(leaf: pa.DataType) -> pa.DataType:
+        if (
+            isinstance(leaf, pa.FixedShapeTensorType)
+            and leaf.permutation is not None
+            and list(leaf.permutation) == list(range(len(leaf.shape)))
+        ):
+            return pa.fixed_shape_tensor(leaf.value_type, leaf.shape, dim_names=leaf.dim_names)
+        return leaf
+
+    return _map_leaf_types(pa_type, without_identity_permutation)
+
+
+def null_scalar(pa_type: pa.DataType) -> pa.Scalar:
+    """A null scalar of the type; unlike ``pa.scalar(None, type=...)`` it supports extension types
+    inside structs and lists."""
+    return pa.nulls(1, type=pa_type)[0]
+
+
+def list_scalar(values: pa.Array | pa.ChunkedArray, list_type: pa.DataType) -> pa.Scalar:
+    """A list scalar of ``list_type`` holding ``values``, which must be of its value type.
+
+    Like ``pa.scalar(values, type=list_type)``, which pyarrow does not
+    implement for values of, or nesting, an extension type.
+    """
+    if not contains_extension_type(list_type) or not _is_varlength_list_type(list_type):
+        return pa.scalar(values, type=list_type)
+    if isinstance(values, pa.ChunkedArray):
+        values = values.combine_chunks() if values.num_chunks else pa.nulls(0, type=values.type)
+    values = values.cast(list_type.value_type)
+    offsets = _offsets_for_list_type(pa.array([0, len(values)], type=pa.int64()), list_type)
+    list_cls = pa.LargeListArray if pa.types.is_large_list(list_type) else pa.ListArray
+    return list_cls.from_arrays(offsets, values)[0]
+
+
+def if_else(
+    cond: pa.Array | np.ndarray,
+    left: pa.Array | pa.ChunkedArray | pa.Scalar,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    """``pa.compute.if_else`` for values of the type of ``right``, also when it nests extension types,
+    for which pyarrow has no kernel."""
+    pa_type = right.type
+    if not contains_extension_type(pa_type):
+        return pa.compute.if_else(cond, left, right)
+    storage = storage_type(pa_type)
+    return pa.compute.if_else(cond, left.cast(storage), right.cast(storage)).cast(pa_type)
+
+
 def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> pa.Array:
     """Build an array from per-row scalars without pyarrow's null-builder gap.
 
@@ -816,7 +918,7 @@ def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> p
         rows = list(zip(scalars, validity, strict=True))
         field_arrays = [
             scalars_to_pa_array(
-                [s[field.name] if valid else pa.scalar(None, type=field.type) for s, valid in rows],
+                [s[field.name] if valid else null_scalar(field.type) for s, valid in rows],
                 field.type,
             )
             for field in pa_type
@@ -840,11 +942,17 @@ def scalars_to_pa_array(scalars: Sequence[pa.Scalar], pa_type: pa.DataType) -> p
                 # each row to the target type before concatenating. safe_cast
                 # (rather than a plain .cast()) avoids arrow#43838 here too.
                 chunks.append(safe_cast(s.values, value_type))
-        values = pa.concat_arrays(chunks) if chunks else pa.array([], type=value_type)
+        values = pa.concat_arrays(chunks) if chunks else pa.nulls(0, type=value_type)
         offsets_array = pa.array(offsets, type=offsets_dtype)
         mask = None if all(validity) else pa.array([not valid for valid in validity])
         list_cls = pa.LargeListArray if pa.types.is_large_list(pa_type) else pa.ListArray
         return list_cls.from_arrays(offsets_array, values, mask=mask)
+
+    if isinstance(pa_type, pa.BaseExtensionType):
+        # pyarrow builds no arrays from extension scalars, so build the storage array instead
+        storage = pa_type.storage_type
+        storage_scalars = [s.value if s.is_valid else null_scalar(storage) for s in scalars]
+        return pa.ExtensionArray.from_storage(pa_type, scalars_to_pa_array(storage_scalars, storage))
 
     return pa.array(scalars, type=pa_type)
 
@@ -882,4 +990,4 @@ def replace_with_mask(array: pa.ChunkedArray, mask: pa.BooleanArray, value: pa.A
     value_index = pa.compute.if_else(pa.compute.less(value_index, 0), 0, value_index)
 
     broadcast_value = value.take(value_index)
-    return pa.compute.if_else(mask, broadcast_value, array)
+    return if_else(mask, broadcast_value, array)
