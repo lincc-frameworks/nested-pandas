@@ -85,16 +85,17 @@ def test_constructor_keeps_subclass_for_tensor_results():
         assert type(result) is pd.Series
 
 
-def _degraded_series() -> TensorSeries:
-    """A TensorSeries that pandas left holding another dtype, by enlarging it in place with a new label.
+def _non_tensor_series(data=(1.0, 2.0, 3.0, np.nan)) -> TensorSeries:
+    """A TensorSeries holding ``data`` of another dtype, built around the constructor's TypeError.
 
-    This is the one way to get a TensorSeries of a non-tensor dtype, since the constructor rejects them and
-    the results of operations fall back to a plain Series.
+    The constructor rejects such data and the results of operations fall back to a plain Series, but pandas
+    can still leave a TensorSeries holding another dtype by modifying it in place (enlarging it with a new
+    label does so under pandas 3.0, while 3.1 keeps the tensor dtype), so the tests build one directly.
     """
-    series = TensorSeries.from_stack(tensor_stack([1, 2, 3]))
-    series.loc[3] = tensor(4)
+    series = TensorSeries.__new__(TensorSeries)
+    pd.Series.__init__(series, list(data))
     assert type(series) is TensorSeries
-    assert series.dtype == object
+    assert not isinstance(series.dtype, TensorDtype)
     return series
 
 
@@ -112,7 +113,7 @@ def test_init_rejects_other_dtypes():
 
 def test_tensor_only_decorator():
     """Test that tensor-only members raise a TypeError for other dtypes."""
-    series = _degraded_series()
+    series = _non_tensor_series()
 
     with pytest.raises(TypeError, match="'tensor_shape' can only be used with a TensorDtype"):
         _ = series.tensor_shape
@@ -161,7 +162,7 @@ def test_repr_html():
     assert html.count("<pre") == 2  # small tensors show their values
     assert ">11</th>" in html  # the index is kept
     assert "2 rows x 1 columns" in html
-    assert _degraded_series()._repr_html_() is None
+    assert _non_tensor_series()._repr_html_() is None
 
 
 def test_nestedframe_getitem_returns_tensorseries():
@@ -345,8 +346,7 @@ def test_where_and_mask_with_tensor():
 def test_setitem_other_dtype_unchanged():
     """Test that a TensorSeries pandas left holding another dtype assigns, fills and masks as a plain
     Series."""
-    series = _degraded_series()
-    series[3] = np.nan
+    series = _non_tensor_series([1.0, 2.0, 3.0, np.nan])
 
     series[0] = 5
     series.loc[1] = 6

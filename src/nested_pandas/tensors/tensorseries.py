@@ -81,7 +81,8 @@ class TensorSeries(pd.Series):
     ``TypeError``. Results of operations that are not of TensorDtype, such
     as ``isna()``, are plain pandas Series. pandas can still leave a
     TensorSeries holding another dtype by modifying it in place, e.g. when
-    enlarging it with a new label, and it then behaves as a plain Series.
+    enlarging it with a new label under pandas 3.0, and it then behaves as
+    a plain Series.
 
     Examples
     --------
