@@ -14,7 +14,7 @@ from pandas.api.types import is_number
 # pandas does not expose its indexer classes. TensorSeries subclasses them to rewrap tensor values
 # before pandas inspects them, relying on: the classes existing under these names, their
 # ``(name, obj)`` constructor, and ``__setitem__`` being the single entry point of assignment (it
-# is marked @final, hence the type: ignore on the override). pandas is pinned to >=3,<4 in pyproject.toml.
+# is marked @final, hence the type: ignore on the override).
 from pandas.core.indexing import _iLocIndexer, _LocIndexer  # type: ignore[attr-defined]
 
 from nested_pandas.tensors.dtype import TensorDtype

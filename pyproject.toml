@@ -19,8 +19,10 @@ dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2",
-    # We use internal pd._libs.missing and experimental ArrowExtensionArray
-    "pandas>=3,<4",
+    # We use internal pd._libs.missing, experimental ArrowExtensionArray, and the private indexer
+    # classes in pandas.core.indexing (see tensors/tensorseries.py), so each new pandas minor must be
+    # checked before the upper bound is raised
+    "pandas>=3,<3.2",
     "pyarrow>=26",  # to_tensor(allow_nulls=True); nullable fixed_size_list parquet round trip
     "wrapt>=1.14.0",
     "fsspec>=2026.2.0",  # open_parquet_files added in 2025.12.0; avoiding buggy 2025.12/2026.1 (fsspec#1973)
