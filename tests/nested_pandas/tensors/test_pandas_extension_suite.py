@@ -191,6 +191,30 @@ class TestSetitem(base.BaseSetitemTests):
         assert_tensor_equal(ser[0], data[5])
         assert_tensor_equal(ser[1], data[6])
 
+    def test_setitem_mask_boolean_array_with_na(self, data, box_in_series):
+        """Assigning with a nullable boolean mask, where NA counts as False."""
+        mask = pd.array(np.zeros(data.shape, dtype="bool"), dtype="boolean")
+        mask[:3] = True
+        mask[3:5] = pd.NA
+
+        if box_in_series:
+            data = pd.Series(data)
+
+        data[mask] = data[0]
+
+        for i in range(3):
+            assert_tensor_equal(data[i], data[0])
+
+    def test_setitem_2d_values(self, data):
+        """Assigning the 2-d object array of a frame's values to rows of the frame."""
+        original = data.copy()
+        df = pd.DataFrame({"a": data, "b": data})
+        df.loc[[0, 1], :] = df.loc[[1, 0], :].values
+        for value in df.loc[0, :]:
+            assert_tensor_equal(value, original[1])
+        for value in df.loc[1, :]:
+            assert_tensor_equal(value, original[0])
+
 
 class TestInterface(base.BaseInterfaceTests):
     """The ExtensionArray interface: len, ndim, nbytes, isna, copy, array conversion."""
