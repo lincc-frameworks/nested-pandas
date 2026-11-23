@@ -645,8 +645,8 @@ def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
     local_path = tmp_path / "data.parquet"
     pq.write_table(table, local_path)
     fs = fsspec.filesystem("memory")
-    fs.put_file(str(local_path), "/struct_subcolumns/data.parquet")
-    remote_path = "memory:///struct_subcolumns/data.parquet"
+    remote_path = f"memory:///{tmp_path.name}/data.parquet"
+    fs.put_file(str(local_path), remote_path)
 
     bytes_read = 0
     read = MemoryFile.read
@@ -659,44 +659,26 @@ def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
 
     monkeypatch.setattr(MemoryFile, "read", counting_read)
 
+    lsdb_kwargs = dict(filesystem=fs, partitioning=None, schema=table.schema, filters=None)
     for columns in (["a", "nested.flux"], ["nested.lam", "a", "nested.flux"]):
-        bytes_read = 0
-        remote = read_parquet(remote_path, columns=columns)
-        assert 0 < bytes_read < 0.7 * local_path.stat().st_size  # ivar is never downloaded
-        assert_frame_equal(remote, read_parquet(local_path, columns=columns))
-        # The same read as hats/LSDB, which pass the filesystem, partitioning and schema.
-        bytes_read = 0
-        lsdb_like = read_parquet(
-            remote_path, columns=columns, filesystem=fs, partitioning=None, schema=table.schema, filters=None
-        )
-        assert 0 < bytes_read < 0.7 * local_path.stat().st_size
-        assert_frame_equal(lsdb_like, remote)
+        expected = read_parquet(local_path, columns=columns)
+        for kwargs in ({}, lsdb_kwargs):
+            bytes_read = 0
+            assert_frame_equal(read_parquet(remote_path, columns=columns, **kwargs), expected)
+            assert 0 < bytes_read < 0.7 * local_path.stat().st_size  # ivar is never downloaded
 
-    # Unsupported kwargs fall back to the regular reader and still give the same result.
-    kwargs = {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]}
-    assert_frame_equal(read_parquet(remote_path, **kwargs), read_parquet(local_path, **kwargs))
-    fs.rm("/struct_subcolumns", recursive=True)
-
-
-def test_read_remote_struct_subcolumns_without_schema_metadata(tmp_path):
-    """An explicit schema without pandas metadata must not restore the file's index."""
-    df = pd.DataFrame({"a": [0, 1, 2]}, index=pd.RangeIndex(10, 16, 2, name="idx"))
-    table = pa.Table.from_pandas(df).append_column("nested", pa.array([{"flux": n} for n in range(3)]))
-    local_path = tmp_path / "data.parquet"
-    pq.write_table(table, local_path)
-    remote_path = f"memory:///{tmp_path.name}/data.parquet"
-    fs = fsspec.filesystem("memory")
-    fs.pipe(remote_path, local_path.read_bytes())
-    try:
-        kwargs = {"columns": ["nested.flux"], "schema": table.schema.remove_metadata()}
+    # Filters and a schema with different metadata fall back to the regular reader.
+    # Project the stored index explicitly so dropping its metadata changes the result.
+    for kwargs in (
+        {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]},
+        {"columns": ["idx", "nested.flux"], "schema": table.schema.remove_metadata()},
+    ):
         assert_frame_equal(read_parquet(remote_path, **kwargs), read_parquet(local_path, **kwargs))
-    finally:
-        fs.rm(remote_path)
+    fs.rm(remote_path)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
-def test_read_http_struct_subcolumns(streaming):
-    """HTTP partial reads must still work in streaming mode and not overfetch in buffered mode."""
+def test_read_http_struct_subcolumns():
+    """Buffered and streaming HTTP must match the existing reader and its I/O budget."""
     rng = np.random.default_rng(0)
     size = 12_000
     struct = pa.StructArray.from_arrays(
@@ -737,11 +719,12 @@ def test_read_http_struct_subcolumns(streaming):
             url = f"http://127.0.0.1:{server.server_port}/data.parquet"
             columns = ["a", "nested.flux"]
             expected = read_parquet(url, columns=columns, use_threads=True)  # Existing reader.
-            byte_budget = sum(response_sizes)
-            response_sizes.clear()
-            fs = fsspec.filesystem("http", block_size=0) if streaming else None
-            assert_frame_equal(read_parquet(url, columns=columns, filesystem=fs), expected)
-            assert 0 < sum(response_sizes) <= byte_budget
+            byte_budget, request_budget = sum(response_sizes), len(response_sizes)
+            for fs in (None, fsspec.filesystem("http", block_size=0)):
+                response_sizes.clear()
+                assert_frame_equal(read_parquet(url, columns=columns, filesystem=fs), expected)
+                assert 0 < sum(response_sizes) <= byte_budget
+                assert 0 < len(response_sizes) <= request_budget
         finally:
             server.shutdown()
             thread.join()
