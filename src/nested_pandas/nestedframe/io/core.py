@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Literal
 
@@ -24,6 +25,7 @@ from .pyarrow import (
     _pyarrow_read_table,
     _read_remote_parquet_directory,
     _read_struct_subcolumns,
+    _StructSubcolumnsUnsupportedError,
     _transform_read_parquet_data_arg,
 )
 
@@ -244,7 +246,8 @@ def _read_parquet_into_table(
 
     NOTE: local paths are routed to `pq.read_table` via `_is_local_path`, which
     handles files and directories natively. Only reads of struct sub-columns
-    check for a single file first, to read just the requested fields. We don't support HTTP
+    check for a single file first (unless `is_dir` says what it is), to read just the
+    requested fields. We don't support HTTP
     "directories", because 1) calling .is_dir() may be very expensive, because
     it downloads content first, 2) because .iter_dir() is likely to return a
     lot of "junk" besides of the actual parquet files.
@@ -263,17 +266,18 @@ def _read_parquet_into_table(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
 
-        # shortcut: keep batched ranges for HTTP(S) until direct reads avoid overfetch and extra requests.
+        # Not for HTTP(S): reading just the requested leaves takes a request per row group, while
+        # fsspec.parquet merges ranges into a few (36 MB test file: 25 requests for 12 MB vs 2 for
+        # 37 MB). Each HTTP round trip is expensive; S3-like stores handle many ranged reads well.
         if (
-            path_to_data.protocol not in ("http", "https")
-            and columns is not None
+            columns is not None
             and any("." in col for col in columns)
+            and path_to_data.protocol not in ("http", "https")
         ):
-            table = _read_struct_subcolumns(
-                path_to_data.path, columns, **{**kwargs, "filesystem": filesystem}
-            )
-            if table is not None:
-                return table
+            with contextlib.suppress(_StructSubcolumnsUnsupportedError):
+                return _read_struct_subcolumns(
+                    path_to_data.path, columns, **{**kwargs, "filesystem": filesystem}
+                )
 
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
@@ -287,17 +291,16 @@ def _read_parquet_into_table(
             )
 
     # Local single files: read only the requested struct fields, like remote files above.
-    filesystem = kwargs.get("filesystem")
+    # Trust `is_dir` when given; stat the path only when it isn't.
     if (
-        isinstance(data, str | Path | UPath)
-        and (filesystem is None or isinstance(filesystem, fsspec.AbstractFileSystem))
-        and columns is not None
+        columns is not None
         and any("." in col for col in columns)
-        and Path(local_path := UPath(data).path).is_file()
+        and isinstance(data, str | Path | UPath)
+        and is_dir is not True
+        and (is_dir is False or Path(UPath(data).path).is_file())
     ):
-        table = _read_struct_subcolumns(local_path, columns, **kwargs)
-        if table is not None:
-            return table
+        with contextlib.suppress(_StructSubcolumnsUnsupportedError):
+            return _read_struct_subcolumns(UPath(data).path, columns, **kwargs)
 
     # All other cases, including file-like objects, directories, and
     # even lists of the foregoing.

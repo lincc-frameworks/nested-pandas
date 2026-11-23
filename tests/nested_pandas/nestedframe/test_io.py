@@ -1,9 +1,7 @@
 import io
 import os
 import tempfile
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
 
 import fsspec
 import fsspec.implementations.http
@@ -19,7 +17,7 @@ from upath import UPath
 
 from nested_pandas import NestedFrame, TensorDtype, read_parquet
 from nested_pandas.datasets import generate_data
-from nested_pandas.nestedframe.io import from_pyarrow
+from nested_pandas.nestedframe.io import core, from_pyarrow
 from nested_pandas.nestedframe.io.datafusion import (
     _check_datafusion_support,
     _datafusion_filters_to_expr,
@@ -31,6 +29,8 @@ from nested_pandas.nestedframe.io.pyarrow import (
     _columns_to_load,
     _get_storage_options,
     _pyarrow_read_table,
+    _read_struct_subcolumns,
+    _StructSubcolumnsUnsupportedError,
     _transform_read_parquet_data_arg,
 )
 from nested_pandas.tensors import TensorExtensionArray
@@ -628,25 +628,63 @@ def test_issue_428(size):
         assert nf.nested.nest.columns == ["t"]
 
 
-def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
-    """Partial loads of remote and local files read only the requested struct fields."""
-    from fsspec.implementations.memory import MemoryFile
-
+@pytest.fixture
+def struct_parquet(tmp_path):
+    """A file whose struct has three equal-size fields and a null row, with a pandas index."""
     rng = np.random.default_rng(0)
     size = 1000
     struct = pa.StructArray.from_arrays(
         [pa.array(list(rng.random((size, 100)))) for _ in range(3)],
         names=["flux", "ivar", "lam"],
-        mask=pa.array(np.arange(size) == 3),  # a null struct row
+        mask=pa.array(np.arange(size) == 3),
     )
     table = pa.Table.from_pandas(
         pd.DataFrame({"a": rng.random(size)}, index=pd.Index(np.arange(size) * 2, name="idx"))
     ).append_column("nested", struct)
-    local_path = tmp_path / "data.parquet"
-    pq.write_table(table, local_path)
+    path = tmp_path / "data.parquet"
+    pq.write_table(table, path)
+    return path
+
+
+@pytest.fixture
+def memory_struct_parquet(struct_parquet):
+    """`struct_parquet` copied to fsspec's in-memory filesystem, standing in for a remote file."""
     fs = fsspec.filesystem("memory")
-    remote_path = f"memory:///{tmp_path.name}/data.parquet"
-    fs.put_file(str(local_path), remote_path)
+    path = f"memory:///{struct_parquet.parent.name}/data.parquet"
+    fs.put_file(str(struct_parquet), path)
+    yield path
+    fs.rm(path)
+
+
+@pytest.mark.parametrize("columns", [["a", "nested.flux"], ["nested.lam", "a", "nested.flux"]])
+@pytest.mark.parametrize("source", ["memory", "local", "local_fsspec", "local_pyarrow"])
+@pytest.mark.parametrize("catalog_kwargs", [False, True])
+def test_read_struct_subcolumns(
+    struct_parquet, memory_struct_parquet, columns, source, catalog_kwargs, monkeypatch
+):
+    """Struct sub-column reads of single files skip the regular reader and match it."""
+    path, filesystem = {
+        "memory": (memory_struct_parquet, None),
+        "local": (struct_parquet, None),
+        "local_fsspec": (str(struct_parquet), fsspec.filesystem("file")),
+        "local_pyarrow": (str(struct_parquet), pa.fs.LocalFileSystem()),
+    }[source]
+    kwargs = {"filesystem": filesystem}
+    if catalog_kwargs:
+        # Like hats/LSDB: the schema read from the file (list<element>, not list<item>), is_dir known.
+        kwargs |= dict(partitioning=None, schema=pq.read_schema(struct_parquet), filters=None, is_dir=False)
+    expected = read_parquet(struct_parquet, columns=columns, use_threads=True)  # regular reader
+
+    def fail(*args, **kwargs):
+        raise AssertionError("fell back to the regular reader")
+
+    monkeypatch.setattr(core, "_read_table_with_partial_load_check", fail)
+    assert_frame_equal(read_parquet(path, columns=columns, **kwargs), expected)
+
+
+def test_read_struct_subcolumns_skips_unrequested_fields(struct_parquet, memory_struct_parquet, monkeypatch):
+    """Only the requested struct field is downloaded, not the whole struct."""
+    from fsspec.implementations.memory import MemoryFile
 
     bytes_read = 0
     read = MemoryFile.read
@@ -658,98 +696,26 @@ def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
         return data
 
     monkeypatch.setattr(MemoryFile, "read", counting_read)
-
-    from nested_pandas.nestedframe.io import core
-
-    subcolumn_tables = []
-    read_struct_subcolumns = core._read_struct_subcolumns
-
-    def spy(*args, **kwargs):
-        subcolumn_tables.append(read_struct_subcolumns(*args, **kwargs))
-        return subcolumn_tables[-1]
-
-    monkeypatch.setattr(core, "_read_struct_subcolumns", spy)
-
-    # hats/LSDB pass the schema read from the catalog's Parquet files (list<element>, not list<item>).
-    lsdb_kwargs = dict(filesystem=fs, partitioning=None, schema=pq.read_schema(local_path), filters=None)
-    local_lsdb_kwargs = {**lsdb_kwargs, "filesystem": fsspec.filesystem("file")}
-    for columns in (["a", "nested.flux"], ["nested.lam", "a", "nested.flux"]):
-        # use_threads is not None, so this uses the regular read_table reader.
-        expected = read_parquet(local_path, columns=columns, use_threads=True)
-        for path, kwargs in (
-            (remote_path, {}),
-            (remote_path, lsdb_kwargs),
-            (local_path, {}),  # pyarrow opens local files natively
-            (str(local_path), local_lsdb_kwargs),
-        ):
-            bytes_read = 0
-            subcolumn_tables.clear()
-            assert_frame_equal(read_parquet(path, columns=columns, **kwargs), expected)
-            assert len(subcolumn_tables) == 1 and subcolumn_tables[0] is not None  # no fallback
-            if path == remote_path:
-                assert 0 < bytes_read < 0.7 * local_path.stat().st_size  # ivar is never downloaded
-
-    # Filters and a schema with different metadata fall back to the regular reader.
-    # Project the stored index explicitly so dropping its metadata changes the result.
-    for kwargs in (
-        {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]},
-        {"columns": ["idx", "nested.flux"], "schema": table.schema.remove_metadata()},
-    ):
-        assert_frame_equal(read_parquet(remote_path, **kwargs), read_parquet(local_path, **kwargs))
-    fs.rm(remote_path)
+    read_parquet(memory_struct_parquet, columns=["a", "nested.flux"])
+    assert 0 < bytes_read < 0.5 * struct_parquet.stat().st_size  # flux is a third of the file
 
 
-def test_read_http_struct_subcolumns():
-    """Buffered and streaming HTTP must match the existing reader and its I/O budget."""
-    rng = np.random.default_rng(0)
-    size = 12_000
-    struct = pa.StructArray.from_arrays(
-        [pa.array(list(rng.random((size, 100)))) for _ in range(3)], ["flux", "ivar", "lam"]
-    )
-    sink = pa.BufferOutputStream()
-    pq.write_table(pa.table({"a": np.arange(size), "nested": struct}), sink, row_group_size=500)
-    data = sink.getvalue().to_pybytes()
-    response_sizes = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_HEAD(self):  # noqa: N802
-            self.send_response(200)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Accept-Ranges", "bytes")
-            self.end_headers()
-
-        def do_GET(self):  # noqa: N802
-            start, _, last = self.headers.get("Range", "bytes=0-").removeprefix("bytes=").partition("-")
-            start, end = int(start), int(last) + 1 if last else len(data)
-            if "Range" in self.headers:
-                self.send_response(206)
-                self.send_header("Content-Range", f"bytes {start}-{end - 1}/{len(data)}")
-            else:
-                self.send_response(200)
-            self.send_header("Content-Length", str(end - start))
-            self.end_headers()
-            response_sizes.append(end - start)
-            self.wfile.write(data[start:end])
-
-        def log_message(self, format, *args):
-            pass
-
-    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
-        thread = Thread(target=server.serve_forever)
-        thread.start()
-        try:
-            url = f"http://127.0.0.1:{server.server_port}/data.parquet"
-            columns = ["a", "nested.flux"]
-            expected = read_parquet(url, columns=columns, use_threads=True)  # Existing reader.
-            byte_budget, request_budget = sum(response_sizes), len(response_sizes)
-            for fs in (None, fsspec.filesystem("http", block_size=0)):
-                response_sizes.clear()
-                assert_frame_equal(read_parquet(url, columns=columns, filesystem=fs), expected)
-                assert 0 < sum(response_sizes) <= byte_budget
-                assert 0 < len(response_sizes) <= request_budget
-        finally:
-            server.shutdown()
-            thread.join()
+@pytest.mark.parametrize("option", ["filters", "schema"])
+def test_read_struct_subcolumns_fallback(struct_parquet, memory_struct_parquet, option):
+    """Reads the leaf-only path can't serve use the regular reader."""
+    kwargs = {
+        "filters": {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]},
+        # Project the stored index, so that dropping the schema's metadata changes the result.
+        "schema": {
+            "columns": ["idx", "nested.flux"],
+            "schema": pq.read_schema(struct_parquet).remove_metadata(),
+        },
+    }[option]
+    with pytest.raises(_StructSubcolumnsUnsupportedError):
+        _read_struct_subcolumns(str(struct_parquet), **kwargs)
+    expected = read_parquet(struct_parquet, use_threads=True, **kwargs)  # regular reader
+    assert_frame_equal(read_parquet(memory_struct_parquet, **kwargs), expected)
+    assert_frame_equal(read_parquet(struct_parquet, **kwargs), expected)
 
 
 def test_use_pandas_metadata():
