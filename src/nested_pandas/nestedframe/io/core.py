@@ -61,10 +61,8 @@ def read_parquet(
         ``file://localhost/path/to/tables/`` or ``s3://bucket/partition_dir/``
         (note trailing slash for web locations, since it may be expensive
         to test a path for being a directory). Directory reading is not
-        supported for HTTP(S). If the path is to a single Parquet file, it will
-        be loaded using
-        ``fsspec.parquet.open_parquet_file``, which has optimized handling
-        for remote Parquet files.
+        supported for HTTP(S). Single remote files normally use
+        ``fsspec.parquet.open_parquet_file`` to fetch byte ranges in batches.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -92,9 +90,9 @@ def read_parquet(
 
         - "pyarrow" (default) uses `fsspec.parquet` (remote paths only) and
           `pyarrow.parquet.read_table`. It reads a nested column whole even
-          when a single sub-column is asked for (except for a single remote
-          file read without `filters`, where only the requested struct
-          fields are downloaded), and it applies `filters`
+          when a single sub-column is asked for, except that eligible reads
+          of a single remote file outside HTTP(S) can select individual
+          struct fields. It applies `filters`
           after reading the row groups they select, so it is not the best
           choice for partial loads or selective filters.
         - "datafusion" may be very fast when a few rows and/or a few nested
@@ -114,11 +112,6 @@ def read_parquet(
 
     Notes
     -----
-    For paths to single Parquet files, this function uses
-    fsspec.parquet.open_parquet_file, which performs intelligent
-    precaching.  This can significantly improve performance compared
-    to standard PyArrow reading on remote files.
-
     pyarrow supports partial loading of nested structures from parquet, for
     example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
     load the "a" column of the "nested" column. Standard pandas/pyarrow
@@ -270,7 +263,12 @@ def _read_parquet_into_table(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
 
-        if columns is not None and any("." in col for col in columns):
+        # shortcut: keep batched ranges for HTTP(S) until direct reads avoid overfetch and extra requests.
+        if (
+            path_to_data.protocol not in ("http", "https")
+            and columns is not None
+            and any("." in col for col in columns)
+        ):
             table = _read_remote_struct_subcolumns(
                 path_to_data.path, columns, **{**kwargs, "filesystem": filesystem}
             )

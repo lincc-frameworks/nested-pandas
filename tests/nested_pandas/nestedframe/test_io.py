@@ -1,7 +1,9 @@
 import io
 import os
 import tempfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 import fsspec
 import fsspec.implementations.http
@@ -674,6 +676,75 @@ def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
     kwargs = {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]}
     assert_frame_equal(read_parquet(remote_path, **kwargs), read_parquet(local_path, **kwargs))
     fs.rm("/struct_subcolumns", recursive=True)
+
+
+def test_read_remote_struct_subcolumns_without_schema_metadata(tmp_path):
+    """An explicit schema without pandas metadata must not restore the file's index."""
+    df = pd.DataFrame({"a": [0, 1, 2]}, index=pd.RangeIndex(10, 16, 2, name="idx"))
+    table = pa.Table.from_pandas(df).append_column("nested", pa.array([{"flux": n} for n in range(3)]))
+    local_path = tmp_path / "data.parquet"
+    pq.write_table(table, local_path)
+    remote_path = f"memory:///{tmp_path.name}/data.parquet"
+    fs = fsspec.filesystem("memory")
+    fs.pipe(remote_path, local_path.read_bytes())
+    try:
+        kwargs = {"columns": ["nested.flux"], "schema": table.schema.remove_metadata()}
+        assert_frame_equal(read_parquet(remote_path, **kwargs), read_parquet(local_path, **kwargs))
+    finally:
+        fs.rm(remote_path)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_read_http_struct_subcolumns(streaming):
+    """HTTP partial reads must still work in streaming mode and not overfetch in buffered mode."""
+    rng = np.random.default_rng(0)
+    size = 12_000
+    struct = pa.StructArray.from_arrays(
+        [pa.array(list(rng.random((size, 100)))) for _ in range(3)], ["flux", "ivar", "lam"]
+    )
+    sink = pa.BufferOutputStream()
+    pq.write_table(pa.table({"a": np.arange(size), "nested": struct}), sink, row_group_size=500)
+    data = sink.getvalue().to_pybytes()
+    response_sizes = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_HEAD(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+
+        def do_GET(self):  # noqa: N802
+            start, _, last = self.headers.get("Range", "bytes=0-").removeprefix("bytes=").partition("-")
+            start, end = int(start), int(last) + 1 if last else len(data)
+            if "Range" in self.headers:
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {start}-{end - 1}/{len(data)}")
+            else:
+                self.send_response(200)
+            self.send_header("Content-Length", str(end - start))
+            self.end_headers()
+            response_sizes.append(end - start)
+            self.wfile.write(data[start:end])
+
+        def log_message(self, format, *args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/data.parquet"
+            columns = ["a", "nested.flux"]
+            expected = read_parquet(url, columns=columns, use_threads=True)  # Existing reader.
+            byte_budget = sum(response_sizes)
+            response_sizes.clear()
+            fs = fsspec.filesystem("http", block_size=0) if streaming else None
+            assert_frame_equal(read_parquet(url, columns=columns, filesystem=fs), expected)
+            assert 0 < sum(response_sizes) <= byte_budget
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 def test_use_pandas_metadata():

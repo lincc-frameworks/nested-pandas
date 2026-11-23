@@ -181,7 +181,7 @@ def _read_remote_struct_subcolumns(
     with filesystem.open(path, "rb") as f:
         parquet_file = pq.ParquetFile(f)
         file_schema = parquet_file.schema_arrow
-        if schema is not None and not schema.equals(file_schema):
+        if schema is not None and not schema.equals(file_schema, check_metadata=True):
             return None
         for col in columns:
             if col in file_schema.names:
