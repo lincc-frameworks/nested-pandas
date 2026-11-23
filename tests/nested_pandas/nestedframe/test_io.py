@@ -2,6 +2,7 @@ import io
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock
 
 import fsspec
 import fsspec.implementations.http
@@ -630,25 +631,26 @@ def test_issue_428(size):
 
 @pytest.fixture
 def struct_parquet(tmp_path):
-    """A file whose struct has three equal-size fields and a null row, with a pandas index."""
+    """A struct with three equal-size fields and a null row, a struct of structs, and a pandas index."""
     rng = np.random.default_rng(0)
     size = 1000
-    struct = pa.StructArray.from_arrays(
+    nested = pa.StructArray.from_arrays(
         [pa.array(list(rng.random((size, 100)))) for _ in range(3)],
         names=["flux", "ivar", "lam"],
         mask=pa.array(np.arange(size) == 3),
     )
+    deep = pa.StructArray.from_arrays([pa.StructArray.from_arrays([rng.random(size)], ["x"])], ["inner"])
     table = pa.Table.from_pandas(
         pd.DataFrame({"a": rng.random(size)}, index=pd.Index(np.arange(size) * 2, name="idx"))
-    ).append_column("nested", struct)
+    )
     path = tmp_path / "data.parquet"
-    pq.write_table(table, path)
+    pq.write_table(table.append_column("nested", nested).append_column("deep", deep), path)
     return path
 
 
 @pytest.fixture
 def memory_struct_parquet(struct_parquet):
-    """`struct_parquet` copied to fsspec's in-memory filesystem, standing in for a remote file."""
+    """`struct_parquet` on fsspec's in-memory filesystem, standing in for a remote file."""
     fs = fsspec.filesystem("memory")
     path = f"memory:///{struct_parquet.parent.name}/data.parquet"
     fs.put_file(str(struct_parquet), path)
@@ -656,53 +658,42 @@ def memory_struct_parquet(struct_parquet):
     fs.rm(path)
 
 
-@pytest.mark.parametrize("columns", [["a", "nested.flux"], ["nested.lam", "a", "nested.flux"]])
-@pytest.mark.parametrize("source", ["memory", "local", "local_fsspec", "local_pyarrow"])
+@pytest.mark.parametrize("source", ["memory", "local", "local_fsspec", "local_pyarrow_fs"])
 @pytest.mark.parametrize("catalog_kwargs", [False, True])
-def test_read_struct_subcolumns(
-    struct_parquet, memory_struct_parquet, columns, source, catalog_kwargs, monkeypatch
-):
-    """Struct sub-column reads of single files skip the regular reader and match it."""
+def test_read_struct_subcolumns(struct_parquet, memory_struct_parquet, source, catalog_kwargs, monkeypatch):
+    """Single-file struct sub-column reads skip the regular reader and the unrequested field."""
+    from fsspec.implementations.memory import MemoryFile
+
+    columns = ["nested.lam", "a", "nested.flux"]  # two fields of one struct, out of file order
+    expected = read_parquet(struct_parquet, columns=columns, use_threads=True)  # regular reader
     path, filesystem = {
-        "memory": (memory_struct_parquet, None),
+        "memory": (memory_struct_parquet, fsspec.filesystem("memory") if catalog_kwargs else None),
         "local": (struct_parquet, None),
         "local_fsspec": (str(struct_parquet), fsspec.filesystem("file")),
-        "local_pyarrow": (str(struct_parquet), pa.fs.LocalFileSystem()),
+        "local_pyarrow_fs": (str(struct_parquet), pa.fs.LocalFileSystem()),
     }[source]
     kwargs = {"filesystem": filesystem}
     if catalog_kwargs:
         # Like hats/LSDB: the schema read from the file (list<element>, not list<item>), is_dir known.
         kwargs |= dict(partitioning=None, schema=pq.read_schema(struct_parquet), filters=None, is_dir=False)
-    expected = read_parquet(struct_parquet, columns=columns, use_threads=True)  # regular reader
 
-    def fail(*args, **kwargs):
-        raise AssertionError("fell back to the regular reader")
-
-    monkeypatch.setattr(core, "_read_table_with_partial_load_check", fail)
-    assert_frame_equal(read_parquet(path, columns=columns, **kwargs), expected)
-
-
-def test_read_struct_subcolumns_skips_unrequested_fields(struct_parquet, memory_struct_parquet, monkeypatch):
-    """Only the requested struct field is downloaded, not the whole struct."""
-    from fsspec.implementations.memory import MemoryFile
-
-    bytes_read = 0
+    sizes = []
     read = MemoryFile.read
 
     def counting_read(self, *args):
-        nonlocal bytes_read
-        data = read(self, *args)
-        bytes_read += len(data)
+        sizes.append(len(data := read(self, *args)))
         return data
 
     monkeypatch.setattr(MemoryFile, "read", counting_read)
-    read_parquet(memory_struct_parquet, columns=["a", "nested.flux"])
-    assert 0 < bytes_read < 0.5 * struct_parquet.stat().st_size  # flux is a third of the file
+    monkeypatch.setattr(core, "_read_table_with_partial_load_check", Mock(side_effect=AssertionError))
+    assert_frame_equal(read_parquet(path, columns=columns, **kwargs), expected)
+    if source == "memory":
+        assert 0 < sum(sizes) < 0.8 * struct_parquet.stat().st_size  # ivar, a third, is never read
 
 
-@pytest.mark.parametrize("option", ["filters", "schema"])
+@pytest.mark.parametrize("option", ["filters", "schema", "struct_of_structs"])
 def test_read_struct_subcolumns_fallback(struct_parquet, memory_struct_parquet, option):
-    """Reads the leaf-only path can't serve use the regular reader."""
+    """Reads the leaf-only reader can't serve go to the regular reader."""
     kwargs = {
         "filters": {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]},
         # Project the stored index, so that dropping the schema's metadata changes the result.
@@ -710,6 +701,7 @@ def test_read_struct_subcolumns_fallback(struct_parquet, memory_struct_parquet, 
             "columns": ["idx", "nested.flux"],
             "schema": pq.read_schema(struct_parquet).remove_metadata(),
         },
+        "struct_of_structs": {"columns": ["a", "deep.inner.x"]},
     }[option]
     with pytest.raises(_StructSubcolumnsUnsupportedError):
         _read_struct_subcolumns(str(struct_parquet), **kwargs)
