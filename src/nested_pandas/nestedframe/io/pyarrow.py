@@ -165,6 +165,49 @@ def _read_remote_parquet_directory(
     return pa.concat_tables(tables)
 
 
+def _read_remote_struct_subcolumns(
+    path: str, columns: list[str], *, filesystem, schema: pa.Schema | None = None, **kwargs
+) -> pa.Table | None:
+    """Read struct sub-columns of a remote file, fetching only their leaves.
+
+    `pq.read_table` (and so `fsspec.parquet`'s prefetch) downloads every field of a struct
+    when a single sub-column is requested, while `ParquetFile.read` fetches just the
+    requested leaves. Returns None when this path does not apply, so the caller can fall
+    back to the regular reader.
+    """
+    # Partitioning only applies to directories; any other read_table option (e.g. filters) needs it.
+    if any(value is not None for key, value in kwargs.items() if key != "partitioning"):
+        return None
+    with filesystem.open(path, "rb") as f:
+        parquet_file = pq.ParquetFile(f)
+        file_schema = parquet_file.schema_arrow
+        if schema is not None and not schema.equals(file_schema):
+            return None
+        for col in columns:
+            if col in file_schema.names:
+                continue
+            name, _, field = col.partition(".")
+            if (
+                "." in field
+                or name not in file_schema.names
+                or not pa.types.is_struct(struct := file_schema.field(name).type)
+                or struct.get_field_index(field) < 0
+            ):
+                return None
+        table = parquet_file.read(columns=columns)
+    # Match pq.read_table, which returns a sub-column as a top-level column named after its leaf.
+    arrays, names = [], []
+    for col in columns:
+        if col in table.column_names:
+            arrays.append(table[col])
+            names.append(col)
+        else:
+            name, field = col.split(".")
+            arrays.append(pc.struct_field(table[name], field))
+            names.append(field)
+    return pa.Table.from_arrays(arrays, names=names, metadata=file_schema.metadata)
+
+
 def _get_storage_options(path_to_data: UPath):
     """Get storage options for fsspec.parquet.open_parquet_file.
 

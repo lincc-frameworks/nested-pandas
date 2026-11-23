@@ -23,6 +23,7 @@ from .pyarrow import (
     _is_remote_dir,
     _pyarrow_read_table,
     _read_remote_parquet_directory,
+    _read_remote_struct_subcolumns,
     _transform_read_parquet_data_arg,
 )
 
@@ -91,7 +92,9 @@ def read_parquet(
 
         - "pyarrow" (default) uses `fsspec.parquet` (remote paths only) and
           `pyarrow.parquet.read_table`. It reads a nested column whole even
-          when a single sub-column is asked for, and it applies `filters`
+          when a single sub-column is asked for (except for a single remote
+          file read without `filters`, where only the requested struct
+          fields are downloaded), and it applies `filters`
           after reading the row groups they select, so it is not the best
           choice for partial loads or selective filters.
         - "datafusion" may be very fast when a few rows and/or a few nested
@@ -266,6 +269,13 @@ def _read_parquet_into_table(
             return _read_remote_parquet_directory(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
+
+        if columns is not None and any("." in col for col in columns):
+            table = _read_remote_struct_subcolumns(
+                path_to_data.path, columns, **{**kwargs, "filesystem": filesystem}
+            )
+            if table is not None:
+                return table
 
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,

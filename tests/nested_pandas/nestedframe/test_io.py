@@ -3,6 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 
+import fsspec
 import fsspec.implementations.http
 import numpy as np
 import pandas as pd
@@ -623,6 +624,56 @@ def test_issue_428(size):
         nf = read_parquet(file_path, columns=["nested.t"])
         assert nf.columns == ["nested"]
         assert nf.nested.nest.columns == ["t"]
+
+
+def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
+    """Remote partial loads download only the requested struct fields and match a local read."""
+    from fsspec.implementations.memory import MemoryFile
+
+    rng = np.random.default_rng(0)
+    size = 1000
+    struct = pa.StructArray.from_arrays(
+        [pa.array(list(rng.random((size, 100)))) for _ in range(3)],
+        names=["flux", "ivar", "lam"],
+        mask=pa.array(np.arange(size) == 3),  # a null struct row
+    )
+    table = pa.Table.from_pandas(
+        pd.DataFrame({"a": rng.random(size)}, index=pd.Index(np.arange(size) * 2, name="idx"))
+    ).append_column("nested", struct)
+    local_path = tmp_path / "data.parquet"
+    pq.write_table(table, local_path)
+    fs = fsspec.filesystem("memory")
+    fs.put_file(str(local_path), "/struct_subcolumns/data.parquet")
+    remote_path = "memory:///struct_subcolumns/data.parquet"
+
+    bytes_read = 0
+    read = MemoryFile.read
+
+    def counting_read(self, *args):
+        nonlocal bytes_read
+        data = read(self, *args)
+        bytes_read += len(data)
+        return data
+
+    monkeypatch.setattr(MemoryFile, "read", counting_read)
+
+    for columns in (["a", "nested.flux"], ["nested.lam", "a", "nested.flux"]):
+        bytes_read = 0
+        remote = read_parquet(remote_path, columns=columns)
+        assert 0 < bytes_read < 0.7 * local_path.stat().st_size  # ivar is never downloaded
+        assert_frame_equal(remote, read_parquet(local_path, columns=columns))
+        # The same read as hats/LSDB, which pass the filesystem, partitioning and schema.
+        bytes_read = 0
+        lsdb_like = read_parquet(
+            remote_path, columns=columns, filesystem=fs, partitioning=None, schema=table.schema, filters=None
+        )
+        assert 0 < bytes_read < 0.7 * local_path.stat().st_size
+        assert_frame_equal(lsdb_like, remote)
+
+    # Unsupported kwargs fall back to the regular reader and still give the same result.
+    kwargs = {"columns": ["a", "nested.flux"], "filters": [("a", "<", 0.5)]}
+    assert_frame_equal(read_parquet(remote_path, **kwargs), read_parquet(local_path, **kwargs))
+    fs.rm("/struct_subcolumns", recursive=True)
 
 
 def test_use_pandas_metadata():
