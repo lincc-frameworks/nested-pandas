@@ -180,7 +180,9 @@ def _read_struct_subcolumns(
     if any(value is not None for key, value in kwargs.items() if key != "partitioning"):
         return None
     # Without an fsspec filesystem, `path` is local and pyarrow opens it natively.
-    with filesystem.open(path, "rb") if filesystem else contextlib.nullcontext(path) as f:
+    # No fsspec block cache: pyarrow already requests just the needed ranges, and readahead
+    # blocks re-download them (5x slower on S3).
+    with filesystem.open(path, "rb", cache_type="none") if filesystem else contextlib.nullcontext(path) as f:
         parquet_file = pq.ParquetFile(f)
         file_schema = parquet_file.schema_arrow
         if schema is not None and not schema.equals(file_schema, check_metadata=True):
