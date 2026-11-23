@@ -629,7 +629,7 @@ def test_issue_428(size):
 
 
 def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
-    """Remote partial loads download only the requested struct fields and match a local read."""
+    """Partial loads of remote and local files read only the requested struct fields."""
     from fsspec.implementations.memory import MemoryFile
 
     rng = np.random.default_rng(0)
@@ -659,13 +659,35 @@ def test_read_remote_struct_subcolumns(tmp_path, monkeypatch):
 
     monkeypatch.setattr(MemoryFile, "read", counting_read)
 
-    lsdb_kwargs = dict(filesystem=fs, partitioning=None, schema=table.schema, filters=None)
+    from nested_pandas.nestedframe.io import core
+
+    subcolumn_tables = []
+    read_struct_subcolumns = core._read_struct_subcolumns
+
+    def spy(*args, **kwargs):
+        subcolumn_tables.append(read_struct_subcolumns(*args, **kwargs))
+        return subcolumn_tables[-1]
+
+    monkeypatch.setattr(core, "_read_struct_subcolumns", spy)
+
+    # hats/LSDB pass the schema read from the catalog's Parquet files (list<element>, not list<item>).
+    lsdb_kwargs = dict(filesystem=fs, partitioning=None, schema=pq.read_schema(local_path), filters=None)
+    local_lsdb_kwargs = {**lsdb_kwargs, "filesystem": fsspec.filesystem("file")}
     for columns in (["a", "nested.flux"], ["nested.lam", "a", "nested.flux"]):
-        expected = read_parquet(local_path, columns=columns)
-        for kwargs in ({}, lsdb_kwargs):
+        # use_threads is not None, so this uses the regular read_table reader.
+        expected = read_parquet(local_path, columns=columns, use_threads=True)
+        for path, kwargs in (
+            (remote_path, {}),
+            (remote_path, lsdb_kwargs),
+            (local_path, {}),  # pyarrow opens local files natively
+            (str(local_path), local_lsdb_kwargs),
+        ):
             bytes_read = 0
-            assert_frame_equal(read_parquet(remote_path, columns=columns, **kwargs), expected)
-            assert 0 < bytes_read < 0.7 * local_path.stat().st_size  # ivar is never downloaded
+            subcolumn_tables.clear()
+            assert_frame_equal(read_parquet(path, columns=columns, **kwargs), expected)
+            assert len(subcolumn_tables) == 1 and subcolumn_tables[0] is not None  # no fallback
+            if path == remote_path:
+                assert 0 < bytes_read < 0.7 * local_path.stat().st_size  # ivar is never downloaded
 
     # Filters and a schema with different metadata fall back to the regular reader.
     # Project the stored index explicitly so dropping its metadata changes the result.

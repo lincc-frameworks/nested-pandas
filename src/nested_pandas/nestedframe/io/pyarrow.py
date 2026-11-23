@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import contextlib
 import warnings
 from pathlib import Path
 from typing import cast
@@ -165,10 +166,10 @@ def _read_remote_parquet_directory(
     return pa.concat_tables(tables)
 
 
-def _read_remote_struct_subcolumns(
-    path: str, columns: list[str], *, filesystem, schema: pa.Schema | None = None, **kwargs
+def _read_struct_subcolumns(
+    path: str, columns: list[str], *, filesystem=None, schema: pa.Schema | None = None, **kwargs
 ) -> pa.Table | None:
-    """Read struct sub-columns of a remote file, fetching only their leaves.
+    """Read struct sub-columns of a single file, fetching only their leaves.
 
     `pq.read_table` (and so `fsspec.parquet`'s prefetch) downloads every field of a struct
     when a single sub-column is requested, while `ParquetFile.read` fetches just the
@@ -178,7 +179,8 @@ def _read_remote_struct_subcolumns(
     # Partitioning only applies to directories; any other read_table option (e.g. filters) needs it.
     if any(value is not None for key, value in kwargs.items() if key != "partitioning"):
         return None
-    with filesystem.open(path, "rb") as f:
+    # Without an fsspec filesystem, `path` is local and pyarrow opens it natively.
+    with filesystem.open(path, "rb") if filesystem else contextlib.nullcontext(path) as f:
         parquet_file = pq.ParquetFile(f)
         file_schema = parquet_file.schema_arrow
         if schema is not None and not schema.equals(file_schema, check_metadata=True):

@@ -23,7 +23,7 @@ from .pyarrow import (
     _is_remote_dir,
     _pyarrow_read_table,
     _read_remote_parquet_directory,
-    _read_remote_struct_subcolumns,
+    _read_struct_subcolumns,
     _transform_read_parquet_data_arg,
 )
 
@@ -91,7 +91,7 @@ def read_parquet(
         - "pyarrow" (default) uses `fsspec.parquet` (remote paths only) and
           `pyarrow.parquet.read_table`. It reads a nested column whole even
           when a single sub-column is asked for, except that eligible reads
-          of a single remote file outside HTTP(S) can select individual
+          of a single local or remote (not HTTP(S)) file can select individual
           struct fields. It applies `filters`
           after reading the row groups they select, so it is not the best
           choice for partial loads or selective filters.
@@ -242,9 +242,9 @@ def _read_parquet_into_table(
     thereof, we want to defer to `pq.read_table`, which can read local
     directories directly.
 
-    NOTE: local paths are routed straight to `pq.read_table` via `_is_local_path`,
-    without ever checking whether they're a file or a directory, since
-    `pq.read_table` handles both natively. We don't support HTTP
+    NOTE: local paths are routed to `pq.read_table` via `_is_local_path`, which
+    handles files and directories natively. Only reads of struct sub-columns
+    check for a single file first, to read just the requested fields. We don't support HTTP
     "directories", because 1) calling .is_dir() may be very expensive, because
     it downloads content first, 2) because .iter_dir() is likely to return a
     lot of "junk" besides of the actual parquet files.
@@ -269,7 +269,7 @@ def _read_parquet_into_table(
             and columns is not None
             and any("." in col for col in columns)
         ):
-            table = _read_remote_struct_subcolumns(
+            table = _read_struct_subcolumns(
                 path_to_data.path, columns, **{**kwargs, "filesystem": filesystem}
             )
             if table is not None:
@@ -285,6 +285,19 @@ def _read_parquet_into_table(
             return _read_table_with_partial_load_check(
                 parquet_file, columns=columns, engine="pyarrow", **kwargs
             )
+
+    # Local single files: read only the requested struct fields, like remote files above.
+    filesystem = kwargs.get("filesystem")
+    if (
+        isinstance(data, str | Path | UPath)
+        and (filesystem is None or isinstance(filesystem, fsspec.AbstractFileSystem))
+        and columns is not None
+        and any("." in col for col in columns)
+        and Path(local_path := UPath(data).path).is_file()
+    ):
+        table = _read_struct_subcolumns(local_path, columns, **kwargs)
+        if table is not None:
+            return table
 
     # All other cases, including file-like objects, directories, and
     # even lists of the foregoing.
