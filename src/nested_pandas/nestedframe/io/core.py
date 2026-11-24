@@ -266,12 +266,11 @@ def _read_parquet_into_table(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
 
-        # Not for HTTP(S): reading just the requested leaves takes a request per row group, while
-        # fsspec.parquet merges ranges into a few (36 MB test file: 25 requests for 12 MB vs 2 for
-        # 37 MB). Each HTTP round trip is expensive; S3-like stores handle many ranged reads well.
+        # Not for HTTP(S): keep fsspec.parquet for plain HTTP(S); other remote filesystems
+        # (e.g. hf://, s3://, memory://) coalesce leaf and row-group ranges via cat_ranges.
         if (
             columns is not None
-            and any("." in col for col in columns)
+            and (any("." in col for col in columns) or kwargs.get("filters") is not None)
             and path_to_data.protocol not in ("http", "https")
         ):
             with contextlib.suppress(_StructSubcolumnsUnsupportedError):
