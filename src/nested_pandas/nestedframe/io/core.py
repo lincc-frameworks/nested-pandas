@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Literal
 
@@ -23,6 +24,8 @@ from .pyarrow import (
     _is_remote_dir,
     _pyarrow_read_table,
     _read_remote_parquet_directory,
+    _read_struct_subcolumns,
+    _StructSubcolumnsUnsupportedError,
     _transform_read_parquet_data_arg,
 )
 
@@ -60,10 +63,8 @@ def read_parquet(
         ``file://localhost/path/to/tables/`` or ``s3://bucket/partition_dir/``
         (note trailing slash for web locations, since it may be expensive
         to test a path for being a directory). Directory reading is not
-        supported for HTTP(S). If the path is to a single Parquet file, it will
-        be loaded using
-        ``fsspec.parquet.open_parquet_file``, which has optimized handling
-        for remote Parquet files.
+        supported for HTTP(S). Single remote files normally use
+        ``fsspec.parquet.open_parquet_file`` to fetch byte ranges in batches.
     columns : list, default=None
         If not None, only these columns will be read from the file.
     reject_nesting: list or str, default=None
@@ -91,7 +92,9 @@ def read_parquet(
 
         - "pyarrow" (default) uses `fsspec.parquet` (remote paths only) and
           `pyarrow.parquet.read_table`. It reads a nested column whole even
-          when a single sub-column is asked for, and it applies `filters`
+          when a single sub-column is asked for, except that eligible reads
+          of a single local or remote (not HTTP(S)) file can select individual
+          struct fields. It applies `filters`
           after reading the row groups they select, so it is not the best
           choice for partial loads or selective filters.
         - "datafusion" may be very fast when a few rows and/or a few nested
@@ -111,11 +114,6 @@ def read_parquet(
 
     Notes
     -----
-    For paths to single Parquet files, this function uses
-    fsspec.parquet.open_parquet_file, which performs intelligent
-    precaching.  This can significantly improve performance compared
-    to standard PyArrow reading on remote files.
-
     pyarrow supports partial loading of nested structures from parquet, for
     example ```pd.read_parquet("data.parquet", columns=["nested.a"])``` will
     load the "a" column of the "nested" column. Standard pandas/pyarrow
@@ -246,9 +244,10 @@ def _read_parquet_into_table(
     thereof, we want to defer to `pq.read_table`, which can read local
     directories directly.
 
-    NOTE: local paths are routed straight to `pq.read_table` via `_is_local_path`,
-    without ever checking whether they're a file or a directory, since
-    `pq.read_table` handles both natively. We don't support HTTP
+    NOTE: local paths are routed to `pq.read_table` via `_is_local_path`, which
+    handles files and directories natively. Only reads of struct sub-columns
+    check for a single file first (unless `is_dir` says what it is), to read just the
+    requested fields. We don't support HTTP
     "directories", because 1) calling .is_dir() may be very expensive, because
     it downloads content first, 2) because .iter_dir() is likely to return a
     lot of "junk" besides of the actual parquet files.
@@ -267,6 +266,18 @@ def _read_parquet_into_table(
                 path_to_data, filesystem, storage_options, columns, **kwargs
             )
 
+        # Not for HTTP(S): keep fsspec.parquet for plain HTTP(S); other remote filesystems
+        # (e.g. hf://, s3://, memory://) coalesce leaf and row-group ranges via cat_ranges.
+        if (
+            columns is not None
+            and (any("." in col for col in columns) or kwargs.get("filters") is not None)
+            and path_to_data.protocol not in ("http", "https")
+        ):
+            with contextlib.suppress(_StructSubcolumnsUnsupportedError):
+                return _read_struct_subcolumns(
+                    path_to_data.path, columns, **{**kwargs, "filesystem": filesystem}
+                )
+
         with fsspec.parquet.open_parquet_file(
             path_to_data.path,
             columns=_columns_to_load(columns, kwargs.get("filters")),
@@ -277,6 +288,18 @@ def _read_parquet_into_table(
             return _read_table_with_partial_load_check(
                 parquet_file, columns=columns, engine="pyarrow", **kwargs
             )
+
+    # Local single files: read only the requested struct fields, like remote files above.
+    # Trust `is_dir` when given; stat the path only when it isn't.
+    if (
+        columns is not None
+        and any("." in col for col in columns)
+        and isinstance(data, str | Path | UPath)
+        and is_dir is not True
+        and (is_dir is False or Path(UPath(data).path).is_file())
+    ):
+        with contextlib.suppress(_StructSubcolumnsUnsupportedError):
+            return _read_struct_subcolumns(UPath(data).path, columns, **kwargs)
 
     # All other cases, including file-like objects, directories, and
     # even lists of the foregoing.

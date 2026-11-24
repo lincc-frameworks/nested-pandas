@@ -2,7 +2,9 @@ import io
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock
 
+import fsspec
 import fsspec.implementations.http
 import numpy as np
 import pandas as pd
@@ -16,7 +18,7 @@ from upath import UPath
 
 from nested_pandas import NestedFrame, TensorDtype, read_parquet
 from nested_pandas.datasets import generate_data
-from nested_pandas.nestedframe.io import from_pyarrow
+from nested_pandas.nestedframe.io import core, from_pyarrow
 from nested_pandas.nestedframe.io.datafusion import (
     _check_datafusion_support,
     _datafusion_filters_to_expr,
@@ -28,6 +30,8 @@ from nested_pandas.nestedframe.io.pyarrow import (
     _columns_to_load,
     _get_storage_options,
     _pyarrow_read_table,
+    _read_struct_subcolumns,
+    _StructSubcolumnsUnsupportedError,
     _transform_read_parquet_data_arg,
 )
 from nested_pandas.tensors import TensorExtensionArray
@@ -623,6 +627,154 @@ def test_issue_428(size):
         nf = read_parquet(file_path, columns=["nested.t"])
         assert nf.columns == ["nested"]
         assert nf.nested.nest.columns == ["t"]
+
+
+@pytest.fixture
+def struct_parquet(tmp_path):
+    """A struct with three equal-size fields and a null row, a struct of structs, and a pandas index."""
+    rng = np.random.default_rng(0)
+    size = 1000
+    nested = pa.StructArray.from_arrays(
+        [pa.array(list(rng.random((size, 100)))) for _ in range(3)],
+        names=["flux", "ivar", "lam"],
+        mask=pa.array(np.arange(size) == 3),
+    )
+    deep = pa.StructArray.from_arrays([pa.StructArray.from_arrays([rng.random(size)], ["x"])], ["inner"])
+    table = pa.Table.from_pandas(
+        pd.DataFrame({"a": rng.random(size)}, index=pd.Index(np.arange(size) * 2, name="idx"))
+    )
+    path = tmp_path / "data.parquet"
+    pq.write_table(table.append_column("nested", nested).append_column("deep", deep), path)
+    return path
+
+
+@pytest.fixture
+def memory_struct_parquet(struct_parquet):
+    """`struct_parquet` on fsspec's in-memory filesystem, standing in for a remote file."""
+    fs = fsspec.filesystem("memory")
+    path = f"memory:///{struct_parquet.parent.name}/data.parquet"
+    fs.put_file(str(struct_parquet), path)
+    yield path
+    fs.rm(path)
+
+
+@pytest.mark.parametrize("source", ["memory", "local", "local_fsspec", "local_pyarrow_fs"])
+@pytest.mark.parametrize("catalog_kwargs", [False, True])
+def test_read_struct_subcolumns(struct_parquet, memory_struct_parquet, source, catalog_kwargs, monkeypatch):
+    """Single-file struct sub-column reads skip the regular reader and the unrequested field."""
+    from fsspec.implementations.memory import MemoryFile, MemoryFileSystem
+
+    columns = ["nested.lam", "a", "nested.flux"]  # two fields of one struct, out of file order
+    expected = read_parquet(struct_parquet, columns=columns, use_threads=True)  # regular reader
+    path, filesystem = {
+        "memory": (memory_struct_parquet, fsspec.filesystem("memory") if catalog_kwargs else None),
+        "local": (struct_parquet, None),
+        "local_fsspec": (str(struct_parquet), fsspec.filesystem("file")),
+        "local_pyarrow_fs": (str(struct_parquet), pa.fs.LocalFileSystem()),
+    }[source]
+    kwargs = {"filesystem": filesystem}
+    if catalog_kwargs:
+        # Like hats/LSDB: the schema read from the file (list<element>, not list<item>), is_dir known.
+        kwargs |= dict(partitioning=None, schema=pq.read_schema(struct_parquet), filters=None, is_dir=False)
+
+    sizes = []
+    read = MemoryFile.read
+    cat_file = MemoryFileSystem.cat_file
+
+    def counting_read(self, *args):
+        sizes.append(len(data := read(self, *args)))
+        return data
+
+    def counting_cat_file(self, *args, **cat_kwargs):
+        sizes.append(len(data := cat_file(self, *args, **cat_kwargs)))
+        return data
+
+    monkeypatch.setattr(MemoryFile, "read", counting_read)
+    monkeypatch.setattr(MemoryFileSystem, "cat_file", counting_cat_file)
+    monkeypatch.setattr(core, "_read_table_with_partial_load_check", Mock(side_effect=AssertionError))
+    assert_frame_equal(read_parquet(path, columns=columns, **kwargs), expected)
+    if source == "memory":
+        assert 0 < sum(sizes) < 0.8 * struct_parquet.stat().st_size  # ivar, a third, is never read
+
+
+@pytest.mark.parametrize("source", ["memory", "local"])
+def test_read_struct_subcolumns_filters_and_schema_metadata(
+    tmp_path, struct_parquet, memory_struct_parquet, source, monkeypatch
+):
+    """DNF filters (with row-group pruning) and differing schema metadata stay on the fast path."""
+    from fsspec.implementations.memory import MemoryFileSystem
+
+    # 1. Schema with differing metadata (dropping pandas index metadata changes result if ignored).
+    schema_no_meta = pq.read_schema(struct_parquet).remove_metadata()
+    cols_idx = ["idx", "nested.flux"]
+    expected_meta = read_parquet(struct_parquet, columns=cols_idx, schema=schema_no_meta, use_threads=True)
+
+    # 2. Multi-row-group file: DNF filters prune unmatching row groups and skip unrequested leaves.
+    rng = np.random.default_rng(1)
+    size = 1000
+    nested = pa.StructArray.from_arrays(
+        [pa.array(list(rng.random((size, 100)))) for _ in range(3)],
+        names=["flux", "ivar", "lam"],
+    )
+    rg_table = pa.table({"k": np.arange(size, dtype=np.int64), "nested": nested})
+    rg_path = tmp_path / "rg.parquet"
+    pq.write_table(rg_table, rg_path, row_group_size=100)
+    filters = [[("k", ">=", 200), ("k", "<", 300)]]
+    expected_leaf = read_parquet(rg_path, columns=["k", "nested.flux"], filters=filters, use_threads=True)
+    expected_whole = read_parquet(rg_path, columns=["k", "nested"], filters=filters, use_threads=True)
+
+    monkeypatch.setattr(core, "_read_table_with_partial_load_check", Mock(side_effect=AssertionError))
+    path = memory_struct_parquet if source == "memory" else struct_parquet
+    assert_frame_equal(read_parquet(path, columns=cols_idx, schema=schema_no_meta), expected_meta)
+
+    if source == "memory":
+        fs = fsspec.filesystem("memory")
+        mpath = f"memory:///{tmp_path.name}/rg.parquet"
+        fs.put_file(str(rg_path), mpath)
+        try:
+            sizes = []
+            orig_cat = MemoryFileSystem.cat_file
+
+            def counting_cat(self, *args, **cat_kwargs):
+                sizes.append(len(data := orig_cat(self, *args, **cat_kwargs)))
+                return data
+
+            monkeypatch.setattr(MemoryFileSystem, "cat_file", counting_cat)
+            res_leaf = read_parquet(mpath, columns=["k", "nested.flux"], filters=filters, filesystem=fs)
+            assert_frame_equal(res_leaf, expected_leaf)
+            # 1 of 10 row groups × 1 of 3 struct leaves => well under 15% of file bytes.
+            assert 0 < sum(sizes) < 0.15 * rg_path.stat().st_size
+
+            sizes.clear()
+            res_whole = read_parquet(mpath, columns=["k", "nested"], filters=filters, filesystem=fs)
+            assert_frame_equal(res_whole, expected_whole)
+            # 1 of 10 row groups of whole struct => well under 25% of file bytes.
+            assert 0 < sum(sizes) < 0.25 * rg_path.stat().st_size
+        finally:
+            fs.rm(mpath)
+    else:
+        assert_frame_equal(
+            read_parquet(rg_path, columns=["k", "nested.flux"], filters=filters), expected_leaf
+        )
+
+
+@pytest.mark.parametrize("option", ["expr_filters", "schema_types", "struct_of_structs"])
+def test_read_struct_subcolumns_fallback(struct_parquet, memory_struct_parquet, option):
+    """Reads the leaf-only reader can't serve go to the regular reader."""
+    import pyarrow.compute as pc
+
+    file_schema = pq.read_schema(struct_parquet)
+    cast_schema = file_schema.set(file_schema.get_field_index("a"), pa.field("a", pa.float32()))
+    kwargs = {
+        "expr_filters": {"columns": ["a", "nested.flux"], "filters": pc.field("a") < 0.5},
+        "schema_types": {"columns": ["a", "nested.flux"], "schema": cast_schema},
+        "struct_of_structs": {"columns": ["a", "deep.inner.x"]},
+    }[option]
+    with pytest.raises(_StructSubcolumnsUnsupportedError):
+        _read_struct_subcolumns(str(struct_parquet), **kwargs)
+    expected = read_parquet(struct_parquet, use_threads=True, **kwargs)  # regular reader
+    assert_frame_equal(read_parquet(memory_struct_parquet, **kwargs), expected)
+    assert_frame_equal(read_parquet(struct_parquet, **kwargs), expected)
 
 
 def test_use_pandas_metadata():
