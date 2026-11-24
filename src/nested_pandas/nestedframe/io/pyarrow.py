@@ -1,6 +1,7 @@
 # typing.Self and "|" union syntax don't exist in Python 3.9
 from __future__ import annotations
 
+import contextlib
 import warnings
 from pathlib import Path
 from typing import cast
@@ -163,6 +164,61 @@ def _read_remote_parquet_directory(
         with parquet_file:
             tables.append(_pyarrow_read_table(parquet_file, columns=columns, **kwargs))
     return pa.concat_tables(tables)
+
+
+class _StructSubcolumnsUnsupportedError(Exception):
+    """`_read_struct_subcolumns` can't serve this read; use the regular reader."""
+
+
+def _read_struct_subcolumns(
+    path: str, columns: list[str], *, filesystem=None, schema: pa.Schema | None = None, **kwargs
+) -> pa.Table:
+    """Read struct sub-columns of a single file, fetching only their leaves.
+
+    `pq.read_table` (and so `fsspec.parquet`'s prefetch) downloads every field of a struct
+    when a single sub-column is requested, while `ParquetFile.read` fetches just the
+    requested leaves.
+
+    Raises
+    ------
+    _StructSubcolumnsUnsupportedError
+        If the read needs anything `ParquetFile.read` can't do here, before reading any data.
+    """
+    # Partitioning only applies to directories; any other read_table option (e.g. filters) needs it.
+    if unsupported := [key for key, value in kwargs.items() if key != "partitioning" and value is not None]:
+        raise _StructSubcolumnsUnsupportedError(f"unsupported read_table options: {unsupported}")
+    with contextlib.ExitStack() as stack:
+        # fsspec: skip the block cache. pyarrow requests just the needed ranges, and readahead
+        # blocks re-download them (5x slower on S3). pyarrow opens other sources itself.
+        if isinstance(filesystem, fsspec.AbstractFileSystem):
+            path, filesystem = stack.enter_context(filesystem.open(path, "rb", cache_type="none")), None
+        parquet_file = stack.enter_context(pq.ParquetFile(path, filesystem=filesystem))
+        file_schema = parquet_file.schema_arrow
+        if schema is not None and not schema.equals(file_schema, check_metadata=True):
+            raise _StructSubcolumnsUnsupportedError("schema differs from the file's schema")
+        for col in columns:
+            if col in file_schema.names:
+                continue
+            name, _, field = col.partition(".")
+            if (
+                "." in field
+                or name not in file_schema.names
+                or not pa.types.is_struct(struct := file_schema.field(name).type)
+                or struct.get_field_index(field) < 0
+            ):
+                raise _StructSubcolumnsUnsupportedError(f"{col!r} is not a direct field of a struct column")
+        table = parquet_file.read(columns=columns)
+    # Match pq.read_table, which returns a sub-column as a top-level column named after its leaf.
+    arrays, names = [], []
+    for col in columns:
+        if col in table.column_names:
+            arrays.append(table[col])
+            names.append(col)
+        else:
+            name, field = col.split(".")
+            arrays.append(pc.struct_field(table[name], field))
+            names.append(field)
+    return pa.Table.from_arrays(arrays, names=names, metadata=file_schema.metadata)
 
 
 def _get_storage_options(path_to_data: UPath):
