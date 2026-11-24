@@ -297,7 +297,7 @@ def _read_parquet_into_table(
         and any("." in col for col in columns)
         and isinstance(data, str | Path | UPath)
         and is_dir is not True
-        and (is_dir is False or Path(UPath(data).path).is_file())
+        and (is_dir is False or UPath(data).is_file())
     ):
         with contextlib.suppress(_StructSubcolumnsUnsupportedError):
             return _read_struct_subcolumns(UPath(data).path, columns, **kwargs)
