@@ -904,29 +904,23 @@ class NestedFrame(pd.DataFrame):
                     else:
                         self = self.assign(**{f"{col}": self[col].nest.drop(sub_cols)})
 
-            # drop remaining base columns
-            if len(base_labels) > 0:
-                return super().drop(
-                    labels=base_labels,
-                    axis=axis,
-                    index=index,
-                    columns=columns,
-                    level=level,
-                    inplace=inplace,
-                    errors=errors,
-                )
-            else:
+            if len(base_labels) == 0:
                 return self if not inplace else None
-        # Otherwise just drop like pandas
-        return super().drop(
+            # drop remaining base columns below
+            labels = base_labels
+        # pandas 3.1 deprecates its inplace keyword, so apply the result ourselves
+        new_df = super().drop(
             labels=labels,
             axis=axis,
             index=index,
             columns=columns,
             level=level,
-            inplace=inplace,
             errors=errors,
         )
+        if inplace:
+            self._update_inplace(new_df)
+            return None
+        return new_df
 
     def split(
         self,
@@ -1538,13 +1532,36 @@ class NestedFrame(pd.DataFrame):
         :meth:`pandas.DataFrame.eval`
 
         """
+        lines = [line.strip() for line in expr.splitlines() if line.strip()] if isinstance(expr, str) else []
+        if len(lines) > 1:
+            # pandas assigns each line to a copy of this frame, which this frame's _NestResolver
+            # cannot see, so evaluate line by line, resolving each against the previous result.
+            kwargs["level"] = kwargs.get("level", 0) + 1
+            result = self
+            for line in lines:
+                result = result.eval(line, **kwargs)
+                if not isinstance(result, pd.DataFrame):
+                    raise ValueError(
+                        "Multi-line expressions are only valid if all expressions contain an assignment"
+                    )
+            if inplace:
+                self._update_inplace(result)
+                return None
+            return result
+
         _, aliases = _identify_aliases(expr)
         self._aliases: dict[str, str] | None = aliases
 
         kwargs["resolvers"] = tuple(kwargs.get("resolvers", ())) + (_NestResolver(self),)
-        kwargs["inplace"] = inplace
         kwargs["parser"] = "nested-pandas"
+        # pandas 3.1 deprecates its inplace keyword, so apply assignments ourselves
         answer = super().eval(expr, **kwargs)
+        if inplace:
+            self._aliases = None
+            if not isinstance(answer, pd.DataFrame):
+                raise ValueError("Cannot operate inplace if there is no assignment")
+            self._update_inplace(answer)
+            return None
 
         # If the result is a _SeriesFromNest, set the metadata manually
         # This is a bit of a hack, as it's a backstop for super().eval()
@@ -1882,38 +1899,24 @@ class NestedFrame(pd.DataFrame):
         # determine target dataframe
         target, subset = self._resolve_dropna_target(on_nested, subset)
 
+        # pandas 3.1 deprecates its inplace keyword, so apply the result ourselves
         if target == "base":
-            return super().dropna(
+            new_df = super().dropna(
                 axis=axis,
                 how=how,
                 thresh=thresh,
                 subset=subset,
-                inplace=inplace,
                 ignore_index=ignore_index,
             )
-        if ignore_index:
-            raise ValueError("ignore_index is not supported for nested columns")
-        if subset is not None:
-            subset = [col.split(".")[-1] for col in subset]
-        target_flat = self[target].explode()
-        target_flat = target_flat.set_index(self[target].array.get_list_index())
-        if inplace:
-            target_flat.dropna(
-                axis=axis,
-                how=how,
-                thresh=thresh,
-                subset=subset,
-                inplace=True,
-            )
         else:
-            target_flat = target_flat.dropna(
-                axis=axis,
-                how=how,
-                thresh=thresh,
-                subset=subset,
-                inplace=False,
-            )
-        new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
+            if ignore_index:
+                raise ValueError("ignore_index is not supported for nested columns")
+            if subset is not None:
+                subset = [col.split(".")[-1] for col in subset]
+            target_flat = self[target].explode()
+            target_flat = target_flat.set_index(self[target].array.get_list_index())
+            target_flat = target_flat.dropna(axis=axis, how=how, thresh=thresh, subset=subset)
+            new_df = self._set_filtered_flat_df(nest_name=target, flat_df=target_flat)
         if inplace:
             self._update_inplace(new_df)
             return None
@@ -2001,16 +2004,20 @@ class NestedFrame(pd.DataFrame):
 
         # Apply pandas sort_values
         if target == "base":
-            return super().sort_values(
+            # pandas 3.1 deprecates its inplace keyword, so apply the result ourselves
+            new_df = super().sort_values(
                 by=by,
                 axis=axis,
                 ascending=ascending,
-                inplace=inplace,
                 kind=kind,
                 na_position=na_position,
                 ignore_index=ignore_index,
                 key=key,
             )
+            if inplace:
+                self._update_inplace(new_df)
+                return None
+            return new_df
         else:  # target is a nested column
             target_flat = self[target].explode()
             target_flat = target_flat.set_index(self[target].array.get_list_index())
@@ -2034,7 +2041,6 @@ class NestedFrame(pd.DataFrame):
                 na_position=na_position,
                 ignore_index=False,
                 key=key,
-                inplace=False,
             )
 
             #  Could be optimized, as number of rows doesn't change

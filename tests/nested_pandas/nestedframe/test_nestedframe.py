@@ -2916,3 +2916,42 @@ def test_to_dict_recursive_unsupported_into():
     nf = generate_data(3, 2, seed=1)
     with pytest.raises(ValueError, match="into=dict"):
         nf.to_dict(orient="list", into=OrderedDict, recursive=True)
+
+
+@pytest.mark.filterwarnings("error::DeprecationWarning")
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda nf, inplace: nf.drop(columns="a", inplace=inplace),
+        lambda nf, inplace: nf.drop(columns="nested.t", inplace=inplace),
+        lambda nf, inplace: nf.dropna(inplace=inplace),
+        lambda nf, inplace: nf.dropna(on_nested="nested", inplace=inplace),
+        lambda nf, inplace: nf.sort_values("a", inplace=inplace),
+        lambda nf, inplace: nf.sort_values("nested.t", inplace=inplace),
+        lambda nf, inplace: nf.eval("c = a + b", inplace=inplace),
+        lambda nf, inplace: nf.eval("nested.e = nested.t * 2\nnested.f = nested.e + a", inplace=inplace),
+        lambda nf, inplace: nf.query("a > 0.5", inplace=inplace),
+    ],
+)
+def test_inplace_not_passed_to_pandas(call):
+    """pandas 3.1 deprecates its inplace keyword (PDEP-8), so NestedFrame must not pass it on."""
+    base = generate_data(5, 3, seed=1)
+    base.loc[0, "a"] = np.nan
+    flux = base["nested.flux"].to_numpy(copy=True)
+    flux[0] = np.nan
+    base["nested.flux"] = flux
+
+    expected = call(base.copy(), False)
+    nf = base.copy()
+    assert call(nf, True) is None
+    assert nf.equals(expected)
+
+
+@pytest.mark.filterwarnings("error::DeprecationWarning")
+def test_delitem_and_eval_inplace_without_assignment():
+    """del and inplace eval keep working without pandas' inplace keyword."""
+    nf = generate_data(5, 3, seed=1)
+    del nf["a"]
+    assert "a" not in nf.columns
+    with pytest.raises(ValueError, match="no assignment"):
+        nf.eval("b + 1", inplace=True)
