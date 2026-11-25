@@ -2641,7 +2641,7 @@ class NestedFrame(pd.DataFrame):
 
         Parameters
         ----------
-        path : str
+        path : str | pathlib.Path | upath.UPath
             The path to the parquet file
         list_struct: bool
             Layout for the nested columns. If False (default), pack each nested
@@ -2668,4 +2668,7 @@ class NestedFrame(pd.DataFrame):
         >>> nf.to_parquet("nestedframe.parquet")  # doctest: +SKIP
         """
         table = self.to_pyarrow(list_struct=list_struct, large_list=large_list)
+        if isinstance(path, UPath):
+            kwargs.setdefault("filesystem", path.fs)
+            path = path.path
         return pq.write_table(table, path, **kwargs)

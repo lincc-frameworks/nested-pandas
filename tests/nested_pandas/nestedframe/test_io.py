@@ -289,6 +289,20 @@ def test_to_parquet(nested_parquet_path):
         assert_frame_equal(nf, nf2)
 
 
+def test_to_parquet_upath(nested_parquet_path):
+    """Test writing and reading a parquet file through a remote UPath."""
+    nf = read_parquet(nested_parquet_path)
+    path = UPath("memory://nested-pandas-tests/to_parquet/nested.parquet")
+
+    try:
+        nf.to_parquet(path)
+        assert path.exists()
+        assert_frame_equal(nf, read_parquet(path))
+    finally:
+        if path.exists():
+            path.unlink()
+
+
 @pytest.mark.parametrize("list_struct", [False, True])
 def test_to_pyarrow_list_struct_roundtrip(list_struct, nested_parquet_path):
     """to_pyarrow / to_parquet support both nested layouts and round-trip."""
