@@ -2,9 +2,9 @@
 
 The suites live in ``pandas.tests.extension.base`` and are driven by the
 fixtures in ``conftest.py``. Suites that make no sense for tensors are left
-out entirely: arithmetic and comparison (for now), reductions and accumulations
-(tensors are not numeric scalars), groupby (tensors are not hashable), parsing
-(tensors are not read from CSV) and unary ufuncs.
+out entirely: comparison (comparison operators raise for tensors), reductions
+and accumulations (tensors are not numeric scalars), groupby (tensors are not
+hashable) and parsing (tensors are not read from CSV).
 
 Within the included suites, tests whose assertions compare elements with
 ``==`` are overridden below with the same logic using ``np.array_equal``,
@@ -325,3 +325,19 @@ class TestCasting(base.BaseCastingTests):
 
 class TestIndex(base.BaseIndexTests):
     """Holding the array in an Index."""
+
+
+class TestArithmeticOps(base.BaseArithmeticOpsTests):
+    """Arithmetic operators of Series and DataFrames holding the array, checked against the pointwise
+    result of ``Series.combine``."""
+
+    series_scalar_exc = None
+    series_array_exc = None
+    divmod_exc = None
+    # DataFrame arithmetic reads a 2-d ndarray operand as frame-shaped data to align with, so a single
+    # tensor is rejected inside pandas' frame alignment before any dtype dispatch. Series work.
+    frame_scalar_exc = ValueError
+
+
+class TestUnaryOps(base.BaseUnaryOpsTests):
+    """Unary operators and their ufunc equivalents."""

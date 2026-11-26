@@ -48,6 +48,7 @@ from pandas import Index
 from pandas._typing import InterpolateOptions
 from pandas.api.extensions import no_default
 from pandas.api.types import is_list_like, is_scalar, pandas_dtype
+from pandas.core.arraylike import OpsMixin  # type: ignore[attr-defined]
 from pandas.core.arrays import ArrowExtensionArray, ExtensionArray  # type: ignore[attr-defined]
 from pandas.core.indexers import (  # type: ignore[attr-defined]
     check_array_indexer,
@@ -63,6 +64,22 @@ __all__ = ["TensorExtensionArray"]
 
 TENSOR_FORMATTING_MAX_ELEMENTS = 12
 """Tensors with more elements than this show a shape/dtype descriptor instead of their values in reprs"""
+
+COMPARISON_AND_LOGICAL_UFUNCS = frozenset(
+    {
+        np.equal,
+        np.not_equal,
+        np.less,
+        np.less_equal,
+        np.greater,
+        np.greater_equal,
+        np.logical_and,
+        np.logical_or,
+        np.logical_xor,
+        np.logical_not,
+    }
+)
+"""Comparison and logical ufuncs, which raise like the comparison and logical operators do"""
 
 
 def _tensor_descriptor(value: np.ndarray) -> str:
@@ -186,13 +203,18 @@ def _tensor_to_flat(value: Any, dtype: TensorDtype) -> np.ndarray:
     return np.ascontiguousarray(array).reshape(-1)
 
 
-class TensorExtensionArray(ExtensionArray):
+class TensorExtensionArray(OpsMixin, ExtensionArray):
     """Pandas extension array for fixed-shape tensors
 
     Every element is a numpy array of the same shape and element type, stored
     as a pyarrow ``fixed_shape_tensor`` extension array. Scalar access and
     :meth:`to_stack` return read-only numpy views over the arrow buffers
     whenever possible, so no data is copied.
+
+    The arithmetic operators, the unary operators ``-``, ``+`` and ``abs``,
+    and numpy ufuncs apply tensor by tensor, with numpy broadcasting against
+    the other operand, see :meth:`_arith_method` and :meth:`__array_ufunc__`.
+    Comparison and logical operators are not defined and raise ``TypeError``.
 
     Parameters
     ----------
@@ -220,6 +242,11 @@ class TensorExtensionArray(ExtensionArray):
 
     _pa_array: pa.ChunkedArray
     _dtype: TensorDtype
+
+    # Above ExtensionArray (1000) and below Index (2000), so that an operation with another extension array
+    # on the left, such as a pandas ArrowExtensionArray of per-row scalars times this array, is deferred to
+    # this class instead of failing in the other array's operator, which has no tensor kernels.
+    __pandas_priority__ = 1500
 
     def __init__(self, values: pa.Array | pa.ChunkedArray, *, dtype: TensorDtype | None = None) -> None:
         if isinstance(values, pa.Array):
@@ -473,11 +500,6 @@ class TensorExtensionArray(ExtensionArray):
     def __iter__(self) -> Iterator[np.ndarray | Any]:
         for scalar in self._pa_array:
             yield self._scalar_to_numpy(scalar)
-
-    # We do not implement it yet: pyarrow has no equality kernel for the fixed_shape_tensor type, and
-    # ArrowExtensionArray does not implement it for its fixed_size_list storage either
-    def __eq__(self, other):  # type: ignore[override]
-        return super().__eq__(other)
 
     def to_numpy(
         self,
@@ -783,6 +805,245 @@ class TensorExtensionArray(ExtensionArray):
 
     # End of Additional magic methods #
 
+    # Arithmetic #
+
+    def _prepare_operand(self, other: Any) -> tuple[Any, np.ndarray | None]:
+        """Turn the other operand of an elementwise operation into something numpy can broadcast against
+        the ``(n, *shape)`` values block, with a mask of the rows it is missing in, or None.
+
+        ``other`` may be:
+
+        - a TensorExtensionArray of the same length, applied row by row,
+          with numpy broadcasting between the tensor shapes;
+        - None, pd.NA or a null pyarrow scalar, which makes every row missing;
+        - a pyarrow tensor scalar, a single tensor, or any other pyarrow
+          scalar, taken as its Python value;
+        - any other scalar, applied to every element;
+        - a pyarrow array or chunked array, or a pandas ArrowExtensionArray,
+          of a tensor type, applied as a TensorExtensionArray, or of a
+          numeric or boolean type, one scalar per row with its nulls as
+          missing rows, see :meth:`_prepare_arrow_operand`;
+        - a numpy array with one more dimension than the tensors, a stack
+          of one tensor per row, which must have ``n`` rows;
+        - a 1-d numpy array of length ``n`` that is not of the tensor shape,
+          one scalar per row, with NaN as missing rows;
+        - any other numpy array with at most as many dimensions as the
+          tensors, applied to every row with numpy broadcasting from its
+          trailing axes, e.g. a single tensor of the tensor shape;
+        - an object array, list or tuple of tensors, converted with
+          :meth:`from_sequence`.
+
+        The operand is ``NotImplemented`` for pyarrow arrays of any other
+        type and for any other kind of value.
+
+        Raises
+        ------
+        ValueError
+            If a stack, per-row array or TensorExtensionArray does not have
+            ``n`` rows, or if a numpy array cannot broadcast against the tensors.
+        """
+        if isinstance(other, TensorExtensionArray):
+            if len(other) != len(self):
+                raise ValueError(f"Lengths must match: {len(self)} != {len(other)}")
+            self._check_broadcast(other.dtype.shape)
+            return other._values_block_of_rank(self.dtype.ndim), other.isna()
+        if _is_na(other):
+            return np.nan, np.ones(len(self), dtype=bool)
+        if isinstance(other, pa.Scalar):
+            if isinstance(other.type, pa.FixedShapeTensorType):
+                return self._prepare_operand(_tensor_scalar_to_numpy(other))
+            return self._prepare_operand(other.as_py())
+        if isinstance(other, pa.Array | pa.ChunkedArray | ArrowExtensionArray):
+            return self._prepare_arrow_operand(other)
+        if is_scalar(other):
+            return other, None
+        if isinstance(other, list | tuple):
+            other = np.asarray(other)
+        if not isinstance(other, np.ndarray):
+            return NotImplemented, None
+        if other.dtype == np.object_:
+            return self._prepare_operand(type(self)._from_sequence(other, dtype=self.dtype))
+
+        n, ndim = len(self), self.dtype.ndim
+        if other.ndim == ndim + 1:
+            if other.shape[0] != n:
+                raise ValueError(f"Lengths must match: {n} != {other.shape[0]}")
+            self._check_broadcast(other.shape[1:])
+            return other, None
+        if other.ndim == 1 and other.shape != self.dtype.shape and other.shape[0] == n:
+            return self._per_row_operand(other, np.isnan(other) if other.dtype.kind == "f" else None)
+        if other.ndim <= ndim:
+            self._check_broadcast(other.shape)
+            return other, None
+        raise ValueError(
+            f"Cannot broadcast an array of shape {other.shape} against tensors of shape {self.dtype.shape}"
+        )
+
+    def _prepare_arrow_operand(
+        self, other: pa.Array | pa.ChunkedArray | ArrowExtensionArray
+    ) -> tuple[Any, np.ndarray | None]:
+        """Prepare an arrow array operand, see :meth:`_prepare_operand`.
+
+        An array of a tensor type is applied as a TensorExtensionArray. An
+        array of a numeric or boolean type is a column, one scalar per row,
+        whose nulls make the rows missing. Arrays of any other type are
+        ``NotImplemented``.
+        """
+        array = other.__arrow_array__() if isinstance(other, ArrowExtensionArray) else other
+        if isinstance(array, pa.ChunkedArray):
+            array = array.combine_chunks()
+        if isinstance(array.type, pa.FixedShapeTensorType):
+            return self._prepare_operand(type(self)(array, dtype=TensorDtype(array.type)))
+        if not (
+            pa.types.is_integer(array.type)
+            or pa.types.is_floating(array.type)
+            or pa.types.is_boolean(array.type)
+        ):
+            return NotImplemented, None
+        if len(array) != len(self):
+            raise ValueError(f"Lengths must match: {len(self)} != {len(array)}")
+        fill = False if pa.types.is_boolean(array.type) else 0
+        values = array.fill_null(fill).to_numpy(zero_copy_only=False)
+        return self._per_row_operand(values, array.is_null().to_numpy(zero_copy_only=False))
+
+    def _per_row_operand(
+        self, values: np.ndarray, mask: np.ndarray | None
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        """Shape a column of ``n`` scalars to broadcast one per row, with its mask of missing rows, or None
+        if no row is missing."""
+        values = values.reshape((len(self), *(1,) * self.dtype.ndim))
+        return values, mask if mask is not None and mask.any() else None
+
+    def _check_broadcast(self, shape: tuple[int, ...]) -> None:
+        """Raise a ValueError naming both shapes if tensors of ``shape`` cannot broadcast against ours."""
+        try:
+            np.broadcast_shapes(self.dtype.shape, shape)
+        except ValueError:
+            raise ValueError(
+                f"Cannot broadcast an array of shape {shape} against tensors of shape {self.dtype.shape}"
+            ) from None
+
+    def _values_block_of_rank(self, ndim: int) -> np.ndarray:
+        """The values block, with the tensors padded with leading axes of length 1 up to rank ``ndim``.
+
+        This makes numpy broadcasting align the tensor shapes rather than the
+        row axis when operands have tensors of different ranks.
+        """
+        block = self._values_block()
+        if ndim > self.dtype.ndim:
+            block = block.reshape((len(self), *(1,) * (ndim - self.dtype.ndim), *self.dtype.shape))
+        return block
+
+    def _values_block_for(self, *others: Any) -> np.ndarray:
+        """The values block, padded as :meth:`_values_block_of_rank` to the highest tensor rank among the
+        prepared operands ``others``, numpy arrays of shape ``(n, *tensor_shape)`` or ``tensor_shape``."""
+        ndim = max((other.ndim for other in others if isinstance(other, np.ndarray)), default=0)
+        return self._values_block_of_rank(ndim - 1)
+
+    def _wrap_elementwise_result(self, result: np.ndarray, mask: np.ndarray) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Wrap the ``(n, *result_shape)`` numpy result of an elementwise operation, with its row mask.
+
+        The value type follows the numpy result, so it may differ from this
+        array's: e.g. integer tensors divide to doubles. The element shape is
+        the result's, and the dimension names are kept only if it is unchanged.
+        """
+        result = np.asarray(result)
+        if result.ndim < 2 or result.shape[0] != len(self):
+            raise ValueError(
+                f"Expected an elementwise result of shape ({len(self)}, ...), got shape {result.shape}"
+            )
+        shape = result.shape[1:]
+        dim_names = self.dtype.dim_names if shape == self.dtype.shape else None
+        dtype = TensorDtype(
+            pa.fixed_shape_tensor(
+                pa.from_numpy_dtype(result.dtype),
+                list(shape),
+                dim_names=None if dim_names is None else list(dim_names),
+            )
+        )
+        return type(self)._from_stack_masked(result, dtype=dtype, mask=mask)
+
+    def _arith_method(self, other, op):
+        """Apply a binary arithmetic operator, or ``divmod``, tensor by tensor.
+
+        See :meth:`_prepare_operand` for the supported ``other`` operands.
+        Rows missing in either operand are missing in the result. The values
+        follow numpy, including the result dtype and the silent handling of
+        division by zero, as pandas does.
+        """
+        right, right_mask = self._prepare_operand(other)
+        if right is NotImplemented:
+            return NotImplemented
+        mask = self.isna() if right_mask is None else self.isna() | right_mask
+        with np.errstate(all="ignore"):
+            result = op(self._values_block_for(right), right)
+        if isinstance(result, tuple):  # divmod
+            return tuple(self._wrap_elementwise_result(part, mask) for part in result)
+        return self._wrap_elementwise_result(result, mask)
+
+    def _cmp_method(self, other, op):
+        """Comparison operators are not defined for tensors and raise ``TypeError``."""
+        raise TypeError(
+            f"'{op.__name__}' is not supported between tensors: comparison operators are not defined "
+            "for TensorExtensionArray"
+        )
+
+    def _logical_method(self, other, op):
+        """Logical operators are not defined for tensors and raise ``TypeError``."""
+        raise TypeError(
+            f"'{op.__name__}' is not supported between tensors: logical operators are not defined "
+            "for TensorExtensionArray"
+        )
+
+    def __neg__(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return self._wrap_elementwise_result(-self._values_block(), self.isna())
+
+    def __pos__(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return self._wrap_elementwise_result(+self._values_block(), self.isna())
+
+    def __abs__(self) -> Self:  # type: ignore[name-defined] # noqa: F821
+        return self._wrap_elementwise_result(np.abs(self._values_block()), self.isna())
+
+    def __array_ufunc__(self, ufunc: np.ufunc, method: str, *inputs, **kwargs):
+        """Apply an elementwise numpy ufunc, such as ``np.sqrt`` or ``np.minimum``, tensor by tensor.
+
+        Only plain calls are supported, not reductions or other ufunc
+        methods, nor an ``out`` argument. The other inputs follow
+        :meth:`_prepare_operand`, and rows missing in any input are missing
+        in the result. Ufuncs with several outputs, such as ``np.modf``, give
+        a tuple of arrays. The comparison and logical ufuncs raise
+        ``TypeError``, like the operators.
+        """
+        if method != "__call__" or kwargs.get("out") is not None:
+            return NotImplemented
+        if ufunc in COMPARISON_AND_LOGICAL_UFUNCS:
+            raise TypeError(
+                f"'{ufunc.__name__}' is not supported for tensors: comparison and logical operations are "
+                "not defined for TensorExtensionArray"
+            )
+        arrays: list[Any] = []
+        masks = [self.isna()]
+        for value in inputs:
+            if value is self:
+                arrays.append(None)
+                continue
+            operand, mask = self._prepare_operand(value)
+            if operand is NotImplemented:
+                return NotImplemented
+            arrays.append(operand)
+            if mask is not None:
+                masks.append(mask)
+        own = self._values_block_for(*(array for array in arrays if array is not None))
+        arrays = [own if array is None else array for array in arrays]
+        mask = np.any(masks, axis=0)
+        with np.errstate(all="ignore"):
+            result = ufunc(*arrays, **kwargs)
+        if isinstance(result, tuple):  # e.g. np.modf, np.divmod
+            return tuple(self._wrap_elementwise_result(part, mask) for part in result)
+        return self._wrap_elementwise_result(result, mask)
+
+    # End of Arithmetic #
+
     @staticmethod
     def _scalar_to_numpy(scalar: pa.Scalar, na_value: Any = pd.NA) -> np.ndarray | Any:
         """Convert a tensor scalar to a read-only numpy view, or to na_value if it is null."""
@@ -901,8 +1162,24 @@ class TensorExtensionArray(ExtensionArray):
         elif stack.shape[1:] != dtype.shape:
             raise ValueError(f"Expected a stack of tensors of shape {dtype.shape}, got {stack.shape[1:]}")
 
-        flat = (np.array(stack, order="C") if copy else np.ascontiguousarray(stack)).reshape(-1)
-        storage = pa.FixedSizeListArray.from_arrays(pa.array(flat, type=dtype.value_type), dtype.size)
+        stack = np.array(stack, order="C") if copy else np.ascontiguousarray(stack)
+        return cls._from_stack_masked(stack, dtype=dtype)
+
+    @classmethod
+    def _from_stack_masked(
+        cls, stack: np.ndarray, *, dtype: TensorDtype, mask: np.ndarray | None = None
+    ) -> Self:  # type: ignore[name-defined] # noqa: F821
+        """Wrap a ``(n, *dtype.shape)`` numpy array, marking the rows where ``mask`` is True as missing.
+
+        The values under missing rows are kept in storage, as pyarrow does.
+        A C-contiguous ``stack`` of the dtype's value type is wrapped without
+        copying.
+        """
+        flat = np.ascontiguousarray(stack).reshape(-1)
+        pa_mask = pa.array(mask) if mask is not None and mask.any() else None
+        storage = pa.FixedSizeListArray.from_arrays(
+            pa.array(flat, type=dtype.value_type), dtype.size, mask=pa_mask
+        )
         return cls(storage, dtype=dtype)
 
     def to_stack(self, na_value: Any = np.nan) -> np.ndarray:
@@ -957,6 +1234,14 @@ class TensorExtensionArray(ExtensionArray):
         storage = combined.storage
         size = self.dtype.size
         values = storage.values.slice(storage.offset * size, len(storage) * size)
+        if pa.types.is_boolean(self.dtype.value_type):
+            # to_tensor() rejects boolean tensors, and arrow bit-packs booleans so there is no zero-copy
+            # view anyway. Null elements can only be under missing tensors, see _check_no_missing_elements.
+            return (
+                values.fill_null(False)
+                .to_numpy(zero_copy_only=False)
+                .reshape(len(storage), *self.dtype.shape)
+            )
         if values.null_count == 0:
             # allow_nulls leaves the null tensors undefined instead of rejecting them (pyarrow 26+)
             return combined.to_tensor(allow_nulls=True).to_numpy()

@@ -1057,14 +1057,14 @@ def test_dtype___from_arrow__(array, dtype, stack):
 
 
 def test___eq__(array):
-    """Test that == is not implemented yet."""
-    with pytest.raises(NotImplementedError):
+    """Test that == is not defined for tensors and raises a TypeError."""
+    with pytest.raises(TypeError, match="'eq' is not supported"):
         array == array  # noqa: B015
 
 
 def test_series___eq__(array):
-    """Test that == on a Series is not implemented yet."""
-    with pytest.raises(NotImplementedError):
+    """Test that == on a Series of tensors raises a TypeError."""
+    with pytest.raises(TypeError, match="'eq' is not supported"):
         pd.Series(array) == pd.Series(array)  # noqa: B015
 
 

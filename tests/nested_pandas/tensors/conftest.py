@@ -27,9 +27,9 @@ NO_VIEWS = (
     "an arrow-backed array cannot share buffers with a view (pandas' ArrowExtensionArray xfails this too)"
 )
 NO_ORDERING = "tensors have no ordering"
+NO_COMPARISON = "comparison operators raise for tensors, and __contains__ compares with =="
 
 PANDAS_GE_31 = Version(pd.__version__) >= Version("3.1")
-NO_EQ = "== is not implemented yet"
 
 XFAIL_STRICT = {
     # Series/DataFrame __setitem__ and fillna inspect an ndarray value themselves and reject it,
@@ -68,7 +68,7 @@ XFAIL_STRICT = {
     # Ordering
     "test_combine_le": NO_ORDERING,
     # ExtensionArray.__contains__ compares the item with ==
-    "test_contains": NO_EQ,
+    "test_contains": NO_COMPARISON,
 }
 """Suite tests that must fail, by test function name."""
 
@@ -276,3 +276,26 @@ def using_nan_is_na() -> bool:
         return bool(pd.get_option("mode.nan_is_na"))
     except (pd.errors.OptionError, KeyError):
         return True
+
+
+@pytest.fixture(
+    params=[
+        "__add__",
+        "__radd__",
+        "__sub__",
+        "__rsub__",
+        "__mul__",
+        "__rmul__",
+        "__floordiv__",
+        "__rfloordiv__",
+        "__truediv__",
+        "__rtruediv__",
+        "__pow__",
+        "__rpow__",
+        "__mod__",
+        "__rmod__",
+    ]
+)
+def all_arithmetic_operators(request):
+    """Name of an arithmetic dunder method, as pandas' fixture of the same name."""
+    return request.param

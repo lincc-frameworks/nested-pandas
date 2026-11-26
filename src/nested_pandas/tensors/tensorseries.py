@@ -77,6 +77,12 @@ class TensorSeries(pd.Series):
     pandas Series reject. A numpy stack of shape ``(k, *shape)`` assigns one
     tensor per selected row.
 
+    Arithmetic operators, the unary operators and numpy ufuncs apply tensor
+    by tensor with numpy broadcasting, against a number, a single tensor, a
+    stack, per-row scalars or another TensorSeries, see
+    :class:`~nested_pandas.tensors.TensorExtensionArray`. Comparison and
+    logical operators raise ``TypeError``.
+
     Constructing a TensorSeries from data of any other dtype raises a
     ``TypeError``. Results of operations that are not of TensorDtype, such
     as ``isna()``, are plain pandas Series. pandas can still leave a
@@ -95,6 +101,11 @@ class TensorSeries(pd.Series):
     array([[4., 5.],
            [6., 7.]])
     """
+
+    # Above pandas.Series (3000), so that an operation with a plain Series on the left, such as a Series of
+    # per-row scalars times a TensorSeries, is deferred to this class and gives a TensorSeries. Stays below
+    # DataFrame (4000).
+    __pandas_priority__ = 3500
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
